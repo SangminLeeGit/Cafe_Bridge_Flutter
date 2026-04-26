@@ -1,6 +1,9 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../models/api_contracts.dart';
 import '../models/menu_workspace_models.dart';
 import '../services/api.dart';
 import '../state/app_state.dart';
@@ -12,12 +15,14 @@ import '../widgets/stat_card.dart';
 // ─── Models for product browser ──────────────────────────────────────────────
 
 class _ProductRow {
+  final Map<String, dynamic> raw;
   final String itemCode;
   final String itemName;
   final int? salePrice;
   final String category;
 
   const _ProductRow({
+    required this.raw,
     required this.itemCode,
     required this.itemName,
     this.salePrice,
@@ -25,6 +30,7 @@ class _ProductRow {
   });
 
   factory _ProductRow.fromRegistration(Map<String, dynamic> j) => _ProductRow(
+        raw: Map<String, dynamic>.from(j),
         itemCode: (j['상품코드'] ?? j['item_code'] ?? '').toString(),
         itemName: (j['상품명'] ?? j['item_name'] ?? '').toString(),
         salePrice: _parseInt(j['판매가'] ?? j['target_price'] ?? j['sale_price']),
@@ -40,6 +46,124 @@ class _ProductRow {
     if (v == null) return null;
     if (v is int) return v;
     return int.tryParse(v.toString().replaceAll(',', ''));
+  }
+}
+
+class _CategoryOptionCatalog {
+  final List<String> majorOptions;
+  final Map<String, List<String>> middleOptionsByMajor;
+  final Map<String, List<String>> minorOptionsByMajorMiddle;
+
+  const _CategoryOptionCatalog({
+    required this.majorOptions,
+    required this.middleOptionsByMajor,
+    required this.minorOptionsByMajorMiddle,
+  });
+
+  factory _CategoryOptionCatalog.fromProducts(List<_ProductRow> products) {
+    final majorSet = <String>{};
+    final middleMap = <String, Set<String>>{};
+    final minorMap = <String, Set<String>>{};
+
+    for (final product in products) {
+      final major = (product.raw['대분류명'] ?? '').toString().trim();
+      final middle = (product.raw['중분류명'] ?? '').toString().trim();
+      final minor = (product.raw['소분류명'] ?? '').toString().trim();
+      if (major.isEmpty || middle.isEmpty) continue;
+
+      majorSet.add(major);
+      middleMap.putIfAbsent(major, () => <String>{}).add(middle);
+      if (minor.isNotEmpty) {
+        minorMap.putIfAbsent('$major::$middle', () => <String>{}).add(minor);
+      }
+    }
+
+    List<String> _sorted(Iterable<String> values) {
+      final list = values.toList(growable: false);
+      list.sort((left, right) => left.compareTo(right));
+      return list;
+    }
+
+    return _CategoryOptionCatalog(
+      majorOptions: _sorted(majorSet),
+      middleOptionsByMajor: {
+        for (final entry in middleMap.entries) entry.key: _sorted(entry.value),
+      },
+      minorOptionsByMajorMiddle: {
+        for (final entry in minorMap.entries) entry.key: _sorted(entry.value),
+      },
+    );
+  }
+}
+
+const _lookupDetailFields = <({String label, String key, bool money})>[
+  (label: '원가', key: '원가', money: true),
+  (label: '공급가', key: '공급가', money: true),
+  (label: '단위명칭', key: '단위명칭', money: false),
+  (label: '과세유무', key: '과세유무', money: false),
+  (label: '부가세', key: '부가세', money: false),
+  (label: '사용구분', key: '사용구분', money: false),
+  (label: '재고관리', key: '재고관리여부', money: false),
+  (label: '통제구분', key: '통제구분', money: false),
+  (label: '가격구분', key: '가격구분', money: false),
+  (label: '상품구분', key: '상품구분자', money: false),
+  (label: '영문명', key: '상품영문명칭', money: false),
+  (label: '바코드', key: '바코드', money: false),
+];
+
+String _lookupValue(String? value) {
+  final trimmed = value?.trim() ?? '';
+  return trimmed.isEmpty ? '-' : trimmed;
+}
+
+String _lookupMoney(String? value) {
+  final trimmed = value?.trim() ?? '';
+  if (trimmed.isEmpty) return '-';
+  final parsed = int.tryParse(trimmed.replaceAll(',', ''));
+  return parsed == null ? trimmed : _won(parsed);
+}
+
+String _freshnessLabel(String? syncedAt) {
+  final value = syncedAt?.trim() ?? '';
+  if (value.isEmpty) return '동기화 시각 정보 없음';
+  final parsed = DateTime.tryParse(value);
+  if (parsed == null) return '동기화 $value';
+  final diff = DateTime.now().difference(parsed);
+  if (diff.isNegative) return '동기화 $value';
+  final mins = diff.inMinutes;
+  if (mins < 1) return '방금 동기화';
+  if (mins < 60) return '$mins분 전 동기화';
+  final hours = diff.inHours;
+  return '$hours시간 전 동기화';
+}
+
+String _statusLabel(String status) {
+  switch (status) {
+    case 'ready':
+      return '준비완료';
+    case 'reviewed':
+      return '검토완료';
+    case 'done':
+      return '반영완료';
+    case 'archived':
+      return '보관';
+    default:
+      return '초안';
+  }
+}
+
+Color _statusColor(String status) {
+  switch (status) {
+    case 'ready':
+      return const Color(0xFF0D9488);
+    case 'reviewed':
+      return const Color(0xFF2563EB);
+    case 'done':
+      return const Color(0xFF16A34A);
+    case 'archived':
+      return const Color(0xFF64748B);
+    default:
+      return const Color(0xFF94A3B8);
   }
 }
 
@@ -96,6 +220,7 @@ class _MenuWorkspaceScreenState extends State<MenuWorkspaceScreen>
             children: [
               _ProductBrowserTab(
                 onPriceChangeRegistered: _onPriceChangeRegistered,
+                onNewItemRegistered: _onPriceChangeRegistered,
               ),
               _WorkspaceTab(
                 refreshNotifier: _workspaceRefreshTick,
@@ -125,6 +250,21 @@ class _WorkspaceTabState extends State<_WorkspaceTab>
   String _error = '';
   bool _fromCache = false;
   DateTime? _cachedAt;
+  NewItemValidationResponse? _validation;
+  bool _validationLoading = true;
+  String _validationError = '';
+  List<PriceApplyRun> _priceApplyRuns = const [];
+  bool _priceApplyRunsLoading = true;
+  String _priceApplyRunsError = '';
+  List<WorkspaceTaskHistoryEntry> _newItemHistory = const [];
+  bool _newItemHistoryLoading = true;
+  String _newItemHistoryError = '';
+  List<WorkspaceTaskHistoryEntry> _deleteItemHistory = const [];
+  bool _deleteItemHistoryLoading = true;
+  String _deleteItemHistoryError = '';
+  List<WorkspaceTaskHistoryEntry> _browserPriceHistory = const [];
+  bool _browserPriceHistoryLoading = true;
+  String _browserPriceHistoryError = '';
   String _filterStatus = 'all';
   String _filterKind = 'all';
   String _searchQuery = '';
@@ -136,7 +276,7 @@ class _WorkspaceTabState extends State<_WorkspaceTab>
   void initState() {
     super.initState();
     widget.refreshNotifier?.addListener(_onRefreshRequest);
-    _load();
+    unawaited(_loadAll());
   }
 
   @override
@@ -146,10 +286,10 @@ class _WorkspaceTabState extends State<_WorkspaceTab>
   }
 
   void _onRefreshRequest() {
-    if (mounted && !_isLoading) _load(force: true);
+    if (mounted && !_isLoading) unawaited(_loadAll(force: true));
   }
 
-  Future<void> _load({bool force = false}) async {
+  Future<void> _loadSnapshot({bool force = false}) async {
     final appState = context.read<AppState>();
     setState(() {
       _isLoading = true;
@@ -177,6 +317,184 @@ class _WorkspaceTabState extends State<_WorkspaceTab>
     }
   }
 
+  Future<void> _loadValidation({bool force = false}) async {
+    final appState = context.read<AppState>();
+    setState(() {
+      _validationLoading = true;
+      _validationError = '';
+    });
+    try {
+      final response = await appState.fetchMapParsed(
+        '/api/menu-workspace/new-item-validate',
+        parser: NewItemValidationResponse.fromJson,
+        cacheTtl: force ? Duration.zero : const Duration(minutes: 5),
+      );
+      if (!mounted) return;
+      setState(() {
+        _validation = response.data;
+        _validationLoading = false;
+      });
+    } catch (error) {
+      if (!mounted) return;
+      setState(() {
+        _validation = null;
+        _validationError = error.toString();
+        _validationLoading = false;
+      });
+    }
+  }
+
+  Future<void> _loadPriceApplyRuns({bool force = false}) async {
+    final appState = context.read<AppState>();
+    setState(() {
+      _priceApplyRunsLoading = true;
+      _priceApplyRunsError = '';
+    });
+    try {
+      final response = await appState.fetchMapParsed<Map<String, dynamic>>(
+        '/api/menu-workspace/price-apply-runs',
+        parser: (json) {
+          final raw = json is Map<String, dynamic> ? json : Map<String, dynamic>.from(json as Map);
+          return {
+            'runs': (raw['runs'] as List? ?? [])
+                .whereType<Map>()
+                .map((item) => PriceApplyRun.fromJson(Map<String, dynamic>.from(item)))
+                .toList(growable: false),
+          };
+        },
+        cacheTtl: force ? Duration.zero : const Duration(minutes: 5),
+      );
+      if (!mounted) return;
+      setState(() {
+        _priceApplyRuns = List<PriceApplyRun>.from(response.data['runs'] as List? ?? const []);
+        _priceApplyRunsLoading = false;
+      });
+    } catch (error) {
+      if (!mounted) return;
+      setState(() {
+        _priceApplyRuns = const [];
+        _priceApplyRunsError = error.toString();
+        _priceApplyRunsLoading = false;
+      });
+    }
+  }
+
+  Future<void> _loadNewItemHistory({bool force = false}) async {
+    final appState = context.read<AppState>();
+    setState(() {
+      _newItemHistoryLoading = true;
+      _newItemHistoryError = '';
+    });
+    try {
+      final response = await appState.fetchMapParsed<Map<String, dynamic>>(
+        '/api/menu-workspace/new-item-apply-history',
+        parser: (json) {
+          final raw = json is Map<String, dynamic> ? json : Map<String, dynamic>.from(json as Map);
+          return {
+            'tasks': (raw['tasks'] as List? ?? [])
+                .whereType<Map>()
+                .map((item) => WorkspaceTaskHistoryEntry.fromJson(Map<String, dynamic>.from(item)))
+                .toList(growable: false),
+          };
+        },
+        cacheTtl: force ? Duration.zero : const Duration(minutes: 5),
+      );
+      if (!mounted) return;
+      setState(() {
+        _newItemHistory = List<WorkspaceTaskHistoryEntry>.from(response.data['tasks'] as List? ?? const []);
+        _newItemHistoryLoading = false;
+      });
+    } catch (error) {
+      if (!mounted) return;
+      setState(() {
+        _newItemHistory = const [];
+        _newItemHistoryError = error.toString();
+        _newItemHistoryLoading = false;
+      });
+    }
+  }
+
+  Future<void> _loadBrowserPriceHistory({bool force = false}) async {
+    final appState = context.read<AppState>();
+    setState(() {
+      _browserPriceHistoryLoading = true;
+      _browserPriceHistoryError = '';
+    });
+    try {
+      final response = await appState.fetchMapParsed<Map<String, dynamic>>(
+        '/api/price/browser-apply-history',
+        parser: (json) {
+          final raw = json is Map<String, dynamic> ? json : Map<String, dynamic>.from(json as Map);
+          return {
+            'tasks': (raw['tasks'] as List? ?? [])
+                .whereType<Map>()
+                .map((item) => WorkspaceTaskHistoryEntry.fromJson(Map<String, dynamic>.from(item)))
+                .toList(growable: false),
+          };
+        },
+        cacheTtl: force ? Duration.zero : const Duration(minutes: 5),
+      );
+      if (!mounted) return;
+      setState(() {
+        _browserPriceHistory = List<WorkspaceTaskHistoryEntry>.from(response.data['tasks'] as List? ?? const []);
+        _browserPriceHistoryLoading = false;
+      });
+    } catch (error) {
+      if (!mounted) return;
+      setState(() {
+        _browserPriceHistory = const [];
+        _browserPriceHistoryError = error.toString();
+        _browserPriceHistoryLoading = false;
+      });
+    }
+  }
+
+  Future<void> _loadDeleteItemHistory({bool force = false}) async {
+    final appState = context.read<AppState>();
+    setState(() {
+      _deleteItemHistoryLoading = true;
+      _deleteItemHistoryError = '';
+    });
+    try {
+      final response = await appState.fetchMapParsed<Map<String, dynamic>>(
+        '/api/menu-workspace/item-delete-history',
+        parser: (json) {
+          final raw = json is Map<String, dynamic> ? json : Map<String, dynamic>.from(json as Map);
+          return {
+            'tasks': (raw['tasks'] as List? ?? [])
+                .whereType<Map>()
+                .map((item) => WorkspaceTaskHistoryEntry.fromJson(Map<String, dynamic>.from(item)))
+                .toList(growable: false),
+          };
+        },
+        cacheTtl: force ? Duration.zero : const Duration(minutes: 5),
+      );
+      if (!mounted) return;
+      setState(() {
+        _deleteItemHistory = List<WorkspaceTaskHistoryEntry>.from(response.data['tasks'] as List? ?? const []);
+        _deleteItemHistoryLoading = false;
+      });
+    } catch (error) {
+      if (!mounted) return;
+      setState(() {
+        _deleteItemHistory = const [];
+        _deleteItemHistoryError = error.toString();
+        _deleteItemHistoryLoading = false;
+      });
+    }
+  }
+
+  Future<void> _loadAll({bool force = false}) async {
+    await Future.wait([
+      _loadSnapshot(force: force),
+      _loadValidation(force: force),
+      _loadPriceApplyRuns(force: force),
+      _loadNewItemHistory(force: force),
+      _loadDeleteItemHistory(force: force),
+      _loadBrowserPriceHistory(force: force),
+    ]);
+  }
+
   List<MenuEntry> get _filteredEntries {
     var entries = _snapshot?.entries ?? const <MenuEntry>[];
     if (_filterStatus != 'all') {
@@ -200,12 +518,12 @@ class _WorkspaceTabState extends State<_WorkspaceTab>
   Widget build(BuildContext context) {
     super.build(context);
 
-    if (_isLoading) return const Center(child: CircularProgressIndicator());
+    if (_isLoading && _snapshot == null) return const Center(child: CircularProgressIndicator());
     if (_error.isNotEmpty) {
       return EmptyState(
-        title: '메뉴 워크스페이스를 불러오지 못했습니다.',
+        title: '메뉴 작업대를 불러오지 못했습니다.',
         message: _error,
-        action: FilledButton(onPressed: _load, child: const Text('다시 시도')),
+        action: FilledButton(onPressed: () => _loadSnapshot(force: true), child: const Text('다시 시도')),
       );
     }
 
@@ -213,17 +531,21 @@ class _WorkspaceTabState extends State<_WorkspaceTab>
     if (snapshot == null) {
       return EmptyState(
         title: '데이터 없음',
-        action: FilledButton(onPressed: _load, child: const Text('새로고침')),
+        action: FilledButton(onPressed: () => _loadAll(force: true), child: const Text('새로고침')),
       );
     }
 
     final entries = _filteredEntries;
     final s = snapshot.summary;
     final appState = context.watch<AppState>();
-    final hasReady = entries.any((e) => e.status == 'ready' && e.kind == 'price_update');
+    final hasReady = (snapshot.statusCounts['ready'] ?? 0) > 0;
+    final newItemIssues = {
+      for (final issue in _validation?.issues ?? const <NewItemValidationIssue>[])
+        issue.entryId: issue.messages,
+    };
 
     return RefreshIndicator(
-      onRefresh: _load,
+      onRefresh: () => _loadAll(force: true),
       child: CustomScrollView(
         physics: const AlwaysScrollableScrollPhysics(),
         slivers: [
@@ -252,7 +574,7 @@ class _WorkspaceTabState extends State<_WorkspaceTab>
                   ),
                   if (hasReady && appState.hasOperatorAccess) ...[
                     const SizedBox(height: 12),
-                    _ApplyReadyBanner(onApplied: _load),
+                    _ApplyReadyBanner(onApplied: () => _loadAll(force: true)),
                   ],
                   const SizedBox(height: 16),
                   _FilterBar(
@@ -272,6 +594,97 @@ class _WorkspaceTabState extends State<_WorkspaceTab>
                           EdgeInsets.symmetric(horizontal: 12, vertical: 10),
                     ),
                     onChanged: (v) => setState(() => _searchQuery = v),
+                  ),
+                  const SizedBox(height: 12),
+                  _WorkspaceInfoStrip(
+                    title: '신규 메뉴 검증',
+                    loading: _validationLoading,
+                    error: _validationError,
+                    summary: _validation == null
+                        ? '검증 정보 없음'
+                        : '전체 ${_validation!.entryCount}건 · 통과 ${_validation!.validCount}건 · 이슈 ${_validation!.issueCount}건',
+                    trailing: TextButton.icon(
+                      onPressed: _validationLoading ? null : () => _loadValidation(force: true),
+                      icon: const Icon(Icons.verified_outlined, size: 16),
+                      label: Text(_validationLoading ? '검증 중...' : '새로고침'),
+                      style: TextButton.styleFrom(
+                        visualDensity: VisualDensity.compact,
+                        foregroundColor: const Color(0xFF0D9488),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  Panel(
+                    title: '작업 이력',
+                    subtitle: '가격 적용과 신규 메뉴 반영의 최근 결과를 확인합니다.',
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        _TaskHistoryHeader(
+                          label: '가격 적용',
+                          loading: _priceApplyRunsLoading,
+                          error: _priceApplyRunsError,
+                          count: _priceApplyRuns.length,
+                          onRefresh: () => _loadPriceApplyRuns(force: true),
+                        ),
+                        const SizedBox(height: 8),
+                        if (_priceApplyRuns.isNotEmpty)
+                          ..._priceApplyRuns.take(3).map((run) => _PriceApplyRunTile(run: run))
+                        else if (!_priceApplyRunsLoading && _priceApplyRunsError.isEmpty)
+                          const Text(
+                            '최근 가격 적용 이력이 없습니다.',
+                            style: TextStyle(fontSize: 12, color: Color(0xFF64748B)),
+                          ),
+                        const SizedBox(height: 12),
+                        _TaskHistoryHeader(
+                          label: '신규 메뉴',
+                          loading: _newItemHistoryLoading,
+                          error: _newItemHistoryError,
+                          count: _newItemHistory.length,
+                          onRefresh: () => _loadNewItemHistory(force: true),
+                        ),
+                        const SizedBox(height: 8),
+                        if (_newItemHistory.isNotEmpty)
+                          ..._newItemHistory.take(3).map((task) => _TaskHistoryTile(task: task))
+                        else if (!_newItemHistoryLoading && _newItemHistoryError.isEmpty)
+                          const Text(
+                            '최근 신규 메뉴 작업 이력이 없습니다.',
+                            style: TextStyle(fontSize: 12, color: Color(0xFF64748B)),
+                          ),
+                        const SizedBox(height: 12),
+                        _TaskHistoryHeader(
+                          label: '신규 메뉴 삭제',
+                          loading: _deleteItemHistoryLoading,
+                          error: _deleteItemHistoryError,
+                          count: _deleteItemHistory.length,
+                          onRefresh: () => _loadDeleteItemHistory(force: true),
+                        ),
+                        const SizedBox(height: 8),
+                        if (_deleteItemHistory.isNotEmpty)
+                          ..._deleteItemHistory.take(3).map((task) => _TaskHistoryTile(task: task))
+                        else if (!_deleteItemHistoryLoading && _deleteItemHistoryError.isEmpty)
+                          const Text(
+                            '최근 신규 메뉴 삭제 이력이 없습니다.',
+                            style: TextStyle(fontSize: 12, color: Color(0xFF64748B)),
+                          ),
+                        const SizedBox(height: 12),
+                        _TaskHistoryHeader(
+                          label: '브라우저 가격 변경',
+                          loading: _browserPriceHistoryLoading,
+                          error: _browserPriceHistoryError,
+                          count: _browserPriceHistory.length,
+                          onRefresh: () => _loadBrowserPriceHistory(force: true),
+                        ),
+                        const SizedBox(height: 8),
+                        if (_browserPriceHistory.isNotEmpty)
+                          ..._browserPriceHistory.take(3).map((task) => _TaskHistoryTile(task: task))
+                        else if (!_browserPriceHistoryLoading && _browserPriceHistoryError.isEmpty)
+                          const Text(
+                            '최근 브라우저 가격 변경 이력이 없습니다.',
+                            style: TextStyle(fontSize: 12, color: Color(0xFF64748B)),
+                          ),
+                      ],
+                    ),
                   ),
                   const SizedBox(height: 12),
                 ],
@@ -296,6 +709,7 @@ class _WorkspaceTabState extends State<_WorkspaceTab>
                 itemBuilder: (context, index) {
                   return _MenuEntryCard(
                     entry: entries[index],
+                    issues: newItemIssues[entries[index].id] ?? const [],
                     onTap: () => _showEntryDetail(context, entries[index]),
                   );
                 },
@@ -310,7 +724,7 @@ class _WorkspaceTabState extends State<_WorkspaceTab>
     Navigator.of(context).push(
       MaterialPageRoute(
         builder: (_) =>
-            MenuEntryDetailScreen(entry: entry, onUpdated: _load),
+            MenuEntryDetailScreen(entry: entry, onUpdated: () => _loadAll(force: true)),
       ),
     );
   }
@@ -320,7 +734,11 @@ class _WorkspaceTabState extends State<_WorkspaceTab>
 
 class _ProductBrowserTab extends StatefulWidget {
   final VoidCallback? onPriceChangeRegistered;
-  const _ProductBrowserTab({this.onPriceChangeRegistered});
+  final VoidCallback? onNewItemRegistered;
+  const _ProductBrowserTab({
+    this.onPriceChangeRegistered,
+    this.onNewItemRegistered,
+  });
 
   @override
   State<_ProductBrowserTab> createState() => _ProductBrowserTabState();
@@ -332,6 +750,8 @@ class _ProductBrowserTabState extends State<_ProductBrowserTab>
   bool _isLoading = true;
   String _loadError = '';
   bool _hasSearched = false;
+  String _source = '';
+  String _syncedAt = '';
 
   final _searchController = TextEditingController();
 
@@ -379,6 +799,8 @@ class _ProductBrowserTabState extends State<_ProductBrowserTab>
           .toList();
       setState(() {
         _products = rows;
+        _source = (result.data['source'] ?? '').toString();
+        _syncedAt = (result.data['synced_at'] ?? '').toString();
         _isLoading = false;
       });
     } catch (e) {
@@ -416,27 +838,46 @@ class _ProductBrowserTabState extends State<_ProductBrowserTab>
   void _openPriceChangeSheet(_ProductRow product) {
     final appState = context.read<AppState>();
     if (!appState.hasOperatorAccess) return;
-    showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      builder: (_) => _QuickPriceChangeSheet(
-        product: product,
-        appState: appState,
-        onDirectApplied: _refreshCurrent,
-        onCreated: () {
-          Navigator.of(context).pop();
-          widget.onPriceChangeRegistered?.call();
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text(
-                  '${product.itemName} 가격변경이 준비완료로 등록됐습니다.'),
-              action: SnackBarAction(
-                label: '작업 목록 확인',
-                onPressed: () {},
-              ),
-            ),
-          );
-        },
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => _QuickPriceChangeSheet(
+          product: product,
+          appState: appState,
+          onDirectApplied: () async {
+            await _refreshCurrent();
+            widget.onPriceChangeRegistered?.call();
+          },
+        ),
+      ),
+    );
+  }
+
+  void _openProductDetailScreen(_ProductRow product) {
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => _ProductRegistrationDetailScreen(
+          product: product,
+          appState: context.read<AppState>(),
+          onQuickPriceChange: _openPriceChangeSheet,
+        ),
+      ),
+    );
+  }
+
+  void _openNewItemScreen() {
+    final appState = context.read<AppState>();
+    if (!appState.hasOperatorAccess) return;
+    final categoryCatalog = _CategoryOptionCatalog.fromProducts(_products.where((product) => !product.isLikelyOption).toList(growable: false));
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => _NewMenuAddScreen(
+          appState: appState,
+          categoryCatalog: categoryCatalog,
+          onSubmitted: () {
+            widget.onNewItemRegistered?.call();
+            unawaited(_refreshCurrent());
+          },
+        ),
       ),
     );
   }
@@ -481,6 +922,22 @@ class _ProductBrowserTabState extends State<_ProductBrowserTab>
             },
           ),
         ),
+        if (_source.isNotEmpty || _syncedAt.isNotEmpty)
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+            child: _WorkspaceInfoStrip(
+              title: '상품등록 조회',
+              loading: false,
+              error: '',
+              summary: '${_source.toUpperCase()} · ${_freshnessLabel(_syncedAt)}',
+              trailing: IconButton(
+                onPressed: _refreshCurrent,
+                icon: const Icon(Icons.refresh, size: 18),
+                visualDensity: VisualDensity.compact,
+                color: const Color(0xFF64748B),
+              ),
+            ),
+          ),
         Padding(
           padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
           child: Row(
@@ -504,6 +961,18 @@ class _ProductBrowserTabState extends State<_ProductBrowserTab>
                 style: TextButton.styleFrom(
                   foregroundColor: const Color(0xFF64748B),
                   visualDensity: VisualDensity.compact,
+                ),
+              ),
+              const SizedBox(width: 6),
+              FilledButton.icon(
+                onPressed: isOperator ? _openNewItemScreen : null,
+                icon: const Icon(Icons.add_box_outlined, size: 16),
+                label: const Text('신규 메뉴 추가',
+                    style: TextStyle(fontSize: 12)),
+                style: FilledButton.styleFrom(
+                  visualDensity: VisualDensity.compact,
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                 ),
               ),
             ],
@@ -542,6 +1011,7 @@ class _ProductBrowserTabState extends State<_ProductBrowserTab>
                             onTap: isOperator
                                 ? () => _openPriceChangeSheet(list[i])
                                 : null,
+                            onInfoTap: () => _openProductDetailScreen(list[i]),
                           ),
                         ),
         ),
@@ -551,8 +1021,8 @@ class _ProductBrowserTabState extends State<_ProductBrowserTab>
             padding: const EdgeInsets.symmetric(
                 horizontal: 16, vertical: 10),
             color: const Color(0xFFFFF7ED),
-            child: const Text(
-              'operator 이상 권한이 있어야 가격변경을 등록할 수 있습니다.',
+             child: const Text(
+              'operator 이상 권한이 있어야 가격변경과 신규 메뉴 등록을 실행할 수 있습니다.',
               style:
                   TextStyle(fontSize: 12, color: Color(0xFF92400E)),
             ),
@@ -562,15 +1032,671 @@ class _ProductBrowserTabState extends State<_ProductBrowserTab>
   }
 }
 
+class _NewMenuAddScreen extends StatefulWidget {
+  final AppState appState;
+  final _CategoryOptionCatalog categoryCatalog;
+  final VoidCallback? onSubmitted;
+
+  const _NewMenuAddScreen({
+    required this.appState,
+    required this.categoryCatalog,
+    this.onSubmitted,
+  });
+
+  @override
+  State<_NewMenuAddScreen> createState() => _NewMenuAddScreenState();
+}
+
+class _NewMenuAddScreenState extends State<_NewMenuAddScreen> {
+  final _itemNameController = TextEditingController();
+  final _itemCodeController = TextEditingController();
+  final _targetPriceController = TextEditingController();
+  final _costPriceController = TextEditingController();
+  final _supplyPriceController = TextEditingController();
+  final _unitNameController = TextEditingController(text: 'EA');
+  final _barcodeController = TextEditingController();
+  final _descriptionController = TextEditingController();
+  final _reasonController = TextEditingController();
+
+  String _taxMode = 'Y';
+  String _useMode = 'Y';
+  String _stockMode = 'Y';
+  String _majorCategory = '';
+  String _middleCategory = '';
+  String _minorCategory = '';
+  bool _isSubmitting = false;
+  String _error = '';
+  String _statusMessage = '';
+  String _lastPreviewMessage = '';
+  String _lastPreviewSavedCode = '';
+  Map<String, dynamic> _lastResolvedCategories = const {};
+
+  @override
+  void dispose() {
+    _itemNameController.dispose();
+    _itemCodeController.dispose();
+    _targetPriceController.dispose();
+    _costPriceController.dispose();
+    _supplyPriceController.dispose();
+    _unitNameController.dispose();
+    _barcodeController.dispose();
+    _descriptionController.dispose();
+    _reasonController.dispose();
+    super.dispose();
+  }
+
+  int? _parseNonNegativeInt(String raw, {required String fieldName}) {
+    final trimmed = raw.trim();
+    if (trimmed.isEmpty) return null;
+    final parsed = int.tryParse(trimmed.replaceAll(',', ''));
+    if (parsed == null) {
+      throw ApiException('$fieldName 값을 숫자로 입력하세요.');
+    }
+    if (parsed < 0) {
+      throw ApiException('$fieldName 값은 0 이상이어야 합니다.');
+    }
+    return parsed;
+  }
+
+  List<String> get _middleCategoryOptions {
+    if (_majorCategory.trim().isEmpty) return const [];
+    return widget.categoryCatalog.middleOptionsByMajor[_majorCategory.trim()] ?? const [];
+  }
+
+  List<String> get _minorCategoryOptions {
+    final major = _majorCategory.trim();
+    final middle = _middleCategory.trim();
+    if (major.isEmpty || middle.isEmpty) return const [];
+    return widget.categoryCatalog.minorOptionsByMajorMiddle['$major::$middle'] ?? const [];
+  }
+
+  String get _middleCategoryHint {
+    if (_majorCategory.trim().isEmpty) return '대분류를 먼저 선택';
+    if (_middleCategoryOptions.isEmpty) return '선택 가능한 중분류 없음';
+    return '중분류 선택';
+  }
+
+  String get _minorCategoryHint {
+    if (_majorCategory.trim().isEmpty) return '대분류를 먼저 선택';
+    if (_middleCategory.trim().isEmpty) return '중분류를 먼저 선택';
+    if (_minorCategoryOptions.isEmpty) return '선택 가능한 소분류 없음';
+    return '소분류 선택';
+  }
+
+  void _onMajorCategoryChanged(String? value) {
+    final nextMajor = (value ?? '').trim();
+    final nextMiddleOptions = nextMajor.isEmpty
+        ? const <String>[]
+        : (widget.categoryCatalog.middleOptionsByMajor[nextMajor] ?? const <String>[]);
+    final keepMiddle = nextMiddleOptions.contains(_middleCategory.trim());
+    final nextMiddle = keepMiddle ? _middleCategory.trim() : '';
+    final nextMinorOptions = (nextMajor.isEmpty || nextMiddle.isEmpty)
+        ? const <String>[]
+        : (widget.categoryCatalog.minorOptionsByMajorMiddle['$nextMajor::$nextMiddle'] ?? const <String>[]);
+    final keepMinor = nextMinorOptions.contains(_minorCategory.trim());
+    setState(() {
+      _majorCategory = nextMajor;
+      _middleCategory = nextMiddle;
+      _minorCategory = keepMinor ? _minorCategory.trim() : '';
+    });
+  }
+
+  void _onMiddleCategoryChanged(String? value) {
+    final nextMiddle = (value ?? '').trim();
+    final nextMinorOptions = (_majorCategory.trim().isEmpty || nextMiddle.isEmpty)
+        ? const <String>[]
+        : (widget.categoryCatalog.minorOptionsByMajorMiddle['${_majorCategory.trim()}::$nextMiddle'] ?? const <String>[]);
+    final keepMinor = nextMinorOptions.contains(_minorCategory.trim());
+    setState(() {
+      _middleCategory = nextMiddle;
+      _minorCategory = keepMinor ? _minorCategory.trim() : '';
+    });
+  }
+
+  Map<String, dynamic> _buildRequestBody({required bool execute}) {
+    final itemName = _itemNameController.text.trim();
+    final majorCategory = _majorCategory.trim();
+    final middleCategory = _middleCategory.trim();
+    final minorCategory = _minorCategory.trim();
+    final itemCode = _itemCodeController.text.trim();
+    final barcode = _barcodeController.text.trim();
+    final unitName = _unitNameController.text.trim();
+    final description = _descriptionController.text.trim();
+    final reason = _reasonController.text.trim();
+    final targetPrice = _parseNonNegativeInt(
+      _targetPriceController.text,
+      fieldName: '판매가',
+    );
+    final costPrice = _parseNonNegativeInt(
+      _costPriceController.text,
+      fieldName: '원가',
+    );
+    final supplyPrice = _parseNonNegativeInt(
+      _supplyPriceController.text,
+      fieldName: '공급가',
+    );
+
+    if (itemName.isEmpty) {
+      throw const ApiException('상품명을 입력하세요.');
+    }
+    if (majorCategory.isEmpty || middleCategory.isEmpty || minorCategory.isEmpty) {
+      throw const ApiException('대/중/소 분류를 모두 입력하세요.');
+    }
+    if (targetPrice == null) {
+      throw const ApiException('판매가를 입력하세요.');
+    }
+    if (barcode.isNotEmpty && int.tryParse(barcode) == null) {
+      throw const ApiException('바코드는 숫자만 입력할 수 있습니다.');
+    }
+
+    return {
+      'item_name': itemName,
+      'target_price': targetPrice,
+      'major_category': majorCategory,
+      'middle_category': middleCategory,
+      'minor_category': minorCategory,
+      'unit_name': unitName.isEmpty ? 'EA' : unitName,
+      'tax_mode': _taxMode,
+      'use_mode': _useMode,
+      'stock_mode': _stockMode,
+      'barcode': barcode,
+      'description': description,
+      'item_code': itemCode,
+      if (costPrice != null) 'cost_price': costPrice,
+      if (supplyPrice != null) 'supply_price': supplyPrice,
+      'execute': execute,
+      'reason': reason.isNotEmpty
+          ? reason
+          : (execute ? 'mobile-new-item-apply' : 'mobile-new-item-preview'),
+    };
+  }
+
+  Future<WorkspaceTaskHistoryEntry> _pollTask(String taskId) async {
+    for (var attempt = 0; attempt < 80; attempt++) {
+      final response = await widget.appState.fetchMapParsed<WorkspaceTaskHistoryEntry>(
+        '/api/menu-workspace/new-item-apply/$taskId',
+        parser: WorkspaceTaskHistoryEntry.fromJson,
+        cacheTtl: Duration.zero,
+      );
+      final task = response.data;
+      if (task.status == 'succeeded' || task.status == 'failed') {
+        return task;
+      }
+      await Future.delayed(const Duration(seconds: 3));
+    }
+    throw const ApiException('신규 메뉴 작업 응답이 지연되고 있습니다. 잠시 후 다시 확인해 주세요.');
+  }
+
+  Future<void> _submit({required bool execute}) async {
+    final messenger = ScaffoldMessenger.of(context);
+    Map<String, dynamic> body;
+    try {
+      body = _buildRequestBody(execute: execute);
+    } catch (error) {
+      setState(() {
+        _error = error.toString().replaceFirst('Exception: ', '');
+      });
+      return;
+    }
+
+    setState(() {
+      _isSubmitting = true;
+      _error = '';
+      _statusMessage = execute
+          ? '웹과 동일한 Selenium 경로로 신규 메뉴를 등록 중입니다. 최대 1~2분 정도 걸릴 수 있습니다.'
+          : '신규 메뉴 미리보기를 실행 중입니다.';
+    });
+
+    try {
+      final started = await widget.appState.postJson(
+        '/api/menu-workspace/new-item-apply',
+        body: body,
+      );
+      final taskId = AsyncTaskStartResponse.fromJson(started).taskId.trim();
+      if (taskId.isEmpty) {
+        throw const ApiException('신규 메뉴 작업 ID를 받지 못했습니다.');
+      }
+
+      final task = await _pollTask(taskId);
+      if (!mounted) return;
+
+      final topLevelMessage = task.errorMessage.trim();
+      final resultMessage = task.resultMessage.trim();
+      var message = resultMessage.isNotEmpty
+          ? resultMessage
+          : (topLevelMessage.isNotEmpty ? topLevelMessage : '작업 결과를 확인해 주세요.');
+      final resultStatus = task.resultStatus;
+      final isSuccess = task.status == 'succeeded' &&
+          (resultStatus == 'preview' || resultStatus == 'applied');
+      final savedItemCode = task.savedItemCode.trim();
+      if (resultStatus == 'applied' && savedItemCode.isNotEmpty) {
+        message = '$message (저장 코드 $savedItemCode)';
+      }
+
+      if (!isSuccess) {
+        setState(() {
+          _error = message;
+          _statusMessage = '';
+        });
+        return;
+      }
+
+      if (execute) {
+        widget.onSubmitted?.call();
+        Navigator.of(context).pop();
+        messenger.showSnackBar(
+          SnackBar(
+            content: Text(message),
+            backgroundColor: const Color(0xFF0D9488),
+            duration: const Duration(seconds: 5),
+          ),
+        );
+        return;
+      }
+
+      setState(() {
+        _lastPreviewMessage = message;
+        _lastPreviewSavedCode = savedItemCode;
+        _lastResolvedCategories = task.resolvedCategories;
+        _statusMessage = '';
+      });
+      messenger.showSnackBar(
+        SnackBar(
+          content: Text(message),
+          duration: const Duration(seconds: 4),
+        ),
+      );
+    } catch (error) {
+      if (!mounted) return;
+      setState(() {
+        _error = error.toString().replaceFirst('Exception: ', '');
+        _statusMessage = '';
+      });
+    } finally {
+      if (mounted) {
+        setState(() => _isSubmitting = false);
+      }
+    }
+  }
+
+  Future<void> _confirmAndSubmit() async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('신규 메뉴 등록'),
+        content: const Text('입력한 값으로 신규 메뉴를 실제 등록할까요?'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(false),
+            child: const Text('취소'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(dialogContext).pop(true),
+            child: const Text('등록'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed == true) {
+      await _submit(execute: true);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final isBusy = _isSubmitting;
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('신규 메뉴 추가'),
+        bottom: PreferredSize(
+          preferredSize: const Size.fromHeight(1),
+          child: Container(height: 1, color: const Color(0xFFE2E8F0)),
+        ),
+      ),
+      body: SafeArea(
+        child: ListView(
+          padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
+          children: [
+            const _InlineNotice(
+              backgroundColor: Color(0xFFF0FDFA),
+              borderColor: Color(0xFF99F6E4),
+              textColor: Color(0xFF0F766E),
+              icon: Icons.info_outline,
+              message: '미리보기는 저장 가능성만 확인하고, 등록은 백엔드 신규 메뉴 추가 API를 통해 실제 저장을 시도합니다. 분류는 기존 값만 드롭다운에서 선택합니다.',
+            ),
+            const SizedBox(height: 16),
+            TextField(
+              controller: _itemNameController,
+              textInputAction: TextInputAction.next,
+              decoration: const InputDecoration(
+                labelText: '상품명 *',
+                border: OutlineInputBorder(),
+              ),
+            ),
+            const SizedBox(height: 12),
+            Row(
+              children: [
+                Expanded(
+                  child: TextField(
+                    controller: _itemCodeController,
+                    textInputAction: TextInputAction.next,
+                    decoration: const InputDecoration(
+                      labelText: '상품코드',
+                      border: OutlineInputBorder(),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: TextField(
+                    controller: _unitNameController,
+                    textInputAction: TextInputAction.next,
+                    decoration: const InputDecoration(
+                      labelText: '단위명칭',
+                      border: OutlineInputBorder(),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            Row(
+              children: [
+                Expanded(
+                  child: DropdownButtonFormField<String>(
+                    value: _majorCategory.isEmpty ? null : _majorCategory,
+                    hint: const Text('대분류 선택'),
+                    decoration: const InputDecoration(
+                      labelText: '대분류 *',
+                      border: OutlineInputBorder(),
+                    ),
+                    items: widget.categoryCatalog.majorOptions.map(
+                      (option) => DropdownMenuItem<String>(value: option, child: Text(option)),
+                    ],
+                    onChanged: isBusy ? null : _onMajorCategoryChanged,
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: DropdownButtonFormField<String>(
+                    value: _middleCategory.isEmpty ? null : _middleCategory,
+                    hint: Text(_middleCategoryHint),
+                    disabledHint: Text(_middleCategoryHint),
+                    decoration: const InputDecoration(
+                      labelText: '중분류 *',
+                      border: OutlineInputBorder(),
+                    ),
+                    items: _middleCategoryOptions
+                        .map((option) => DropdownMenuItem<String>(value: option, child: Text(option)))
+                        .toList(growable: false),
+                    onChanged: isBusy || _majorCategory.trim().isEmpty || _middleCategoryOptions.isEmpty
+                        ? null
+                        : _onMiddleCategoryChanged,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            DropdownButtonFormField<String>(
+              value: _minorCategory.isEmpty ? null : _minorCategory,
+              hint: Text(_minorCategoryHint),
+              disabledHint: Text(_minorCategoryHint),
+              decoration: const InputDecoration(
+                labelText: '소분류 *',
+                border: OutlineInputBorder(),
+              ),
+              items: _minorCategoryOptions
+                  .map((option) => DropdownMenuItem<String>(value: option, child: Text(option)))
+                  .toList(growable: false),
+              onChanged: isBusy || _middleCategory.trim().isEmpty || _minorCategoryOptions.isEmpty
+                  ? null
+                  : (value) => setState(() => _minorCategory = (value ?? '').trim()),
+            ),
+            const SizedBox(height: 12),
+            Row(
+              children: [
+                Expanded(
+                  child: TextField(
+                    controller: _targetPriceController,
+                    keyboardType: TextInputType.number,
+                    textInputAction: TextInputAction.next,
+                    decoration: const InputDecoration(
+                      labelText: '판매가 *',
+                      suffixText: '원',
+                      border: OutlineInputBorder(),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: TextField(
+                    controller: _costPriceController,
+                    keyboardType: TextInputType.number,
+                    textInputAction: TextInputAction.next,
+                    decoration: const InputDecoration(
+                      labelText: '원가',
+                      suffixText: '원',
+                      border: OutlineInputBorder(),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: TextField(
+                    controller: _supplyPriceController,
+                    keyboardType: TextInputType.number,
+                    textInputAction: TextInputAction.next,
+                    decoration: const InputDecoration(
+                      labelText: '공급가',
+                      suffixText: '원',
+                      border: OutlineInputBorder(),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            Row(
+              children: [
+                Expanded(
+                  child: DropdownButtonFormField<String>(
+                    value: _taxMode,
+                    decoration: const InputDecoration(
+                      labelText: '과세유무',
+                      border: OutlineInputBorder(),
+                    ),
+                    items: const [
+                      DropdownMenuItem(value: 'Y', child: Text('과세(Y)')),
+                      DropdownMenuItem(value: 'N', child: Text('면세(N)')),
+                    ],
+                    onChanged: isBusy
+                        ? null
+                        : (value) => setState(() => _taxMode = value ?? _taxMode),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: DropdownButtonFormField<String>(
+                    value: _useMode,
+                    decoration: const InputDecoration(
+                      labelText: '사용구분',
+                      border: OutlineInputBorder(),
+                    ),
+                    items: const [
+                      DropdownMenuItem(value: 'Y', child: Text('사용(Y)')),
+                      DropdownMenuItem(value: 'N', child: Text('미사용(N)')),
+                    ],
+                    onChanged: isBusy
+                        ? null
+                        : (value) => setState(() => _useMode = value ?? _useMode),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: DropdownButtonFormField<String>(
+                    value: _stockMode,
+                    decoration: const InputDecoration(
+                      labelText: '재고관리',
+                      border: OutlineInputBorder(),
+                    ),
+                    items: const [
+                      DropdownMenuItem(value: 'Y', child: Text('관리(Y)')),
+                      DropdownMenuItem(value: 'N', child: Text('미관리(N)')),
+                    ],
+                    onChanged: isBusy
+                        ? null
+                        : (value) => setState(() => _stockMode = value ?? _stockMode),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: _barcodeController,
+              keyboardType: TextInputType.number,
+              textInputAction: TextInputAction.next,
+              decoration: const InputDecoration(
+                labelText: '바코드',
+                border: OutlineInputBorder(),
+              ),
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: _descriptionController,
+              minLines: 2,
+              maxLines: 3,
+              decoration: const InputDecoration(
+                labelText: '상품설명',
+                border: OutlineInputBorder(),
+                alignLabelWithHint: true,
+              ),
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: _reasonController,
+              minLines: 2,
+              maxLines: 3,
+              decoration: const InputDecoration(
+                labelText: '메모 / 요청 사유',
+                border: OutlineInputBorder(),
+                alignLabelWithHint: true,
+              ),
+            ),
+            if (_lastPreviewMessage.isNotEmpty) ...[
+              const SizedBox(height: 12),
+              _InlineNotice(
+                backgroundColor: const Color(0xFFF0FDF4),
+                borderColor: const Color(0xFF86EFAC),
+                textColor: const Color(0xFF166534),
+                icon: Icons.check_circle_outline,
+                message: _lastPreviewMessage,
+              ),
+              if (_lastResolvedCategories.isNotEmpty) ...[
+                const SizedBox(height: 12),
+                Panel(
+                  title: '해석된 분류 코드',
+                  child: Column(
+                    children: [
+                      _InfoRow(
+                        label: '대분류',
+                        value: _categoryDisplayValue(
+                          _lastResolvedCategories['major_category']?.toString(),
+                          _lastResolvedCategories['major_code']?.toString(),
+                        ),
+                      ),
+                      _InfoRow(
+                        label: '중분류',
+                        value: _categoryDisplayValue(
+                          _lastResolvedCategories['middle_category']?.toString(),
+                          (_lastResolvedCategories['middle_code_full'] ?? _lastResolvedCategories['middle_code'])?.toString(),
+                        ),
+                      ),
+                      _InfoRow(
+                        label: '소분류',
+                        value: _categoryDisplayValue(
+                          _lastResolvedCategories['minor_category']?.toString(),
+                          (_lastResolvedCategories['minor_code_full'] ?? _lastResolvedCategories['minor_code'])?.toString(),
+                        ),
+                      ),
+                      if (_lastPreviewSavedCode.isNotEmpty)
+                        _InfoRow(label: '저장 코드', value: _lastPreviewSavedCode),
+                    ],
+                  ),
+                ),
+              ],
+            ],
+            if (_error.isNotEmpty) ...[
+              const SizedBox(height: 12),
+              Text(
+                _error,
+                style: const TextStyle(color: Color(0xFFDC2626), fontSize: 13),
+              ),
+            ],
+            if (_statusMessage.isNotEmpty) ...[
+              const SizedBox(height: 14),
+              const LinearProgressIndicator(minHeight: 3),
+              const SizedBox(height: 8),
+              Text(
+                _statusMessage,
+                style: const TextStyle(fontSize: 12, color: Color(0xFF64748B)),
+              ),
+            ],
+          ],
+        ),
+      ),
+      bottomNavigationBar: SafeArea(
+        top: false,
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
+          child: Row(
+            children: [
+              Expanded(
+                child: OutlinedButton(
+                  onPressed: isBusy ? null : () => _submit(execute: false),
+                  style: OutlinedButton.styleFrom(
+                    minimumSize: const Size(double.infinity, 50),
+                  ),
+                  child: Text(isBusy ? '처리 중...' : '미리보기'),
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: FilledButton(
+                  onPressed: isBusy ? null : _confirmAndSubmit,
+                  style: FilledButton.styleFrom(
+                    minimumSize: const Size(double.infinity, 50),
+                  ),
+                  child: Text(isBusy ? '등록 중...' : '바로 등록'),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+String _categoryDisplayValue(String? name, String? code) {
+  final normalizedName = (name ?? '').trim();
+  final normalizedCode = (code ?? '').trim();
+  if (normalizedName.isEmpty && normalizedCode.isEmpty) return '-';
+  if (normalizedCode.isEmpty) return normalizedName;
+  if (normalizedName.isEmpty) return normalizedCode;
+  return '$normalizedName ($normalizedCode)';
+}
+
 // ─── Product Card ─────────────────────────────────────────────────────────────
 
 class _ProductCard extends StatelessWidget {
   final _ProductRow product;
   final VoidCallback? onTap;
+  final VoidCallback? onInfoTap;
 
   const _ProductCard({
     required this.product,
     this.onTap,
+    this.onInfoTap,
   });
 
   @override
@@ -593,8 +1719,11 @@ class _ProductCard extends StatelessWidget {
           ].join(' · '),
           style: const TextStyle(fontSize: 12),
         ),
-        trailing: product.salePrice != null
-            ? Column(
+        trailing: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            if (product.salePrice != null)
+              Column(
                 mainAxisAlignment: MainAxisAlignment.center,
                 crossAxisAlignment: CrossAxisAlignment.end,
                 children: [
@@ -608,16 +1737,181 @@ class _ProductCard extends StatelessWidget {
                   if (onTap != null)
                     const Text(
                       '탭하여 변경',
-                      style: TextStyle(
-                          fontSize: 10, color: Color(0xFF0D9488)),
+                      style: TextStyle(fontSize: 10, color: Color(0xFF0D9488)),
                     ),
                 ],
               )
-            : onTap != null
-                ? const Text('탭하여 변경',
-                    style: TextStyle(
-                        fontSize: 11, color: Color(0xFF0D9488)))
-                : null,
+            else if (onTap != null)
+              const Text(
+                '탭하여 변경',
+                style: TextStyle(fontSize: 11, color: Color(0xFF0D9488)),
+              ),
+            if (onInfoTap != null) ...[
+              const SizedBox(width: 4),
+              IconButton(
+                onPressed: onInfoTap,
+                icon: const Icon(Icons.info_outline, size: 18),
+                visualDensity: VisualDensity.compact,
+                color: const Color(0xFF64748B),
+                tooltip: '상세 보기',
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _ProductRegistrationDetailScreen extends StatefulWidget {
+  final _ProductRow product;
+  final AppState appState;
+  final void Function(_ProductRow product) onQuickPriceChange;
+
+  const _ProductRegistrationDetailScreen({
+    required this.product,
+    required this.appState,
+    required this.onQuickPriceChange,
+  });
+
+  @override
+  State<_ProductRegistrationDetailScreen> createState() => _ProductRegistrationDetailScreenState();
+}
+
+class _ProductRegistrationDetailScreenState extends State<_ProductRegistrationDetailScreen> {
+  ProductRegistrationLookup? _lookup;
+  bool _isLoading = true;
+  String _error = '';
+
+  @override
+  void initState() {
+    super.initState();
+    unawaited(_load());
+  }
+
+  Future<void> _load({bool force = false}) async {
+    final itemCode = widget.product.itemCode.trim();
+    if (itemCode.isEmpty) {
+      setState(() {
+        _lookup = null;
+        _isLoading = false;
+        _error = '상품코드가 없어 상품등록 상세를 불러올 수 없습니다.';
+      });
+      return;
+    }
+    setState(() {
+      _isLoading = true;
+      _error = '';
+    });
+    try {
+      final response = await widget.appState.fetchMapParsed(
+        '/api/menu-workspace/product-registration/${Uri.encodeComponent(itemCode)}',
+        params: {'compact': 'false', 'refresh': force ? 'true' : 'false'},
+        parser: ProductRegistrationLookup.fromJson,
+        cacheTtl: force ? Duration.zero : const Duration(minutes: 10),
+      );
+      if (!mounted) return;
+      setState(() {
+        _lookup = response.data;
+        _isLoading = false;
+      });
+    } catch (error) {
+      if (!mounted) return;
+      setState(() {
+        _error = error.toString();
+        _isLoading = false;
+      });
+    }
+  }
+
+  Map<String, dynamic> get _row {
+    final lookupRow = _lookup?.row;
+    return lookupRow?.isNotEmpty == true ? lookupRow! : widget.product.raw;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final canEdit = widget.appState.hasOperatorAccess;
+    final itemCode = widget.product.itemCode.trim();
+    final source = (_lookup?.source ?? '').isNotEmpty ? _lookup!.source : 'cache';
+    final syncedAt = _lookup?.syncedAt ?? '';
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('상품등록 상세'),
+        actions: [
+          IconButton(
+            onPressed: _isLoading ? null : () => _load(force: true),
+            icon: const Icon(Icons.refresh),
+            tooltip: '새로고침',
+          ),
+        ],
+      ),
+      body: SafeArea(
+        child: ListView(
+          padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
+          children: [
+            Panel(
+              title: widget.product.itemName,
+              subtitle: itemCode.isEmpty ? '상품코드 없음' : itemCode,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  _WorkspaceInfoStrip(
+                    title: '조회 상태',
+                    loading: _isLoading,
+                    error: _error,
+                    summary: _lookup == null
+                        ? '조회 데이터 없음'
+                        : '${_lookup!.found ? '조회 완료' : '미발견'} · ${source.toUpperCase()} · ${_freshnessLabel(syncedAt)}',
+                    trailing: canEdit && itemCode.isNotEmpty
+                        ? FilledButton.icon(
+                            onPressed: () => widget.onQuickPriceChange(widget.product),
+                            icon: const Icon(Icons.price_change_outlined, size: 16),
+                            label: const Text('가격 변경'),
+                          )
+                        : null,
+                  ),
+                  const SizedBox(height: 12),
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    children: [
+                      _TinyMetricChip(label: '상품명', value: _lookupValue(widget.product.itemName), accent: true),
+                      _TinyMetricChip(label: '코드', value: _lookupValue(itemCode)),
+                      _TinyMetricChip(label: '판매가', value: widget.product.salePrice == null ? '-' : '${_won(widget.product.salePrice!)}원'),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 12),
+            Panel(
+              title: '상세 정보',
+              subtitle: '상품등록 화면의 값을 그대로 보여줍니다.',
+              child: Column(
+                children: [
+                  for (final field in _lookupDetailFields)
+                    _InfoRow(
+                      label: field.label,
+                      value: field.money ? _lookupMoney(_row[field.key]?.toString()) : _lookupValue(_row[field.key]?.toString()),
+                    ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 12),
+            Panel(
+              title: '원본 메타데이터',
+              child: Column(
+                children: [
+                  _InfoRow(label: 'source', value: _lookupValue(_lookup?.source)),
+                  _InfoRow(label: 'synced_at', value: _lookupValue(_lookup?.syncedAt)),
+                  _InfoRow(label: 'found', value: _lookup?.found == true ? 'true' : 'false'),
+                  _InfoRow(label: '상품코드', value: _lookupValue(_lookup?.productCode)),
+                ],
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -628,13 +1922,11 @@ class _ProductCard extends StatelessWidget {
 class _QuickPriceChangeSheet extends StatefulWidget {
   final _ProductRow product;
   final AppState appState;
-  final VoidCallback onCreated;
   final Future<void> Function()? onDirectApplied;
 
   const _QuickPriceChangeSheet({
     required this.product,
     required this.appState,
-    required this.onCreated,
     this.onDirectApplied,
   });
 
@@ -643,11 +1935,9 @@ class _QuickPriceChangeSheet extends StatefulWidget {
       _QuickPriceChangeSheetState();
 }
 
-class _QuickPriceChangeSheetState
-    extends State<_QuickPriceChangeSheet> {
+class _QuickPriceChangeSheetState extends State<_QuickPriceChangeSheet> {
   final _targetController = TextEditingController();
   final _notesController = TextEditingController();
-  bool _isSubmitting = false;
   bool _isDirectApplying = false;
   String _error = '';
 
@@ -658,67 +1948,15 @@ class _QuickPriceChangeSheetState
     super.dispose();
   }
 
-  Future<void> _submit() async {
-    final targetText =
-        _targetController.text.replaceAll(',', '');
-    final targetPrice = int.tryParse(targetText);
-
-    if (targetPrice == null || targetPrice < 0) {
-      setState(() => _error = '변경할 가격을 올바르게 입력하세요.');
-      return;
-    }
-
-    setState(() {
-      _isSubmitting = true;
-      _error = '';
-    });
-
-    try {
-      final body = <String, dynamic>{
-        'item_name': widget.product.itemName,
-        'target_price': targetPrice,
-      };
-      if (widget.product.itemCode.isNotEmpty) {
-        body['item_code'] = widget.product.itemCode;
-      }
-      if (widget.product.salePrice != null) {
-        body['current_price'] = widget.product.salePrice;
-      }
-      final notes = _notesController.text.trim();
-      if (notes.isNotEmpty) body['notes'] = notes;
-
-      final result = await widget.appState
-          .postJson('/api/menu-workspace/price-change', body: body);
-      // 자동으로 '준비완료(ready)' 상태로 승격 → apply-ready 배너 즉시 활성화
-      final entryId = result['id'];
-      if (entryId is int) {
-        await widget.appState.postJson(
-          '/api/menu-workspace/entries/$entryId',
-          body: {'status': 'ready'},
-          method: 'PATCH',
-        );
-      }
-      if (!mounted) return;
-      widget.onCreated();
-    } catch (e) {
-      if (!mounted) return;
-      setState(() {
-        _error = e.toString();
-        _isSubmitting = false;
-      });
-    }
-  }
-
-  Future<Map<String, dynamic>> _pollBrowserApplyTask(String taskId) async {
+  Future<BrowserPriceApplyTask> _pollBrowserApplyTask(String taskId) async {
     for (var attempt = 0; attempt < 80; attempt++) {
-      final response = await widget.appState.fetchMapParsed<Map<String, dynamic>>(
+      final response = await widget.appState.fetchMapParsed<BrowserPriceApplyTask>(
         '/api/price/browser-apply/$taskId',
-        parser: (j) => j,
+        parser: BrowserPriceApplyTask.fromJson,
         cacheTtl: Duration.zero,
       );
       final task = response.data;
-      final status = (task['status'] ?? '').toString();
-      if (status == 'succeeded' || status == 'failed') {
+      if (task.isFinished) {
         return task;
       }
       await Future.delayed(const Duration(seconds: 3));
@@ -759,7 +1997,7 @@ class _QuickPriceChangeSheetState
           'reason': reason.isNotEmpty ? reason : 'mobile-browser-apply',
         },
       );
-      final taskId = (started['task_id'] ?? '').toString().trim();
+      final taskId = AsyncTaskStartResponse.fromJson(started).taskId.trim();
       if (taskId.isEmpty) {
         throw const ApiException('가격 변경 작업 ID를 받지 못했습니다.');
       }
@@ -767,19 +2005,16 @@ class _QuickPriceChangeSheetState
       final task = await _pollBrowserApplyTask(taskId);
       if (!mounted) return;
 
-      final taskStatus = (task['status'] ?? '').toString();
-      final rawResult = task['result'];
-      final taskResult = rawResult is Map<String, dynamic>
-          ? rawResult
-          : rawResult is Map
-              ? Map<String, dynamic>.from(rawResult)
-              : <String, dynamic>{};
-      final resultStatus = (taskResult['status'] ?? '').toString();
-      final itemName = (taskResult['item_name'] ?? widget.product.itemName)
-          .toString()
+      final taskStatus = task.status;
+      final taskResult = task.result;
+      final resultStatus = taskResult?.status ?? '';
+      final itemName = (taskResult?.itemName.isNotEmpty == true
+              ? taskResult!.itemName
+              : widget.product.itemName)
           .trim();
-      final message = (taskResult['message'] ?? task['error_message'] ?? '')
-          .toString()
+      final message = (taskResult?.message.isNotEmpty == true
+              ? taskResult!.message
+              : task.errorMessage)
           .trim();
 
       if (taskStatus == 'succeeded' && resultStatus == 'applied') {
@@ -816,169 +2051,144 @@ class _QuickPriceChangeSheetState
   @override
   Widget build(BuildContext context) {
     final p = widget.product;
-    final isBusy = _isSubmitting || _isDirectApplying;
-    return Padding(
-      padding: EdgeInsets.fromLTRB(
-          16,
-          20,
-          16,
-          MediaQuery.of(context).viewInsets.bottom + 32),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Row(
-            children: [
-              const Icon(Icons.price_change_outlined,
-                  color: Color(0xFF0D9488), size: 22),
-              const SizedBox(width: 8),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      p.itemName,
-                      style: const TextStyle(
-                          fontWeight: FontWeight.w800,
-                          fontSize: 16),
-                    ),
-                    if (p.itemCode.isNotEmpty)
-                      Text(p.itemCode,
+    final isBusy = _isDirectApplying;
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('가격 변경'),
+        bottom: PreferredSize(
+          preferredSize: const Size.fromHeight(1),
+          child: Container(height: 1, color: const Color(0xFFE2E8F0)),
+        ),
+      ),
+      body: SafeArea(
+        child: ListView(
+          padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
+          children: [
+            Row(
+              children: [
+                const Icon(Icons.price_change_outlined,
+                    color: Color(0xFF0D9488), size: 22),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        p.itemName,
+                        style: const TextStyle(
+                            fontWeight: FontWeight.w800, fontSize: 18),
+                      ),
+                      if (p.itemCode.isNotEmpty)
+                        Text(
+                          p.itemCode,
                           style: const TextStyle(
-                              fontSize: 12,
+                            fontSize: 12,
+                            color: Color(0xFF64748B),
+                          ),
+                        ),
+                    ],
+                  ),
+                ),
+                if (p.salePrice != null)
+                  Column(
+                    crossAxisAlignment: CrossAxisAlignment.end,
+                    children: [
+                      const Text('현재가',
+                          style: TextStyle(
+                              fontSize: 11,
                               color: Color(0xFF64748B))),
-                  ],
+                      Text(
+                        '${_won(p.salePrice!)}원',
+                        style: const TextStyle(
+                            fontWeight: FontWeight.w700,
+                            fontSize: 18,
+                            color: Color(0xFF0F172A)),
+                      ),
+                    ],
+                  ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            if (p.itemCode.isEmpty)
+              const _InlineNotice(
+                backgroundColor: Color(0xFFFEF3C7),
+                borderColor: Color(0xFFF59E0B),
+                textColor: Color(0xFF92400E),
+                icon: Icons.warning_amber_outlined,
+                message: '이 상품은 POS 상품코드가 없어 POS 즉시 적용을 실행할 수 없습니다.',
+              ),
+            if (p.isLikelyOption) ...[
+              if (p.itemCode.isEmpty) const SizedBox(height: 10),
+              const _InlineNotice(
+                backgroundColor: Color(0xFFFFF7ED),
+                borderColor: Color(0xFFF59E0B),
+                textColor: Color(0xFF9A3412),
+                icon: Icons.info_outline,
+                message: '옵션/부가 항목처럼 보여 POS 직접 적용이 실패할 수 있습니다. 웹과 같은 Selenium 경로로 요청해도 POS 검색 결과에 없으면 적용되지 않습니다.',
+              ),
+            ],
+            const SizedBox(height: 16),
+            TextField(
+              controller: _targetController,
+              keyboardType: TextInputType.number,
+              autofocus: true,
+              decoration: InputDecoration(
+                labelText: '변경할 가격 *',
+                suffixText: '원',
+                border: const OutlineInputBorder(),
+                hintText:
+                    p.salePrice != null ? '현재 ${_won(p.salePrice!)}원' : null,
+              ),
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: _notesController,
+              minLines: 2,
+              maxLines: 4,
+              decoration: const InputDecoration(
+                labelText: '메모 (선택)',
+                border: OutlineInputBorder(),
+                alignLabelWithHint: true,
+              ),
+            ),
+            if (_error.isNotEmpty) ...[
+              const SizedBox(height: 10),
+              Text(
+                _error,
+                style: const TextStyle(color: Color(0xFFDC2626), fontSize: 13),
+              ),
+            ],
+            if (_isDirectApplying) ...[
+              const SizedBox(height: 14),
+              const LinearProgressIndicator(minHeight: 3),
+              const SizedBox(height: 8),
+              const Text(
+                '웹과 동일한 헤드리스 Selenium 경로로 POS 가격 변경을 실행 중입니다. 최대 1~2분 정도 걸릴 수 있습니다.',
+                style: TextStyle(fontSize: 12, color: Color(0xFF64748B)),
+              ),
+            ],
+          ],
+        ),
+      ),
+      bottomNavigationBar: SafeArea(
+        top: false,
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              FilledButton.icon(
+                onPressed: isBusy || p.itemCode.isEmpty ? null : _applyDirectly,
+                icon: const Icon(Icons.rocket_launch_outlined),
+                label: Text(_isDirectApplying ? 'POS 적용 중...' : 'POS에 즉시 적용'),
+                style: FilledButton.styleFrom(
+                  backgroundColor: const Color(0xFF1D4ED8),
+                  minimumSize: const Size(double.infinity, 50),
                 ),
               ),
-              if (p.salePrice != null)
-                Column(
-                  crossAxisAlignment: CrossAxisAlignment.end,
-                  children: [
-                    const Text('현재가',
-                        style: TextStyle(
-                            fontSize: 11,
-                            color: Color(0xFF64748B))),
-                    Text(
-                      '${_won(p.salePrice!)}원',
-                      style: const TextStyle(
-                          fontWeight: FontWeight.w700,
-                          fontSize: 18,
-                          color: Color(0xFF0F172A)),
-                    ),
-                  ],
-                ),
             ],
           ),
-          const SizedBox(height: 4),
-          const Divider(),
-          // 상품코드 없음 경고
-          if (p.itemCode.isEmpty)
-            Container(
-              margin: const EdgeInsets.only(bottom: 8),
-              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-              decoration: BoxDecoration(
-                color: const Color(0xFFFEF3C7),
-                border: Border.all(color: const Color(0xFFF59E0B)),
-                borderRadius: BorderRadius.circular(6),
-              ),
-              child: const Row(
-                children: [
-                  Icon(Icons.warning_amber_outlined,
-                      size: 16, color: Color(0xFF92400E)),
-                  SizedBox(width: 6),
-                  Expanded(
-                    child: Text(
-                      '이 상품은 POS 상품코드가 없어 등록은 되지만 POS에 자동 적용할 수 없습니다.',
-                      style: TextStyle(
-                          fontSize: 12, color: Color(0xFF92400E)),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          if (p.isLikelyOption)
-            Container(
-              margin: const EdgeInsets.only(bottom: 8),
-              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-              decoration: BoxDecoration(
-                color: const Color(0xFFFFF7ED),
-                border: Border.all(color: const Color(0xFFF59E0B)),
-                borderRadius: BorderRadius.circular(6),
-              ),
-              child: const Row(
-                children: [
-                  Icon(Icons.info_outline,
-                      size: 16, color: Color(0xFF9A3412)),
-                  SizedBox(width: 6),
-                  Expanded(
-                    child: Text(
-                      '옵션/부가 항목처럼 보여 POS 직접 적용이 실패할 수 있습니다. 웹과 같은 Selenium 경로로 요청해도 POS 검색 결과에 없으면 적용되지 않습니다.',
-                      style: TextStyle(
-                          fontSize: 12, color: Color(0xFF9A3412)),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          const SizedBox(height: 12),
-          TextField(
-            controller: _targetController,
-            keyboardType: TextInputType.number,
-            autofocus: true,
-            decoration: InputDecoration(
-              labelText: '변경할 가격 *',
-              suffixText: '원',
-              border: const OutlineInputBorder(),
-              hintText:
-                  p.salePrice != null ? '현재 ${_won(p.salePrice!)}원' : null,
-            ),
-          ),
-          const SizedBox(height: 10),
-          TextField(
-            controller: _notesController,
-            decoration: const InputDecoration(
-              labelText: '메모 (선택)',
-              border: OutlineInputBorder(),
-              isDense: true,
-            ),
-          ),
-          if (_error.isNotEmpty) ...[
-            const SizedBox(height: 8),
-            Text(_error,
-                style: const TextStyle(
-                    color: Color(0xFFDC2626), fontSize: 13)),
-          ],
-          if (_isDirectApplying) ...[
-            const SizedBox(height: 12),
-            const LinearProgressIndicator(minHeight: 3),
-            const SizedBox(height: 8),
-            const Text(
-              '웹과 동일한 헤드리스 Selenium 경로로 POS 가격 변경을 실행 중입니다. 최대 1~2분 정도 걸릴 수 있습니다.',
-              style: TextStyle(fontSize: 12, color: Color(0xFF64748B)),
-            ),
-          ],
-          const SizedBox(height: 16),
-          FilledButton.icon(
-            onPressed: isBusy || p.itemCode.isEmpty ? null : _applyDirectly,
-            icon: const Icon(Icons.rocket_launch_outlined),
-            label: Text(_isDirectApplying ? 'POS 적용 중...' : 'POS에 즉시 적용'),
-            style: FilledButton.styleFrom(
-              backgroundColor: const Color(0xFF1D4ED8),
-              padding: const EdgeInsets.symmetric(vertical: 14),
-            ),
-          ),
-          const SizedBox(height: 10),
-          OutlinedButton.icon(
-            onPressed: isBusy ? null : _submit,
-            icon: const Icon(Icons.check_circle_outline),
-            label: Text(_isSubmitting ? '등록 중...' : '작업 목록에 등록'),
-            style: OutlinedButton.styleFrom(
-              foregroundColor: const Color(0xFF0D9488),
-              side: const BorderSide(color: Color(0xFF0D9488)),
-              padding: const EdgeInsets.symmetric(vertical: 14),
-            ),
-          ),
-        ],
+        ),
       ),
     );
   }
@@ -986,7 +2196,7 @@ class _QuickPriceChangeSheetState
 
 // ─── Entry Detail Screen ──────────────────────────────────────────────────────
 
-class MenuEntryDetailScreen extends StatelessWidget {
+class MenuEntryDetailScreen extends StatefulWidget {
   final MenuEntry entry;
   final VoidCallback? onUpdated;
 
@@ -994,10 +2204,115 @@ class MenuEntryDetailScreen extends StatelessWidget {
       {super.key, required this.entry, this.onUpdated});
 
   @override
+  State<MenuEntryDetailScreen> createState() => _MenuEntryDetailScreenState();
+}
+
+class _MenuEntryDetailScreenState extends State<MenuEntryDetailScreen> {
+  bool _isDeleting = false;
+
+  Future<WorkspaceTaskHistoryEntry> _pollDeleteTask(String taskId) async {
+    final appState = context.read<AppState>();
+    for (var attempt = 0; attempt < 80; attempt++) {
+      final response = await appState.fetchMapParsed<WorkspaceTaskHistoryEntry>(
+        '/api/menu-workspace/item-delete/$taskId',
+        parser: WorkspaceTaskHistoryEntry.fromJson,
+        cacheTtl: Duration.zero,
+      );
+      final task = response.data;
+      if (task.status == 'succeeded' || task.status == 'failed') {
+        return task;
+      }
+      await Future.delayed(const Duration(seconds: 3));
+    }
+    throw const ApiException('신규 메뉴 삭제 작업 응답이 지연되고 있습니다. 잠시 후 다시 확인해 주세요.');
+  }
+
+  Future<void> _deleteNewItem() async {
+    final entry = widget.entry;
+    final appState = context.read<AppState>();
+    final messenger = ScaffoldMessenger.of(context);
+    final itemCode = entry.itemCode.trim();
+    if (itemCode.isEmpty) {
+      messenger.showSnackBar(const SnackBar(content: Text('삭제할 상품코드가 없습니다.')));
+      return;
+    }
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('신규 메뉴 삭제'),
+        content: Text('${entry.itemName} ($itemCode)를 EasyPOS에서 삭제할까요?'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(false),
+            child: const Text('취소'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(dialogContext).pop(true),
+            style: FilledButton.styleFrom(backgroundColor: const Color(0xFFB91C1C)),
+            child: const Text('삭제'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+
+    setState(() => _isDeleting = true);
+    try {
+      final started = await appState.postJson(
+        '/api/menu-workspace/item-delete',
+        body: {
+          'product_code': itemCode,
+          'execute': true,
+          'reason': 'mobile-workspace-delete:${entry.id}',
+        },
+      );
+      final taskId = AsyncTaskStartResponse.fromJson(started).taskId.trim();
+      if (taskId.isEmpty) {
+        throw const ApiException('신규 메뉴 삭제 작업 ID를 받지 못했습니다.');
+      }
+      final task = await _pollDeleteTask(taskId);
+      final message = task.resultMessage.trim().isNotEmpty
+          ? task.resultMessage.trim()
+          : (task.errorMessage.trim().isNotEmpty ? task.errorMessage.trim() : '삭제 결과를 확인해 주세요.');
+      final success = task.status == 'succeeded' && task.resultStatus == 'deleted';
+      if (!success) {
+        throw ApiException(message);
+      }
+
+      await appState.postJson(
+        '/api/menu-workspace/entries/${entry.id}',
+        method: 'PATCH',
+        body: {'status': 'reviewed', 'item_code': ''},
+      );
+      if (!mounted) return;
+      widget.onUpdated?.call();
+      Navigator.of(context).pop();
+      messenger.showSnackBar(
+        SnackBar(
+          content: Text(message),
+          backgroundColor: const Color(0xFF0D9488),
+          duration: const Duration(seconds: 4),
+        ),
+      );
+    } catch (error) {
+      if (!mounted) return;
+      messenger.showSnackBar(
+        SnackBar(content: Text(error.toString().replaceFirst('Exception: ', ''))),
+      );
+      setState(() => _isDeleting = false);
+      return;
+    }
+    if (mounted) {
+      setState(() => _isDeleting = false);
+    }
+  }
+
+  @override
   Widget build(BuildContext context) {
-    final e = entry;
+    final e = widget.entry;
     final appState = context.read<AppState>();
     final canEdit = appState.hasOperatorAccess;
+    final canDeleteNewItem = canEdit && e.kind == 'new_item' && e.status == 'done' && e.itemCode.trim().isNotEmpty;
 
     return Scaffold(
       appBar: AppBar(
@@ -1012,6 +2327,17 @@ class MenuEntryDetailScreen extends StatelessWidget {
             IconButton(
               icon: const Icon(Icons.edit_outlined),
               onPressed: () => _showStatusSheet(context, e),
+            ),
+          if (canDeleteNewItem)
+            IconButton(
+              icon: _isDeleting
+                  ? const SizedBox(
+                      width: 18,
+                      height: 18,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : const Icon(Icons.delete_outline),
+              onPressed: _isDeleting ? null : _deleteNewItem,
             ),
         ],
       ),
@@ -1037,9 +2363,17 @@ class MenuEntryDetailScreen extends StatelessWidget {
                       value: _statusLabel(e.status)),
                   _InfoRow(
                       label: '종류', value: _kindLabel(e.kind)),
+                  _InfoRow(label: '단위', value: e.unitName.isEmpty ? '-' : e.unitName),
+                  _InfoRow(label: '과세', value: e.taxMode.isEmpty ? '-' : e.taxMode),
+                  _InfoRow(label: '사용', value: e.useMode.isEmpty ? '-' : e.useMode),
+                  _InfoRow(label: '재고', value: e.stockMode.isEmpty ? '-' : e.stockMode),
+                  _InfoRow(label: '바코드', value: e.barcode.isEmpty ? '-' : e.barcode),
+                  _InfoRow(label: '상품설명', value: e.description.isEmpty ? '-' : e.description),
                   _InfoRow(
                       label: '출처',
                       value: e.source.isEmpty ? '-' : e.source),
+                  _InfoRow(label: '생성', value: e.createdAt.isEmpty ? '-' : e.createdAt),
+                  _InfoRow(label: '수정', value: e.updatedAt.isEmpty ? '-' : e.updatedAt),
                 ],
               ),
             ),
@@ -1085,15 +2419,15 @@ class MenuEntryDetailScreen extends StatelessWidget {
 
   void _showStatusSheet(BuildContext context, MenuEntry e) {
     final appState = context.read<AppState>();
-    showModalBottomSheet(
-      context: context,
-      builder: (_) => _StatusUpdateSheet(
-        entry: e,
-        appState: appState,
-        onUpdated: () {
-          Navigator.of(context).pop();
-          onUpdated?.call();
-        },
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => _StatusUpdateSheet(
+          entry: e,
+          appState: appState,
+          onUpdated: () {
+            widget.onUpdated?.call();
+          },
+        ),
       ),
     );
   }
@@ -1158,6 +2492,7 @@ class _StatusUpdateSheetState extends State<_StatusUpdateSheet> {
         method: 'PATCH',
       );
       if (!mounted) return;
+      Navigator.of(context).pop();
       widget.onUpdated();
     } catch (e) {
       if (!mounted) return;
@@ -1170,68 +2505,359 @@ class _StatusUpdateSheetState extends State<_StatusUpdateSheet> {
 
   @override
   Widget build(BuildContext context) {
-    const statuses = ['draft', 'reviewed', 'ready', 'done'];
-    const labels = ['작성중', '검토됨', '준비완료', '완료'];
+    const statuses = ['draft', 'reviewed', 'ready', 'done', 'archived'];
+    const labels = ['작성중', '검토됨', '준비완료', '완료', '보관'];
 
-    return Padding(
-      padding: EdgeInsets.fromLTRB(
-          16,
-          20,
-          16,
-          MediaQuery.of(context).viewInsets.bottom + 32),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Text(
-            '편집: ${widget.entry.itemName}',
-            style: const TextStyle(
-                fontWeight: FontWeight.w700, fontSize: 16),
-          ),
-          const SizedBox(height: 12),
-          RadioGroup<String>(
-            groupValue: _selectedStatus,
-            onChanged: (v) =>
-                setState(() => _selectedStatus = v ?? _selectedStatus),
-            child: Column(
-              children: List.generate(statuses.length, (i) {
-                return RadioListTile<String>(
-                  title: Text(labels[i]),
-                  value: statuses[i],
-                  contentPadding: EdgeInsets.zero,
-                  dense: true,
-                );
-              }),
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('항목 편집'),
+        bottom: PreferredSize(
+          preferredSize: const Size.fromHeight(1),
+          child: Container(height: 1, color: const Color(0xFFE2E8F0)),
+        ),
+      ),
+      body: SafeArea(
+        child: ListView(
+          padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
+          children: [
+            Text(
+              widget.entry.itemName,
+              style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 20),
             ),
-          ),
-          if (widget.entry.kind == 'price_update') ...[
-            const SizedBox(height: 8),
-            TextField(
-              controller: _targetPriceController,
-              keyboardType: TextInputType.number,
-              decoration: const InputDecoration(
-                labelText: '목표 가격 (원)',
-                border: OutlineInputBorder(),
-                isDense: true,
+            const SizedBox(height: 16),
+            RadioGroup<String>(
+              groupValue: _selectedStatus,
+              onChanged: (v) => setState(() => _selectedStatus = v ?? _selectedStatus),
+              child: Column(
+                children: List.generate(statuses.length, (i) {
+                  return RadioListTile<String>(
+                    title: Text(labels[i]),
+                    value: statuses[i],
+                    contentPadding: EdgeInsets.zero,
+                    dense: true,
+                  );
+                }),
               ),
-              onChanged: (v) {
-                final parsed =
-                    int.tryParse(v.replaceAll(',', ''));
-                setState(() => _newTargetPrice = parsed);
-              },
             ),
+            if (widget.entry.kind == 'price_update') ...[
+              const SizedBox(height: 12),
+              TextField(
+                controller: _targetPriceController,
+                keyboardType: TextInputType.number,
+                decoration: const InputDecoration(
+                  labelText: '목표 가격 (원)',
+                  border: OutlineInputBorder(),
+                ),
+                onChanged: (v) {
+                  final parsed = int.tryParse(v.replaceAll(',', ''));
+                  setState(() => _newTargetPrice = parsed);
+                },
+              ),
+            ],
+            if (_error.isNotEmpty) ...[
+              const SizedBox(height: 10),
+              Text(
+                _error,
+                style: const TextStyle(color: Color(0xFFDC2626), fontSize: 13),
+              ),
+            ],
           ],
-          if (_error.isNotEmpty) ...[
-            const SizedBox(height: 8),
-            Text(_error,
-                style: const TextStyle(
-                    color: Color(0xFFDC2626), fontSize: 13)),
-          ],
-          const SizedBox(height: 12),
-          FilledButton(
+        ),
+      ),
+      bottomNavigationBar: SafeArea(
+        top: false,
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
+          child: FilledButton(
             onPressed: _isSubmitting ? null : _submit,
+            style: FilledButton.styleFrom(
+              minimumSize: const Size(double.infinity, 50),
+            ),
             child: Text(_isSubmitting ? '저장 중...' : '저장'),
           ),
+        ),
+      ),
+    );
+  }
+}
+
+class _InlineNotice extends StatelessWidget {
+  final Color backgroundColor;
+  final Color borderColor;
+  final Color textColor;
+  final IconData icon;
+  final String message;
+
+  const _InlineNotice({
+    required this.backgroundColor,
+    required this.borderColor,
+    required this.textColor,
+    required this.icon,
+    required this.message,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      decoration: BoxDecoration(
+        color: backgroundColor,
+        border: Border.all(color: borderColor),
+        borderRadius: BorderRadius.circular(10),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(icon, size: 16, color: textColor),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              message,
+              style: TextStyle(fontSize: 12, color: textColor),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _WorkspaceInfoStrip extends StatelessWidget {
+  final String title;
+  final bool loading;
+  final String error;
+  final String summary;
+  final Widget? trailing;
+
+  const _WorkspaceInfoStrip({
+    required this.title,
+    required this.loading,
+    required this.error,
+    required this.summary,
+    this.trailing,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final color = error.isNotEmpty ? const Color(0xFF9A3412) : const Color(0xFF0F172A);
+    final background = error.isNotEmpty ? const Color(0xFFFFF7ED) : const Color(0xFFF8FAFC);
+    final border = error.isNotEmpty ? const Color(0xFFFCD34D) : const Color(0xFFE2E8F0);
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: background,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: border),
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 8,
+            height: 8,
+            decoration: BoxDecoration(
+              color: loading
+                  ? const Color(0xFF0EA5E9)
+                  : error.isNotEmpty
+                      ? const Color(0xFFF59E0B)
+                      : const Color(0xFF0D9488),
+              shape: BoxShape.circle,
+            ),
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(title, style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w700)),
+                const SizedBox(height: 2),
+                Text(
+                  error.isNotEmpty ? error : summary,
+                  style: TextStyle(fontSize: 12, color: color),
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ],
+            ),
+          ),
+          if (trailing != null) trailing!,
+        ],
+      ),
+    );
+  }
+}
+
+class _TinyMetricChip extends StatelessWidget {
+  final String label;
+  final String value;
+  final bool accent;
+
+  const _TinyMetricChip({
+    required this.label,
+    required this.value,
+    this.accent = false,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+      decoration: BoxDecoration(
+        color: accent ? const Color.fromRGBO(13, 148, 136, 0.08) : const Color(0xFFF8FAFC),
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: accent ? const Color(0xFF0D9488) : const Color(0xFFE2E8F0)),
+      ),
+      child: Text('$label $value', style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w600)),
+    );
+  }
+}
+
+class _TaskHistoryHeader extends StatelessWidget {
+  final String label;
+  final bool loading;
+  final String error;
+  final int count;
+  final VoidCallback onRefresh;
+
+  const _TaskHistoryHeader({
+    required this.label,
+    required this.loading,
+    required this.error,
+    required this.count,
+    required this.onRefresh,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      children: [
+        Text(label, style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700)),
+        const SizedBox(width: 6),
+        Text('($count)', style: const TextStyle(fontSize: 11, color: Color(0xFF64748B))),
+        const Spacer(),
+        if (error.isNotEmpty)
+          const Icon(Icons.error_outline, size: 16, color: Color(0xFFDC2626)),
+        if (loading) ...[
+          const SizedBox(width: 8),
+          const SizedBox(
+            width: 14,
+            height: 14,
+            child: CircularProgressIndicator(strokeWidth: 2),
+          ),
+        ],
+        const SizedBox(width: 4),
+        IconButton(
+          onPressed: onRefresh,
+          icon: const Icon(Icons.refresh, size: 16),
+          visualDensity: VisualDensity.compact,
+        ),
+      ],
+    );
+  }
+}
+
+class _PriceApplyRunTile extends StatelessWidget {
+  final PriceApplyRun run;
+
+  const _PriceApplyRunTile({required this.run});
+
+  @override
+  Widget build(BuildContext context) {
+    final ok = run.status == 'succeeded';
+    return Container(
+      margin: const EdgeInsets.only(bottom: 8),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF8FAFC),
+        border: Border.all(color: const Color(0xFFE2E8F0)),
+        borderRadius: BorderRadius.circular(10),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  run.taskId,
+                  style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w700),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+              const SizedBox(width: 8),
+              Text(
+                run.status,
+                style: TextStyle(
+                  fontSize: 11,
+                  fontWeight: FontWeight.w700,
+                  color: ok ? const Color(0xFF16A34A) : const Color(0xFFDC2626),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 4),
+          Text(
+            '총 ${run.totalItems} · 적용 ${run.appliedCount} · 실패 ${run.failedCount}',
+            style: const TextStyle(fontSize: 11, color: Color(0xFF64748B)),
+          ),
+          if (run.errorMessage.isNotEmpty) ...[
+            const SizedBox(height: 4),
+            Text(run.errorMessage, style: const TextStyle(fontSize: 11, color: Color(0xFFB45309))),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+class _TaskHistoryTile extends StatelessWidget {
+  final WorkspaceTaskHistoryEntry task;
+
+  const _TaskHistoryTile({required this.task});
+
+  @override
+  Widget build(BuildContext context) {
+    final ok = task.resultStatus == 'applied' || task.status == 'succeeded';
+    return Container(
+      margin: const EdgeInsets.only(bottom: 8),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF8FAFC),
+        border: Border.all(color: const Color(0xFFE2E8F0)),
+        borderRadius: BorderRadius.circular(10),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  task.displayTitle,
+                  style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w700),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+              const SizedBox(width: 8),
+              Text(
+                task.status,
+                style: TextStyle(
+                  fontSize: 11,
+                  fontWeight: FontWeight.w700,
+                  color: ok ? const Color(0xFF16A34A) : const Color(0xFFDC2626),
+                ),
+              ),
+            ],
+          ),
+          if (task.displaySubtitle.isNotEmpty) ...[
+            const SizedBox(height: 4),
+            Text(task.displaySubtitle, style: const TextStyle(fontSize: 11, color: Color(0xFF64748B))),
+          ],
+          if (task.resultMessage.isNotEmpty) ...[
+            const SizedBox(height: 4),
+            Text(task.resultMessage, style: const TextStyle(fontSize: 11, color: Color(0xFF0F172A))),
+          ],
         ],
       ),
     );
@@ -1286,6 +2912,12 @@ class _FilterBar extends StatelessWidget {
           _FilterChipWidget(
               label: '완료',
               value: 'done',
+              groupValue: filterStatus,
+              onSelected: onStatusChanged),
+            const SizedBox(width: 6),
+            _FilterChipWidget(
+              label: '보관',
+              value: 'archived',
               groupValue: filterStatus,
               onSelected: onStatusChanged),
           const SizedBox(width: 16),
@@ -1343,8 +2975,13 @@ class _FilterChipWidget extends StatelessWidget {
 class _MenuEntryCard extends StatelessWidget {
   final MenuEntry entry;
   final VoidCallback onTap;
+  final List<String> issues;
 
-  const _MenuEntryCard({required this.entry, required this.onTap});
+  const _MenuEntryCard({
+    required this.entry,
+    required this.onTap,
+    this.issues = const [],
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -1363,19 +3000,49 @@ class _MenuEntryCard extends StatelessWidget {
             _KindBadge(kind: e.kind),
           ],
         ),
-        subtitle: Text(
-          e.itemCode.isEmpty
-              ? e.categoryHint
-              : '${e.itemCode}${e.categoryHint.isNotEmpty ? ' · ${e.categoryHint}' : ''}',
+        subtitle: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              e.itemCode.isEmpty
+                  ? e.categoryHint
+                  : '${e.itemCode}${e.categoryHint.isNotEmpty ? ' · ${e.categoryHint}' : ''}',
+            ),
+            if (issues.isNotEmpty) ...[
+              const SizedBox(height: 6),
+              Wrap(
+                spacing: 6,
+                runSpacing: 6,
+                children: issues.take(2).map((issue) {
+                  return Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFFFF7ED),
+                      border: Border.all(color: const Color(0xFFF59E0B)),
+                      borderRadius: BorderRadius.circular(999),
+                    ),
+                    child: Text(
+                      issue,
+                      style: const TextStyle(fontSize: 11, color: Color(0xFF9A3412)),
+                    ),
+                  );
+                }).toList(growable: false),
+              ),
+            ],
+          ],
         ),
-        trailing: e.kind == 'price_update' && e.targetPrice != null
-            ? Column(
-                mainAxisAlignment: MainAxisAlignment.center,
+        isThreeLine: issues.isNotEmpty,
+        trailing: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          crossAxisAlignment: CrossAxisAlignment.end,
+          children: [
+            if (e.kind == 'price_update' && e.targetPrice != null)
+              Column(
                 crossAxisAlignment: CrossAxisAlignment.end,
                 children: [
                   Text('→ ${_won(e.targetPrice!)}원',
-                      style: const TextStyle(
-                          fontWeight: FontWeight.w700)),
+                      style: const TextStyle(fontWeight: FontWeight.w700)),
                   if (e.currentPrice != null)
                     Text(
                       _wonSigned(e.priceDelta),
@@ -1387,8 +3054,13 @@ class _MenuEntryCard extends StatelessWidget {
                       ),
                     ),
                 ],
-              )
-            : null,
+              ),
+            if (issues.isNotEmpty) ...[
+              const SizedBox(height: 4),
+              const Icon(Icons.warning_amber_rounded, size: 18, color: Color(0xFFF59E0B)),
+            ],
+          ],
+        ),
       ),
     );
   }
@@ -1400,12 +3072,14 @@ class _StatusBadge extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final (color, label) = switch (status) {
-      'draft' => (const Color(0xFF64748B), '작성'),
-      'reviewed' => (const Color(0xFF2563EB), '검토'),
-      'ready' => (const Color(0xFF0D9488), '준비'),
-      'done' => (const Color(0xFF16A34A), '완료'),
-      _ => (const Color(0xFF94A3B8), status),
+    final color = _statusColor(status);
+    final label = switch (status) {
+      'draft' => '작성',
+      'reviewed' => '검토',
+      'ready' => '준비',
+      'done' => '완료',
+      'archived' => '보관',
+      _ => status,
     };
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
@@ -1647,14 +3321,6 @@ class _InfoRow extends StatelessWidget {
 }
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
-
-String _statusLabel(String s) => switch (s) {
-      'draft' => '작성중',
-      'reviewed' => '검토됨',
-      'ready' => '준비완료',
-      'done' => '완료',
-      _ => s,
-    };
 
 String _kindLabel(String k) => switch (k) {
       'price_update' => '가격 변경',

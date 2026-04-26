@@ -8,6 +8,7 @@ import 'screens/operations.dart';
 import 'screens/settings.dart';
 import 'screens/workforce.dart';
 import 'state/app_state.dart';
+import 'widgets/app_update_banner.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -196,6 +197,8 @@ class _MainLayoutState extends State<MainLayout> {
                   ],
                 ),
               ),
+            if (appState.hasRecommendedUpdate)
+              const AppUpdateBanner(dense: true),
             Expanded(
               child: IndexedStack(
                 index: currentIndex,

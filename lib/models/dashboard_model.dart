@@ -1,5 +1,7 @@
 import 'package:intl/intl.dart';
 
+import 'api_contracts.dart';
+
 class UiFormat {
   static final NumberFormat _currencyFormat = NumberFormat.currency(
     locale: 'ko_KR',
@@ -73,13 +75,13 @@ class DashboardMetric {
 
   factory DashboardMetric.fromJson(Map<String, dynamic> json) {
     return DashboardMetric(
-      businessDate: _asString(json['business_date']),
-      shopNo: _asString(json['shop_no']),
-      grossAmount: _asInt(json['gross_amount']),
-      receiptCount: _asInt(json['receipt_count']),
-      customerCount: _asInt(json['customer_count']),
-      cardAmount: _asInt(json['card_amount']),
-      cashAmount: _asInt(json['cash_amount']),
+      businessDate: asString(json['business_date']),
+      shopNo: asString(json['shop_no']),
+      grossAmount: asInt(json['gross_amount']),
+      receiptCount: asInt(json['receipt_count']),
+      customerCount: asInt(json['customer_count']),
+      cardAmount: asInt(json['card_amount']),
+      cashAmount: asInt(json['cash_amount']),
     );
   }
 }
@@ -117,19 +119,19 @@ class SalesDaySummary {
 
   factory SalesDaySummary.fromJson(Map<String, dynamic> json) {
     return SalesDaySummary(
-      businessDate: _asString(json['business_date']),
-      grossAmount: _asInt(json['gross_amount']),
-      pureSalesAmount: _asInt(json['pure_sales_amount']),
-      netAmount: _asInt(json['net_amount']),
-      vatAmount: _asInt(json['vat_amount']),
-      discountAmount: _asInt(json['discount_amount']),
-      receiptCount: _asInt(json['receipt_count']),
-      customerCount: _asInt(json['customer_count']),
-      cardAmount: _asInt(json['card_amount']),
-      cashAmount: _asInt(json['cash_amount']),
-      pointAmount: _asInt(json['point_amount']),
-      giftAmount: _asInt(json['gift_amount']),
-      prepaidAmount: _asInt(json['prepaid_amount']),
+      businessDate: asString(json['business_date']),
+      grossAmount: asInt(json['gross_amount']),
+      pureSalesAmount: asInt(json['pure_sales_amount']),
+      netAmount: asInt(json['net_amount']),
+      vatAmount: asInt(json['vat_amount']),
+      discountAmount: asInt(json['discount_amount']),
+      receiptCount: asInt(json['receipt_count']),
+      customerCount: asInt(json['customer_count']),
+      cardAmount: asInt(json['card_amount']),
+      cashAmount: asInt(json['cash_amount']),
+      pointAmount: asInt(json['point_amount']),
+      giftAmount: asInt(json['gift_amount']),
+      prepaidAmount: asInt(json['prepaid_amount']),
     );
   }
 }
@@ -153,12 +155,12 @@ class TopItemSummary {
 
   factory TopItemSummary.fromJson(Map<String, dynamic> json) {
     return TopItemSummary(
-      itemName: _asString(json['item_name']),
-      itemCode: _asString(json['item_code']),
-      totalQty: _asInt(json['total_qty']),
-      totalAmount: _asInt(json['total_amount']),
-      lineCount: _asInt(json['line_count']),
-      totalDiscount: _asInt(json['total_discount']),
+      itemName: asString(json['item_name']),
+      itemCode: asString(json['item_code']),
+      totalQty: asInt(json['total_qty']),
+      totalAmount: asInt(json['total_amount']),
+      lineCount: asInt(json['line_count']),
+      totalDiscount: asInt(json['total_discount']),
     );
   }
 }
@@ -176,9 +178,9 @@ class PaymentMixItem {
 
   factory PaymentMixItem.fromJson(Map<String, dynamic> json) {
     return PaymentMixItem(
-      method: _asString(json['method']),
-      amount: _asInt(json['amount']),
-      pct: _asDouble(json['pct']),
+      method: asString(json['method']),
+      amount: asInt(json['amount']),
+      pct: asDouble(json['pct']),
     );
   }
 }
@@ -198,10 +200,10 @@ class TrendItem {
 
   factory TrendItem.fromJson(Map<String, dynamic> json) {
     return TrendItem(
-      itemName: _asString(json['item_name']),
-      currentAmount: _asInt(json['cur_amt']),
-      previousAmount: _asInt(json['prev_amt']),
-      delta: _asInt(json['delta']),
+      itemName: asString(json['item_name']),
+      currentAmount: asInt(json['cur_amt']),
+      previousAmount: asInt(json['prev_amt']),
+      delta: asInt(json['delta']),
     );
   }
 }
@@ -225,12 +227,12 @@ class SyncRun {
 
   factory SyncRun.fromJson(Map<String, dynamic> json) {
     return SyncRun(
-      targetDate: _asString(json['target_date']),
-      status: _asString(json['status']),
-      sourceCount: _asInt(json['source_count']),
-      loadedCount: _asInt(json['loaded_count']),
-      startedAt: _asString(json['started_at']),
-      finishedAt: _asString(json['finished_at']),
+      targetDate: asString(json['target_date']),
+      status: asString(json['status']),
+      sourceCount: asInt(json['source_count']),
+      loadedCount: asInt(json['loaded_count']),
+      startedAt: asString(json['started_at']),
+      finishedAt: asString(json['finished_at']),
     );
   }
 }
@@ -271,31 +273,31 @@ class DashboardSnapshot {
   factory DashboardSnapshot.fromJson(Map<String, dynamic> json) {
     return DashboardSnapshot(
       dbAvailable: json['db_available'] == true,
-      error: _asString(json['error']),
-      latestDay: _nullableString(json['latest_day']),
-      latestMetrics: DashboardMetric.fromJson(_asMap(json['latest_metrics'])),
-      recentDays: _asListOfMaps(json['recent_days'])
+      error: asString(json['error']),
+      latestDay: asNullableString(json['latest_day']),
+      latestMetrics: DashboardMetric.fromJson(asMap(json['latest_metrics'])),
+      recentDays: asListOfMaps(json['recent_days'])
           .map(SalesDaySummary.fromJson)
           .toList(growable: false),
-      recentRuns: _asListOfMaps(json['recent_runs'])
+      recentRuns: asListOfMaps(json['recent_runs'])
           .map(SyncRun.fromJson)
           .toList(growable: false),
-      topItems: _asListOfMaps(json['top_items'])
+      topItems: asListOfMaps(json['top_items'])
           .map(TopItemSummary.fromJson)
           .toList(growable: false),
-      paymentMix: _asListOfMaps(json['payment_mix'])
+      paymentMix: asListOfMaps(json['payment_mix'])
           .map(PaymentMixItem.fromJson)
           .toList(growable: false),
-      growers: _asListOfMaps(json['growers'])
+      growers: asListOfMaps(json['growers'])
           .map(TrendItem.fromJson)
           .toList(growable: false),
-      decliners: _asListOfMaps(json['decliners'])
+      decliners: asListOfMaps(json['decliners'])
           .map(TrendItem.fromJson)
           .toList(growable: false),
-      weekThis: _asInt(json['week_this']),
-      weekPrev: _asInt(json['week_prev']),
-      avgTicket: _asInt(json['avg_ticket']),
-      prevAvgTicket: _asInt(json['prev_avg_ticket']),
+      weekThis: asInt(json['week_this']),
+      weekPrev: asInt(json['week_prev']),
+      avgTicket: asInt(json['avg_ticket']),
+      prevAvgTicket: asInt(json['prev_avg_ticket']),
     );
   }
 }
@@ -331,18 +333,18 @@ class DaySummary {
 
   factory DaySummary.fromJson(Map<String, dynamic> json) {
     return DaySummary(
-      grossAmount: _asInt(json['gross_amount']),
-      pureSalesAmount: _asInt(json['pure_sales_amount']),
-      netAmount: _asInt(json['net_amount']),
-      vatAmount: _asInt(json['vat_amount']),
-      discountAmount: _asInt(json['discount_amount']),
-      receiptCount: _asInt(json['receipt_count']),
-      customerCount: _asInt(json['customer_count']),
-      cashAmount: _asInt(json['cash_amount']),
-      cardAmount: _asInt(json['card_amount']),
-      pointAmount: _asInt(json['point_amount']),
-      giftAmount: _asInt(json['gift_amount']),
-      prepaidAmount: _asInt(json['prepaid_amount']),
+      grossAmount: asInt(json['gross_amount']),
+      pureSalesAmount: asInt(json['pure_sales_amount']),
+      netAmount: asInt(json['net_amount']),
+      vatAmount: asInt(json['vat_amount']),
+      discountAmount: asInt(json['discount_amount']),
+      receiptCount: asInt(json['receipt_count']),
+      customerCount: asInt(json['customer_count']),
+      cashAmount: asInt(json['cash_amount']),
+      cardAmount: asInt(json['card_amount']),
+      pointAmount: asInt(json['point_amount']),
+      giftAmount: asInt(json['gift_amount']),
+      prepaidAmount: asInt(json['prepaid_amount']),
     );
   }
 }
@@ -362,10 +364,10 @@ class HourlySalesPoint {
 
   factory HourlySalesPoint.fromJson(Map<String, dynamic> json) {
     return HourlySalesPoint(
-      hour: _asString(json['hour']),
-      billCount: _asInt(json['bill_count']),
-      totalAmount: _asInt(json['total_amount']),
-      totalCustomers: _asInt(json['total_customers']),
+      hour: asString(json['hour']),
+      billCount: asInt(json['bill_count']),
+      totalAmount: asInt(json['total_amount']),
+      totalCustomers: asInt(json['total_customers']),
     );
   }
 }
@@ -385,10 +387,10 @@ class PosBreakdown {
 
   factory PosBreakdown.fromJson(Map<String, dynamic> json) {
     return PosBreakdown(
-      posNo: _asString(json['pos_no']),
-      billCount: _asInt(json['bill_count']),
-      totalAmount: _asInt(json['total_amount']),
-      totalCustomers: _asInt(json['total_customers']),
+      posNo: asString(json['pos_no']),
+      billCount: asInt(json['bill_count']),
+      totalAmount: asInt(json['total_amount']),
+      totalCustomers: asInt(json['total_customers']),
     );
   }
 }
@@ -427,16 +429,16 @@ class BillRecord {
 
   factory BillRecord.fromJson(Map<String, dynamic> json) {
     return BillRecord(
-      posNo: _asString(json['pos_no']),
-      billNo: _asString(json['bill_no']),
-      payTime: _asString(json['pay_time']),
-      saleFlag: _asString(json['sale_flag']),
-      saleType: _asString(json['sale_type']),
-      grossAmount: _asInt(json['gross_amount']),
-      pureSalesAmount: _asInt(json['pure_sales_amount']),
-      discountAmount: _asInt(json['discount_amount']),
-      customerCount: _asInt(json['customer_count']),
-      itemCount: _asInt(json['item_count']),
+      posNo: asString(json['pos_no']),
+      billNo: asString(json['bill_no']),
+      payTime: asString(json['pay_time']),
+      saleFlag: asString(json['sale_flag']),
+      saleType: asString(json['sale_type']),
+      grossAmount: asInt(json['gross_amount']),
+      pureSalesAmount: asInt(json['pure_sales_amount']),
+      discountAmount: asInt(json['discount_amount']),
+      customerCount: asInt(json['customer_count']),
+      itemCount: asInt(json['item_count']),
     );
   }
 }
@@ -468,26 +470,26 @@ class DayDetailData {
 
   factory DayDetailData.fromJson(Map<String, dynamic> json) {
     return DayDetailData(
-      error: _asString(json['error']),
-      date: _asString(json['date']),
-      summary: DaySummary.fromJson(_asMap(json['summary'])),
-      topItems: _asListOfMaps(json['top_items'])
+      error: asString(json['error']),
+      date: asString(json['date']),
+      summary: DaySummary.fromJson(asMap(json['summary'])),
+      topItems: asListOfMaps(json['top_items'])
           .map(TopItemSummary.fromJson)
           .toList(growable: false),
-      paymentMix: _asListOfMaps(json['payment_mix'])
+      paymentMix: asListOfMaps(json['payment_mix'])
           .map(PaymentMixItem.fromJson)
           .toList(growable: false),
-      hourlySales: _asListOfMaps(json['hourly_sales'])
+      hourlySales: asListOfMaps(json['hourly_sales'])
           .map(HourlySalesPoint.fromJson)
           .toList(growable: false),
-      posBreakdown: _asListOfMaps(json['pos_breakdown'])
+      posBreakdown: asListOfMaps(json['pos_breakdown'])
           .map(PosBreakdown.fromJson)
           .toList(growable: false),
-      bills: _asListOfMaps(json['bills'])
+      bills: asListOfMaps(json['bills'])
           .map(BillRecord.fromJson)
           .toList(growable: false),
-      prevDate: _nullableString(json['prev_date']),
-      nextDate: _nullableString(json['next_date']),
+      prevDate: asNullableString(json['prev_date']),
+      nextDate: asNullableString(json['next_date']),
     );
   }
 }
@@ -505,11 +507,11 @@ class SyncRunsData {
 
   factory SyncRunsData.fromJson(Map<String, dynamic> json) {
     return SyncRunsData(
-      runs: _asListOfMaps(json['runs'])
+      runs: asListOfMaps(json['runs'])
           .map(SyncRun.fromJson)
           .toList(growable: false),
-      today: _asString(json['today']),
-      error: _asString(json['error']),
+      today: asString(json['today']),
+      error: asString(json['error']),
     );
   }
 }
@@ -544,18 +546,18 @@ class SyncTaskStatusData {
   bool get isSuccessful => status == 'succeeded';
 
   factory SyncTaskStatusData.fromJson(Map<String, dynamic> json) {
-    final task = _asMap(json['task']);
+    final task = asMap(json['task']);
     return SyncTaskStatusData(
-      taskId: _asString(task['task_id']),
-      targetDate: _asString(task['target_date']),
-      status: _asString(task['status']),
-      errorMessage: _asString(task['error_message']),
-      headerCount: _asInt(task['header_count']),
-      itemCount: _asInt(task['item_count']),
-      summaryCount: _asInt(task['summary_count']),
-      loadedCount: _asInt(task['loaded_count']),
-      startedAt: _asString(task['started_at']),
-      finishedAt: _asString(task['finished_at']),
+      taskId: asString(task['task_id']),
+      targetDate: asString(task['target_date']),
+      status: asString(task['status']),
+      errorMessage: asString(task['error_message']),
+      headerCount: asInt(task['header_count']),
+      itemCount: asInt(task['item_count']),
+      summaryCount: asInt(task['summary_count']),
+      loadedCount: asInt(task['loaded_count']),
+      startedAt: asString(task['started_at']),
+      finishedAt: asString(task['finished_at']),
     );
   }
 }
@@ -571,64 +573,8 @@ class SidebarDay {
 
   factory SidebarDay.fromJson(Map<String, dynamic> json) {
     return SidebarDay(
-      businessDate: _asString(json['business_date']),
-      grossAmount: _asInt(json['gross_amount']),
+      businessDate: asString(json['business_date']),
+      grossAmount: asInt(json['gross_amount']),
     );
   }
-}
-
-List<Map<String, dynamic>> _asListOfMaps(Object? source) {
-  if (source is! List) {
-    return const [];
-  }
-
-  return source
-      .whereType<Map>()
-      .map((item) => Map<String, dynamic>.from(item))
-      .toList(growable: false);
-}
-
-Map<String, dynamic> _asMap(Object? source) {
-  if (source is Map) {
-    return Map<String, dynamic>.from(source);
-  }
-  return const {};
-}
-
-String _asString(Object? value) {
-  return value?.toString() ?? '';
-}
-
-String? _nullableString(Object? value) {
-  final text = value?.toString().trim();
-  if (text == null || text.isEmpty) {
-    return null;
-  }
-  return text;
-}
-
-int _asInt(Object? value) {
-  if (value is int) {
-    return value;
-  }
-  if (value is double) {
-    return value.round();
-  }
-  if (value is String) {
-    return int.tryParse(value) ?? 0;
-  }
-  return 0;
-}
-
-double _asDouble(Object? value) {
-  if (value is double) {
-    return value;
-  }
-  if (value is int) {
-    return value.toDouble();
-  }
-  if (value is String) {
-    return double.tryParse(value) ?? 0;
-  }
-  return 0;
 }

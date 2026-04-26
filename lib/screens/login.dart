@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../state/app_state.dart';
+import '../widgets/app_update_banner.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -14,10 +15,7 @@ class _LoginScreenState extends State<LoginScreen> {
   late final TextEditingController _loginIdController;
   late final TextEditingController _passwordController;
   bool _isSubmitting = false;
-  bool _isChecking = false;
-  bool _statusOk = false;
   String _errorMessage = '';
-  String _statusMessage = '';
 
   @override
   void initState() {
@@ -44,6 +42,7 @@ class _LoginScreenState extends State<LoginScreen> {
       await appState.login(
         _loginIdController.text,
         _passwordController.text,
+        rememberMe: appState.rememberMe,
       );
     } catch (error) {
       if (!mounted) {
@@ -59,86 +58,6 @@ class _LoginScreenState extends State<LoginScreen> {
         });
       }
     }
-  }
-
-  Future<void> _checkConnection() async {
-    final appState = context.read<AppState>();
-    setState(() {
-      _isChecking = true;
-      _statusMessage = '';
-    });
-
-    try {
-      await appState.refreshSession();
-      if (!mounted) {
-        return;
-      }
-      setState(() {
-        _statusOk = true;
-        _statusMessage = '인증 서버 연결 성공';
-      });
-    } catch (error) {
-      if (!mounted) {
-        return;
-      }
-      setState(() {
-        _statusOk = false;
-        _statusMessage = error.toString();
-      });
-    } finally {
-      if (mounted) {
-        setState(() {
-          _isChecking = false;
-        });
-      }
-    }
-  }
-
-  Future<void> _editServerAddress() async {
-    final appState = context.read<AppState>();
-    final controller = TextEditingController(text: appState.apiBaseUrl);
-
-    await showDialog<void>(
-      context: context,
-      builder: (context) {
-        return AlertDialog(
-          title: const Text('서버 주소 변경'),
-          content: TextField(
-            controller: controller,
-            decoration: const InputDecoration(
-              border: OutlineInputBorder(),
-              hintText: 'https://pos.cafe-bridge.org',
-            ),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.of(context).pop(),
-              child: const Text('취소'),
-            ),
-            TextButton(
-              onPressed: () async {
-                await appState.resetApiBaseUrl();
-                if (!context.mounted) {
-                  return;
-                }
-                Navigator.of(context).pop();
-              },
-              child: const Text('기본값'),
-            ),
-            FilledButton(
-              onPressed: () async {
-                await appState.updateApiBaseUrl(controller.text);
-                if (!context.mounted) {
-                  return;
-                }
-                Navigator.of(context).pop();
-              },
-              child: const Text('저장'),
-            ),
-          ],
-        );
-      },
-    );
   }
 
   @override
@@ -187,17 +106,11 @@ class _LoginScreenState extends State<LoginScreen> {
                                 color: const Color(0xFF0F172A),
                               ),
                         ),
-                        const SizedBox(height: 10),
-                        const Text(
-                          '모바일 앱도 웹과 같은 세션 쿠키 및 CSRF 인증 절차를 사용합니다.',
-                          style: TextStyle(
-                            color: Color(0xFF64748B),
-                            height: 1.5,
-                          ),
-                        ),
-                        const SizedBox(height: 24),
-                        _buildServerPanel(appState),
                         const SizedBox(height: 20),
+                        if (appState.hasRecommendedUpdate) ...[
+                          const AppUpdateBanner(),
+                          const SizedBox(height: 16),
+                        ],
                         if (appState.offlineMode) ...[
                           _buildInfoBanner(
                             backgroundColor: const Color(0xFFECFEFF),
@@ -245,6 +158,22 @@ class _LoginScreenState extends State<LoginScreen> {
                           autofillHints: const [AutofillHints.password],
                           onSubmitted: (_) => _isSubmitting ? null : _submit(),
                         ),
+                        const SizedBox(height: 8),
+                        CheckboxListTile(
+                          contentPadding: EdgeInsets.zero,
+                          dense: true,
+                          value: appState.rememberMe,
+                          onChanged: _isSubmitting || setupBlocked
+                              ? null
+                              : (value) {
+                                  appState.setRememberMe(value ?? false);
+                                },
+                          title: const Text(
+                            '로그인 상태 유지',
+                            style: TextStyle(fontSize: 14),
+                          ),
+                          controlAffinity: ListTileControlAffinity.leading,
+                        ),
                         const SizedBox(height: 16),
                         FilledButton(
                           onPressed:
@@ -262,69 +191,6 @@ class _LoginScreenState extends State<LoginScreen> {
             ),
           ),
         ),
-      ),
-    );
-  }
-
-  Widget _buildServerPanel(AppState appState) {
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: const Color(0xFFF8FAFC),
-        borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: const Color(0xFFE2E8F0)),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const Text(
-            '접속 서버',
-            style: TextStyle(
-              fontWeight: FontWeight.w700,
-              color: Color(0xFF0F172A),
-            ),
-          ),
-          const SizedBox(height: 6),
-          Text(
-            appState.apiBaseUrl,
-            style: const TextStyle(
-              color: Color(0xFF334155),
-              fontSize: 13,
-            ),
-          ),
-          const SizedBox(height: 12),
-          Row(
-            children: [
-              Expanded(
-                child: OutlinedButton.icon(
-                  onPressed: _editServerAddress,
-                  icon: const Icon(Icons.tune_outlined),
-                  label: const Text('서버 주소'),
-                ),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: OutlinedButton.icon(
-                  onPressed: _isChecking ? null : _checkConnection,
-                  icon: const Icon(Icons.health_and_safety_outlined),
-                  label: Text(_isChecking ? '확인 중...' : '연결 테스트'),
-                ),
-              ),
-            ],
-          ),
-          if (_statusMessage.isNotEmpty) ...[
-            const SizedBox(height: 12),
-            Text(
-              _statusMessage,
-              style: TextStyle(
-                color: _statusOk
-                    ? const Color(0xFF0F766E)
-                    : const Color(0xFFB91C1C),
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-          ],
-        ],
       ),
     );
   }

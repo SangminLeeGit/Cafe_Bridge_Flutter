@@ -1,3 +1,5 @@
+import 'api_contracts.dart';
+
 // Models for the workforce (인력 관리) feature.
 
 class WorkforceDashboardWorkplace {
@@ -23,14 +25,14 @@ class WorkforceDashboardWorkplace {
 
   factory WorkforceDashboardWorkplace.fromJson(Map<String, dynamic> json) {
     return WorkforceDashboardWorkplace(
-      id: _asInt(json['id']),
-      name: _asString(json['name']),
-      payCycle: _asString(json['pay_cycle']),
-      nextPayday: _asString(json['next_payday']),
-      daysUntilPayday: _asInt(json['days_until_payday']),
-      grossPay: _asInt(json['gross_pay']),
-      netPay: _asInt(json['net_pay']),
-      workedHours: _asDouble(json['worked_hours']),
+      id: asInt(json['id']),
+      name: asString(json['name']),
+      payCycle: asString(json['pay_cycle']),
+      nextPayday: asString(json['next_payday']),
+      daysUntilPayday: asInt(json['days_until_payday']),
+      grossPay: asInt(json['gross_pay']),
+      netPay: asInt(json['net_pay']),
+      workedHours: asDouble(json['worked_hours']),
     );
   }
 }
@@ -41,22 +43,37 @@ class WorkforceSummary {
   final double totalWorkedHours;
   final int shiftCount;
   final int employeeCount;
+  final int workplaceCount;
+  final double workedHours;
+  final int grossPay;
+  final int taxDeduction;
+  final int netPay;
 
   const WorkforceSummary({
-    required this.totalGrossPay,
-    required this.totalNetPay,
-    required this.totalWorkedHours,
-    required this.shiftCount,
-    required this.employeeCount,
+    this.totalGrossPay = 0,
+    this.totalNetPay = 0,
+    this.totalWorkedHours = 0,
+    this.shiftCount = 0,
+    this.employeeCount = 0,
+    this.workplaceCount = 0,
+    this.workedHours = 0,
+    this.grossPay = 0,
+    this.taxDeduction = 0,
+    this.netPay = 0,
   });
 
   factory WorkforceSummary.fromJson(Map<String, dynamic> json) {
     return WorkforceSummary(
-      totalGrossPay: _asInt(json['total_gross_pay']),
-      totalNetPay: _asInt(json['total_net_pay']),
-      totalWorkedHours: _asDouble(json['total_worked_hours']),
-      shiftCount: _asInt(json['shift_count']),
-      employeeCount: _asInt(json['employee_count']),
+      totalGrossPay: asInt(json['total_gross_pay']),
+      totalNetPay: asInt(json['total_net_pay']),
+      totalWorkedHours: asDouble(json['total_worked_hours']),
+      shiftCount: asInt(json['shift_count']),
+      employeeCount: asInt(json['employee_count']),
+      workplaceCount: asInt(json['workplace_count']),
+      workedHours: asDouble(json['worked_hours']),
+      grossPay: asInt(json['gross_pay']),
+      taxDeduction: asInt(json['tax_deduction']),
+      netPay: asInt(json['net_pay']),
     );
   }
 }
@@ -82,11 +99,11 @@ class WorkforceDashboardData {
     }
     return WorkforceDashboardData(
       period: period,
-      summary: WorkforceSummary.fromJson(_asMap(json['summary'])),
-      workplaces: _asListOfMaps(json['workplaces'])
+      summary: WorkforceSummary.fromJson(asMap(json['summary'])),
+      workplaces: asListOfMaps(json['workplaces'])
           .map(WorkforceDashboardWorkplace.fromJson)
           .toList(growable: false),
-      minimumWage: _asInt(json['minimum_wage']),
+      minimumWage: asInt(json['minimum_wage']),
     );
   }
 }
@@ -108,11 +125,11 @@ class CalendarDay {
 
   factory CalendarDay.fromJson(Map<String, dynamic> json) {
     return CalendarDay(
-      date: _asString(json['date']),
-      shiftCount: _asInt(json['shift_count']),
-      workedMinutes: _asInt(json['worked_minutes']),
-      workedHours: _asDouble(json['worked_hours']),
-      grossPay: _asInt(json['gross_pay']),
+      date: asString(json['date']),
+      shiftCount: asInt(json['shift_count']),
+      workedMinutes: asInt(json['worked_minutes']),
+      workedHours: asDouble(json['worked_hours']),
+      grossPay: asInt(json['gross_pay']),
     );
   }
 }
@@ -136,14 +153,268 @@ class WorkloadCalendarData {
 
   factory WorkloadCalendarData.fromJson(Map<String, dynamic> json) {
     return WorkloadCalendarData(
-      year: _asInt(json['year']),
-      month: _asInt(json['month']),
-      fromDate: _asString(json['from_date']),
-      toDate: _asString(json['to_date']),
-      days: _asListOfMaps(json['days'])
+      year: asInt(json['year']),
+      month: asInt(json['month']),
+      fromDate: asString(json['from_date']),
+      toDate: asString(json['to_date']),
+      days: asListOfMaps(json['days'])
           .map(CalendarDay.fromJson)
           .toList(growable: false),
-      summary: WorkforceSummary.fromJson(_asMap(json['summary'])),
+      summary: WorkforceSummary.fromJson(asMap(json['summary'])),
+    );
+  }
+}
+
+class WorkplacePayRule {
+  final int? hourlyWage;
+  final int? dailyWage;
+  final int? monthlySalary;
+  final int defaultBreakMinutes;
+  final int overtimeDailyThresholdMinutes;
+  final bool nightEnabled;
+  final bool overtimeEnabled;
+  final bool holidayEnabled;
+  final bool weeklyHolidayEnabled;
+  final int weeklyHolidayStartDow;
+  final int weeklyHolidayMinMinutes;
+  final int weeklyHolidayMinDays;
+  final double nightMultiplier;
+  final double overtimeMultiplier;
+  final double holidayMultiplierUnder8;
+  final double holidayMultiplierOver8;
+
+  const WorkplacePayRule({
+    required this.hourlyWage,
+    required this.dailyWage,
+    required this.monthlySalary,
+    required this.defaultBreakMinutes,
+    required this.overtimeDailyThresholdMinutes,
+    required this.nightEnabled,
+    required this.overtimeEnabled,
+    required this.holidayEnabled,
+    required this.weeklyHolidayEnabled,
+    required this.weeklyHolidayStartDow,
+    required this.weeklyHolidayMinMinutes,
+    required this.weeklyHolidayMinDays,
+    required this.nightMultiplier,
+    required this.overtimeMultiplier,
+    required this.holidayMultiplierUnder8,
+    required this.holidayMultiplierOver8,
+  });
+
+  factory WorkplacePayRule.fromJson(Map<String, dynamic> json) {
+    return WorkplacePayRule(
+      hourlyWage: asNullableInt(json['hourly_wage']),
+      dailyWage: asNullableInt(json['daily_wage']),
+      monthlySalary: asNullableInt(json['monthly_salary']),
+      defaultBreakMinutes: asInt(json['default_break_minutes']),
+      overtimeDailyThresholdMinutes: asInt(json['overtime_daily_threshold_minutes']),
+      nightEnabled: asBool(json['night_enabled'], defaultValue: true),
+      overtimeEnabled: asBool(json['overtime_enabled'], defaultValue: true),
+      holidayEnabled: asBool(json['holiday_enabled'], defaultValue: true),
+      weeklyHolidayEnabled: asBool(json['weekly_holiday_enabled'], defaultValue: true),
+      weeklyHolidayStartDow: asInt(json['weekly_holiday_start_dow']),
+      weeklyHolidayMinMinutes: asInt(json['weekly_holiday_min_minutes']),
+      weeklyHolidayMinDays: asInt(json['weekly_holiday_min_days']),
+      nightMultiplier: asDouble(json['night_multiplier']),
+      overtimeMultiplier: asDouble(json['overtime_multiplier']),
+      holidayMultiplierUnder8: asDouble(json['holiday_multiplier_under8']),
+      holidayMultiplierOver8: asDouble(json['holiday_multiplier_over8']),
+    );
+  }
+}
+
+class WorkplaceTaxRule {
+  final String preset;
+  final double customRate;
+  final String applyUnit;
+
+  const WorkplaceTaxRule({
+    required this.preset,
+    required this.customRate,
+    required this.applyUnit,
+  });
+
+  factory WorkplaceTaxRule.fromJson(Map<String, dynamic> json) {
+    return WorkplaceTaxRule(
+      preset: asString(json['preset']),
+      customRate: asDouble(json['custom_rate']),
+      applyUnit: asString(json['apply_unit']),
+    );
+  }
+}
+
+class Workplace {
+  final int id;
+  final String name;
+  final String shopNo;
+  final String payType;
+  final String payCycle;
+  final int payday;
+  final bool isActive;
+  final DateTime? createdAt;
+  final DateTime? updatedAt;
+  final WorkplacePayRule? payRule;
+  final WorkplaceTaxRule? taxRule;
+
+  const Workplace({
+    required this.id,
+    required this.name,
+    required this.shopNo,
+    required this.payType,
+    required this.payCycle,
+    required this.payday,
+    required this.isActive,
+    required this.createdAt,
+    required this.updatedAt,
+    required this.payRule,
+    required this.taxRule,
+  });
+
+  factory Workplace.fromJson(Map<String, dynamic> json) {
+    return Workplace(
+      id: asInt(json['id']),
+      name: asString(json['name']),
+      shopNo: asString(json['shop_no']),
+      payType: asString(json['pay_type']),
+      payCycle: asString(json['pay_cycle']),
+      payday: asInt(json['payday']),
+      isActive: asBool(json['is_active']),
+      createdAt: asDateTime(json['created_at']),
+      updatedAt: asDateTime(json['updated_at']),
+      payRule: json['pay_rule'] is Map ? WorkplacePayRule.fromJson(asMap(json['pay_rule'])) : null,
+      taxRule: json['tax_rule'] is Map ? WorkplaceTaxRule.fromJson(asMap(json['tax_rule'])) : null,
+    );
+  }
+}
+
+class ShiftAdjustment {
+  final int? id;
+  final String kind;
+  final String label;
+  final int amount;
+
+  const ShiftAdjustment({
+    required this.id,
+    required this.kind,
+    required this.label,
+    required this.amount,
+  });
+
+  factory ShiftAdjustment.fromJson(Map<String, dynamic> json) {
+    return ShiftAdjustment(
+      id: asNullableInt(json['id']),
+      kind: asString(json['kind']),
+      label: asString(json['label']),
+      amount: asInt(json['amount']),
+    );
+  }
+}
+
+class ShiftRecord {
+  final int id;
+  final int workplaceId;
+  final String workplaceName;
+  final int? employeeId;
+  final String? employeeName;
+  final String shiftDate;
+  final String startAt;
+  final String endAt;
+  final int breakMinutes;
+  final String leaveType;
+  final String holidayType;
+  final String memo;
+  final DateTime? createdAt;
+  final DateTime? updatedAt;
+  final List<ShiftAdjustment> adjustments;
+
+  const ShiftRecord({
+    required this.id,
+    required this.workplaceId,
+    required this.workplaceName,
+    required this.employeeId,
+    required this.employeeName,
+    required this.shiftDate,
+    required this.startAt,
+    required this.endAt,
+    required this.breakMinutes,
+    required this.leaveType,
+    required this.holidayType,
+    required this.memo,
+    required this.createdAt,
+    required this.updatedAt,
+    required this.adjustments,
+  });
+
+  factory ShiftRecord.fromJson(Map<String, dynamic> json) {
+    return ShiftRecord(
+      id: asInt(json['id']),
+      workplaceId: asInt(json['workplace_id']),
+      workplaceName: asString(json['workplace_name']),
+      employeeId: asNullableInt(json['employee_id']),
+      employeeName: asNullableString(json['employee_name']),
+      shiftDate: asString(json['shift_date']),
+      startAt: asString(json['start_at']),
+      endAt: asString(json['end_at']),
+      breakMinutes: asInt(json['break_minutes']),
+      leaveType: asString(json['leave_type']),
+      holidayType: asString(json['holiday_type']),
+      memo: asString(json['memo']),
+      createdAt: asDateTime(json['created_at']),
+      updatedAt: asDateTime(json['updated_at']),
+      adjustments: asListOfMaps(json['adjustments'])
+          .map(ShiftAdjustment.fromJson)
+          .toList(growable: false),
+    );
+  }
+}
+
+class ShiftPreset {
+  final int id;
+  final int workplaceId;
+  final String workplaceName;
+  final String name;
+  final String startTime;
+  final String endTime;
+  final int breakMinutes;
+  final String leaveType;
+  final String holidayType;
+  final String memo;
+  final int extraAmount;
+  final int deductionAmount;
+  final bool isFavorite;
+
+  const ShiftPreset({
+    required this.id,
+    required this.workplaceId,
+    required this.workplaceName,
+    required this.name,
+    required this.startTime,
+    required this.endTime,
+    required this.breakMinutes,
+    required this.leaveType,
+    required this.holidayType,
+    required this.memo,
+    required this.extraAmount,
+    required this.deductionAmount,
+    required this.isFavorite,
+  });
+
+  factory ShiftPreset.fromJson(Map<String, dynamic> json) {
+    return ShiftPreset(
+      id: asInt(json['id']),
+      workplaceId: asInt(json['workplace_id']),
+      workplaceName: asString(json['workplace_name']),
+      name: asString(json['name']),
+      startTime: asString(json['start_time']),
+      endTime: asString(json['end_time']),
+      breakMinutes: asInt(json['break_minutes']),
+      leaveType: asString(json['leave_type']),
+      holidayType: asString(json['holiday_type']),
+      memo: asString(json['memo']),
+      extraAmount: asInt(json['extra_amount']),
+      deductionAmount: asInt(json['deduction_amount']),
+      isFavorite: asBool(json['is_favorite']),
     );
   }
 }
@@ -153,89 +424,316 @@ class Employee {
   final int workplaceId;
   final String workplaceName;
   final String name;
+  final String employeeNo;
   final String role;
-  final int hourlyWage;
+  final String employmentType;
+  final String joinedOn;
+  final String resignedOn;
+  final String phone;
+  final int? hourlyWage;
   final String taxPreset;
+  final double taxCustomRate;
+  final String memo;
+  final int? linkedAuthUserId;
   final bool isActive;
+  final DateTime? createdAt;
+  final DateTime? updatedAt;
 
   const Employee({
     required this.id,
     required this.workplaceId,
     required this.workplaceName,
     required this.name,
+    required this.employeeNo,
     required this.role,
+    required this.employmentType,
+    required this.joinedOn,
+    required this.resignedOn,
+    required this.phone,
     required this.hourlyWage,
     required this.taxPreset,
+    required this.taxCustomRate,
+    required this.memo,
+    required this.linkedAuthUserId,
     required this.isActive,
+    required this.createdAt,
+    required this.updatedAt,
   });
 
   factory Employee.fromJson(Map<String, dynamic> json) {
     return Employee(
-      id: _asInt(json['id']),
-      workplaceId: _asInt(json['workplace_id']),
-      workplaceName: _asString(json['workplace_name']),
-      name: _asString(json['name']),
-      role: _asString(json['role']),
-      hourlyWage: _asInt(json['hourly_wage']),
-      taxPreset: _asString(json['tax_preset']),
-      isActive: json['is_active'] == true,
+      id: asInt(json['id']),
+      workplaceId: asInt(json['workplace_id']),
+      workplaceName: asString(json['workplace_name']),
+      name: asString(json['name']),
+      employeeNo: asString(json['employee_no']),
+      role: asString(json['role']),
+      employmentType: asString(json['employment_type']),
+      joinedOn: asString(json['joined_on']),
+      resignedOn: asString(json['resigned_on']),
+      phone: asString(json['phone']),
+      hourlyWage: asNullableInt(json['hourly_wage']),
+      taxPreset: asString(json['tax_preset']),
+      taxCustomRate: asDouble(json['tax_custom_rate']),
+      memo: asString(json['memo']),
+      linkedAuthUserId: asNullableInt(json['linked_auth_user_id']),
+      isActive: asBool(json['is_active']),
+      createdAt: asDateTime(json['created_at']),
+      updatedAt: asDateTime(json['updated_at']),
     );
   }
 }
 
-class Workplace {
+class EmployeeAuditLog {
   final int id;
-  final String name;
-  final String payCycle;
-  final int payday;
-  final bool isActive;
+  final String action;
+  final DateTime? createdAt;
+  final int? actorAuthUserId;
+  final Map<String, dynamic> beforeJson;
+  final Map<String, dynamic> afterJson;
 
-  const Workplace({
+  const EmployeeAuditLog({
     required this.id,
-    required this.name,
-    required this.payCycle,
-    required this.payday,
-    required this.isActive,
+    required this.action,
+    required this.createdAt,
+    required this.actorAuthUserId,
+    required this.beforeJson,
+    required this.afterJson,
   });
 
-  factory Workplace.fromJson(Map<String, dynamic> json) {
-    return Workplace(
-      id: _asInt(json['id']),
-      name: _asString(json['name']),
-      payCycle: _asString(json['pay_cycle']),
-      payday: _asInt(json['payday']),
-      isActive: json['is_active'] == true,
+  factory EmployeeAuditLog.fromJson(Map<String, dynamic> json) {
+    return EmployeeAuditLog(
+      id: asInt(json['id']),
+      action: asString(json['action']),
+      createdAt: asDateTime(json['created_at']),
+      actorAuthUserId: asNullableInt(json['actor_auth_user_id']),
+      beforeJson: asMap(json['before_json']),
+      afterJson: asMap(json['after_json']),
     );
   }
 }
 
-// ─── Helpers ──────────────────────────────────────────────────────────────────
+class PayslipLineItem {
+  final String kind;
+  final String date;
+  final String label;
+  final int amount;
 
-List<Map<String, dynamic>> _asListOfMaps(Object? source) {
-  if (source is! List) return const [];
-  return source
-      .whereType<Map>()
-      .map((item) => Map<String, dynamic>.from(item))
-      .toList(growable: false);
+  const PayslipLineItem({
+    required this.kind,
+    required this.date,
+    required this.label,
+    required this.amount,
+  });
+
+  factory PayslipLineItem.fromJson(Map<String, dynamic> json) {
+    return PayslipLineItem(
+      kind: asString(json['kind']),
+      date: asString(json['date']),
+      label: asString(json['label']),
+      amount: asInt(json['amount']),
+    );
+  }
 }
 
-Map<String, dynamic> _asMap(Object? source) {
-  if (source is Map) return Map<String, dynamic>.from(source);
-  return const {};
+class PayslipWorkplaceTotals {
+  final double workedHours;
+  final int regularPay;
+  final int nightPremium;
+  final int overtimePremium;
+  final int holidayPremium;
+  final int weeklyHolidayPay;
+  final int extraPay;
+  final int manualDeduction;
+  final int grossPay;
+  final int taxDeduction;
+  final int netPay;
+
+  const PayslipWorkplaceTotals({
+    required this.workedHours,
+    required this.regularPay,
+    required this.nightPremium,
+    required this.overtimePremium,
+    required this.holidayPremium,
+    required this.weeklyHolidayPay,
+    required this.extraPay,
+    required this.manualDeduction,
+    required this.grossPay,
+    required this.taxDeduction,
+    required this.netPay,
+  });
+
+  factory PayslipWorkplaceTotals.fromJson(Map<String, dynamic> json) {
+    return PayslipWorkplaceTotals(
+      workedHours: asDouble(json['worked_hours']),
+      regularPay: asInt(json['regular_pay']),
+      nightPremium: asInt(json['night_premium']),
+      overtimePremium: asInt(json['overtime_premium']),
+      holidayPremium: asInt(json['holiday_premium']),
+      weeklyHolidayPay: asInt(json['weekly_holiday_pay']),
+      extraPay: asInt(json['extra_pay']),
+      manualDeduction: asInt(json['manual_deduction']),
+      grossPay: asInt(json['gross_pay']),
+      taxDeduction: asInt(json['tax_deduction']),
+      netPay: asInt(json['net_pay']),
+    );
+  }
 }
 
-String _asString(Object? value) => value?.toString() ?? '';
+class PayslipWorkplace {
+  final Workplace workplace;
+  final PayslipWorkplaceTotals totals;
+  final List<PayslipLineItem> lineItems;
 
-int _asInt(Object? value) {
-  if (value is int) return value;
-  if (value is double) return value.round();
-  if (value is String) return int.tryParse(value) ?? 0;
-  return 0;
+  const PayslipWorkplace({
+    required this.workplace,
+    required this.totals,
+    required this.lineItems,
+  });
+
+  factory PayslipWorkplace.fromJson(Map<String, dynamic> json) {
+    return PayslipWorkplace(
+      workplace: Workplace.fromJson(asMap(json['workplace'])),
+      totals: PayslipWorkplaceTotals.fromJson(asMap(json['totals'])),
+      lineItems: asListOfMaps(json['line_items'])
+          .map(PayslipLineItem.fromJson)
+          .toList(growable: false),
+    );
+  }
 }
 
-double _asDouble(Object? value) {
-  if (value is double) return value;
-  if (value is int) return value.toDouble();
-  if (value is String) return double.tryParse(value) ?? 0;
-  return 0;
+class EmployeeDetailData {
+  final Employee employee;
+  final List<ShiftRecord> recentShifts;
+
+  const EmployeeDetailData({
+    required this.employee,
+    required this.recentShifts,
+  });
+
+  factory EmployeeDetailData.fromJson(Map<String, dynamic> json) {
+    return EmployeeDetailData(
+      employee: Employee.fromJson(asMap(json['employee'])),
+      recentShifts: asListOfMaps(json['recent_shifts'])
+          .map(ShiftRecord.fromJson)
+          .toList(growable: false),
+    );
+  }
+}
+
+class EmployeePayslipData {
+  final Employee employee;
+  final String fromDate;
+  final String toDate;
+  final WorkforceSummary summary;
+  final List<PayslipWorkplace> workplaces;
+
+  const EmployeePayslipData({
+    required this.employee,
+    required this.fromDate,
+    required this.toDate,
+    required this.summary,
+    required this.workplaces,
+  });
+
+  factory EmployeePayslipData.fromJson(Map<String, dynamic> json) {
+    return EmployeePayslipData(
+      employee: Employee.fromJson(asMap(json['employee'])),
+      fromDate: asString(json['from_date']),
+      toDate: asString(json['to_date']),
+      summary: WorkforceSummary.fromJson(asMap(json['summary'])),
+      workplaces: asListOfMaps(json['workplaces'])
+          .map(PayslipWorkplace.fromJson)
+          .toList(growable: false),
+    );
+  }
+}
+
+class WorkforcePeriodData {
+  final String fromDate;
+  final String toDate;
+  final WorkforceSummary summary;
+  final List<PayslipWorkplace> workplaces;
+
+  const WorkforcePeriodData({
+    required this.fromDate,
+    required this.toDate,
+    required this.summary,
+    required this.workplaces,
+  });
+
+  factory WorkforcePeriodData.fromJson(Map<String, dynamic> json) {
+    return WorkforcePeriodData(
+      fromDate: asString(json['from_date']),
+      toDate: asString(json['to_date']),
+      summary: WorkforceSummary.fromJson(asMap(json['summary'])),
+      workplaces: asListOfMaps(json['workplaces'])
+          .map(PayslipWorkplace.fromJson)
+          .toList(growable: false),
+    );
+  }
+}
+
+class EmployeePayPreviewData {
+  final Employee employee;
+  final Workplace workplace;
+  final EmployeePayPreview preview;
+
+  const EmployeePayPreviewData({
+    required this.employee,
+    required this.workplace,
+    required this.preview,
+  });
+
+  factory EmployeePayPreviewData.fromJson(Map<String, dynamic> json) {
+    return EmployeePayPreviewData(
+      employee: Employee.fromJson(asMap(json['employee'])),
+      workplace: Workplace.fromJson(asMap(json['workplace'])),
+      preview: EmployeePayPreview.fromJson(asMap(json['preview'])),
+    );
+  }
+}
+
+class EmployeePayPreview {
+  final int workedMinutes;
+  final int hourlyWage;
+  final int regularPay;
+  final int nightPremium;
+  final int overtimePremium;
+  final int holidayPremium;
+  final int extraAmount;
+  final int deductionAmount;
+  final int grossPay;
+  final int taxEstimate;
+  final int netEstimate;
+
+  const EmployeePayPreview({
+    required this.workedMinutes,
+    required this.hourlyWage,
+    required this.regularPay,
+    required this.nightPremium,
+    required this.overtimePremium,
+    required this.holidayPremium,
+    required this.extraAmount,
+    required this.deductionAmount,
+    required this.grossPay,
+    required this.taxEstimate,
+    required this.netEstimate,
+  });
+
+  factory EmployeePayPreview.fromJson(Map<String, dynamic> json) {
+    return EmployeePayPreview(
+      workedMinutes: asInt(json['worked_minutes']),
+      hourlyWage: asInt(json['hourly_wage']),
+      regularPay: asInt(json['regular_pay']),
+      nightPremium: asInt(json['night_premium']),
+      overtimePremium: asInt(json['overtime_premium']),
+      holidayPremium: asInt(json['holiday_premium']),
+      extraAmount: asInt(json['extra_amount']),
+      deductionAmount: asInt(json['deduction_amount']),
+      grossPay: asInt(json['gross_pay']),
+      taxEstimate: asInt(json['tax_estimate']),
+      netEstimate: asInt(json['net_estimate']),
+    );
+  }
 }

@@ -32,7 +32,7 @@ class AnalyticsScreen extends StatelessWidget {
                 Tab(text: '결제'),
                 Tab(text: '비교'),
                 Tab(text: '트렌드'),
-                Tab(text: '메뉴공학'),
+                Tab(text: '메뉴작업대'),
                 Tab(text: '예측'),
                 Tab(text: 'ABC'),
               ],
@@ -1464,7 +1464,7 @@ class _MenuEngineeringTabState extends State<_MenuEngineeringTab> {
     if (_isLoading) return const Center(child: CircularProgressIndicator());
     if (_error.isNotEmpty) {
       return EmptyState(
-        title: '메뉴 공학 분석을 불러오지 못했습니다.',
+        title: '메뉴 작업대 분석을 불러오지 못했습니다.',
         message: _error,
         action: FilledButton(onPressed: _load, child: const Text('다시 시도')),
       );
@@ -1472,7 +1472,7 @@ class _MenuEngineeringTabState extends State<_MenuEngineeringTab> {
     final data = _data;
     if (data == null || data.error.isNotEmpty) {
       return EmptyState(
-        title: '메뉴 공학 데이터가 없습니다.',
+        title: '메뉴 작업대 데이터가 없습니다.',
         message: data?.error,
         action: FilledButton(onPressed: _load, child: const Text('새로고침')),
       );
@@ -1492,7 +1492,7 @@ class _MenuEngineeringTabState extends State<_MenuEngineeringTab> {
         padding: const EdgeInsets.all(16),
         children: [
           _AnalyticsHeaderRow(
-            title: '메뉴 공학',
+            title: '메뉴 작업대',
             subtitle: _rangeLabel(_range),
             actionLabel: '기간 변경',
             onAction: _pickRange,

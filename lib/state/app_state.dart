@@ -1,7 +1,12 @@
+import 'dart:async';
+
 import 'package:flutter/foundation.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
+import 'package:package_info_plus/package_info_plus.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../models/api_contracts.dart';
+import '../services/app_update_service.dart';
 import '../services/api.dart';
 import '../services/cache_store.dart';
 
@@ -67,6 +72,9 @@ class AppState extends ChangeNotifier {
   static const String _setupRequiredKey = 'auth_setup_required';
   static const String _bootstrapConfiguredKey = 'auth_bootstrap_configured';
   static const String _sessionCookieKey = 'session_cookie';
+  static const String _rememberMeKey = 'auth_remember_me';
+  static const String _lastSeenDeployNoticeIdKey = 'last_seen_deploy_notice_id';
+  static const Duration _keepAliveInterval = Duration(minutes: 4);
 
   static const _secureStorage = FlutterSecureStorage(
     iOptions: IOSOptions(accessibility: KeychainAccessibility.first_unlock),
@@ -80,12 +88,28 @@ class AppState extends ChangeNotifier {
   bool _offlineMode = false;
   bool _setupRequired = false;
   bool _bootstrapConfigured = false;
+  bool _rememberMe = false;
   String? _sessionCookie;
   String? _csrfToken;
   String? _loginId;
   String? _role;
   DateTime? _lastSessionSyncAt;
   int _cacheEntryCount = 0;
+  AppUpdateInfo? _updateInfo;
+  String _currentAppVersion = '1.0.0';
+  int _currentAppBuild = 1;
+  bool _isUpdateActionInProgress = false;
+  double? _updateDownloadProgress;
+  String _updateStatusMessage = '';
+  DateTime? _lastUpdateCheckAt;
+  bool? _lastUpdateCheckOk;
+  String _lastUpdateCheckMessage = '';
+  DeployNoticeInfo? _deployNotice;
+  String _lastSeenDeployNoticeId = '';
+  bool _updateCheckRetryScheduled = false;
+  String? _downloadedUpdatePath;
+  Timer? _keepAliveTimer;
+  bool _keepAliveInFlight = false;
 
   String get apiBaseUrl => _apiBaseUrl;
   bool get isInitializing => _isInitializing;
@@ -93,11 +117,39 @@ class AppState extends ChangeNotifier {
   bool get offlineMode => _offlineMode;
   bool get setupRequired => _setupRequired;
   bool get bootstrapConfigured => _bootstrapConfigured;
+  bool get rememberMe => _rememberMe;
   String? get loginId => _loginId;
   String? get role => _role;
   UserRole get userRole => UserRoleAccess.fromString(_role);
   DateTime? get lastSessionSyncAt => _lastSessionSyncAt;
   int get cacheEntryCount => _cacheEntryCount;
+  AppUpdateInfo? get updateInfo => _updateInfo;
+    String get currentAppVersion => _currentAppVersion;
+    int get currentAppBuild => _currentAppBuild;
+    String get currentAppVersionLabel => formatVersionDisplay(_currentAppVersion, _currentAppBuild);
+  bool get hasRecommendedUpdate => _updateInfo?.updateAvailable == true;
+    bool get supportsInAppUpdateInstall =>
+      !kIsWeb &&
+      defaultTargetPlatform == TargetPlatform.android &&
+      AppUpdateService.supported;
+    bool get canStartAppUpdate =>
+      hasRecommendedUpdate &&
+      (_updateInfo?.hasDownloadUrl ?? false) &&
+      supportsInAppUpdateInstall;
+    bool get canInstallDownloadedUpdate =>
+      (_downloadedUpdatePath?.isNotEmpty ?? false) && supportsInAppUpdateInstall;
+    bool get isUpdateActionInProgress => _isUpdateActionInProgress;
+    double? get updateDownloadProgress => _updateDownloadProgress;
+    String get updateStatusMessage => _updateStatusMessage;
+    DateTime? get lastUpdateCheckAt => _lastUpdateCheckAt;
+    bool? get lastUpdateCheckOk => _lastUpdateCheckOk;
+    String get lastUpdateCheckMessage => _lastUpdateCheckMessage;
+  DeployNoticeInfo? get deployNotice => _deployNotice;
+  String get lastSeenDeployNoticeId => _lastSeenDeployNoticeId;
+  bool get hasUnreadDeployNotice =>
+      _deployNotice != null &&
+      _deployNotice!.hasNoticeId &&
+      _deployNotice!.noticeId != _lastSeenDeployNoticeId;
   bool get hasOperatorAccess => canAccess(UserRole.operator);
   bool get hasAdminAccess => canAccess(UserRole.admin);
 
@@ -119,7 +171,15 @@ class AppState extends ChangeNotifier {
 
     _setupRequired = _prefs.getBool(_setupRequiredKey) ?? false;
     _bootstrapConfigured = _prefs.getBool(_bootstrapConfiguredKey) ?? false;
+    _rememberMe = _prefs.getBool(_rememberMeKey) ?? false;
+    _lastSeenDeployNoticeId = _prefs.getString(_lastSeenDeployNoticeIdKey) ?? '';
     _refreshCacheCount();
+
+    await _loadCurrentAppVersion();
+    final initialChecked = await checkForAppUpdate(notify: false);
+    if (!initialChecked) {
+      unawaited(_retryAppUpdateCheckWithBackoff());
+    }
 
     // Restore persisted session cookie so the user doesn't need to log in again.
     final savedCookie = await _secureStorage.read(key: _sessionCookieKey);
@@ -132,7 +192,197 @@ class AppState extends ChangeNotifier {
     } catch (_) {
       // Keep setup hints and require a fresh login if the backend is unavailable.
     } finally {
+      if (_authenticated) {
+        _startKeepAlive();
+      }
       _isInitializing = false;
+      notifyListeners();
+    }
+  }
+
+  Future<bool> checkForAppUpdate({
+    bool notify = true,
+    bool ignoreErrors = true,
+  }) async {
+    try {
+      await _loadCurrentAppVersion();
+      final previousTarget = _updateInfo == null
+          ? null
+          : '${_updateInfo!.latestVersion}+${_updateInfo!.latestBuild}';
+
+      final response = await ApiService.fetchJson(
+        _apiBaseUrl,
+        '/api/app-update/check',
+        params: {
+          'platform': _updatePlatform,
+          'channel': 'prod',
+          'version': _currentAppVersion,
+          'build': _currentAppBuild,
+        },
+      );
+      final payload = response.data;
+      _updateInfo = AppUpdateInfo.fromJson(
+        payload,
+        fallbackVersion: _currentAppVersion,
+      );
+      final deployNoticePayload = payload['deploy_notice'];
+      if (deployNoticePayload is Map<String, dynamic>) {
+        final parsed = DeployNoticeInfo.fromJson(deployNoticePayload);
+        _deployNotice = parsed.hasNoticeId ? parsed : null;
+      } else if (deployNoticePayload is Map) {
+        final parsed = DeployNoticeInfo.fromJson(Map<String, dynamic>.from(deployNoticePayload));
+        _deployNotice = parsed.hasNoticeId ? parsed : null;
+      } else {
+        _deployNotice = null;
+      }
+      _lastUpdateCheckAt = DateTime.now();
+      _lastUpdateCheckOk = true;
+      _updateCheckRetryScheduled = false;
+
+      final policyWarning = payload['policy_warning']?.toString().trim() ?? '';
+      if (_updateInfo!.updateAvailable) {
+        if (_updateInfo!.hasDownloadUrl) {
+          _lastUpdateCheckMessage = '새 업데이트를 확인했습니다.';
+        } else {
+          _lastUpdateCheckMessage =
+              '업데이트는 감지되었지만 다운로드 주소가 비어 있습니다.';
+        }
+      } else {
+        _lastUpdateCheckMessage = '현재 최신 버전입니다.';
+      }
+      if (policyWarning.isNotEmpty) {
+        _lastUpdateCheckMessage =
+            '${_lastUpdateCheckMessage} ($policyWarning)';
+      }
+
+      final nextTarget = '${_updateInfo!.latestVersion}+${_updateInfo!.latestBuild}';
+      if (previousTarget != nextTarget) {
+        _downloadedUpdatePath = null;
+        _updateDownloadProgress = null;
+        _updateStatusMessage = '';
+      }
+
+      if (!_updateInfo!.updateAvailable) {
+        _downloadedUpdatePath = null;
+        _updateDownloadProgress = null;
+        _updateStatusMessage = '';
+      }
+      return true;
+    } catch (error) {
+      _lastUpdateCheckAt = DateTime.now();
+      _lastUpdateCheckOk = false;
+      _lastUpdateCheckMessage =
+          '업데이트 확인 실패: ${_normalizeUpdateError(error)}';
+      // Keep app usable even when update metadata cannot be fetched.
+      if (!ignoreErrors) {
+        rethrow;
+      }
+      return false;
+    } finally {
+      if (notify) {
+        notifyListeners();
+      }
+    }
+  }
+
+  Future<void> markDeployNoticeSeen() async {
+    final notice = _deployNotice;
+    if (notice == null || !notice.hasNoticeId) {
+      return;
+    }
+    _lastSeenDeployNoticeId = notice.noticeId;
+    await _prefs.setString(_lastSeenDeployNoticeIdKey, _lastSeenDeployNoticeId);
+    notifyListeners();
+  }
+
+  Future<void> _retryAppUpdateCheckWithBackoff() async {
+    if (_updateCheckRetryScheduled) {
+      return;
+    }
+    _updateCheckRetryScheduled = true;
+    const retryDelays = [
+      Duration(seconds: 5),
+      Duration(seconds: 30),
+    ];
+
+    for (final delay in retryDelays) {
+      await Future<void>.delayed(delay);
+      final ok = await checkForAppUpdate(ignoreErrors: true);
+      if (ok) {
+        _updateCheckRetryScheduled = false;
+        return;
+      }
+    }
+    _updateCheckRetryScheduled = false;
+  }
+
+  Future<void> downloadAndInstallAppUpdate() async {
+    final info = _updateInfo;
+    if (info == null || !info.updateAvailable) {
+      throw const ApiException('설치 가능한 업데이트 정보가 없습니다.');
+    }
+    if (!supportsInAppUpdateInstall) {
+      throw const ApiException('이 기기에서는 인앱 APK 설치를 지원하지 않습니다.');
+    }
+    if (!info.hasDownloadUrl) {
+      throw const ApiException('업데이트 다운로드 주소가 비어 있습니다.');
+    }
+
+    _isUpdateActionInProgress = true;
+    _updateDownloadProgress = 0;
+    _updateStatusMessage = '업데이트 패키지를 다운로드하는 중입니다.';
+    notifyListeners();
+
+    try {
+      final result = await AppUpdateService.downloadApk(
+        downloadUrl: info.downloadUrl,
+        version: info.latestVersion,
+        buildNumber: info.latestBuild,
+        expectedSha256: info.sha256,
+        expectedFileSize: info.fileSize,
+        onProgress: (received, total) {
+          _updateDownloadProgress = total > 0 ? received / total : null;
+          notifyListeners();
+        },
+      );
+
+      _downloadedUpdatePath = result.filePath;
+      _updateDownloadProgress = 1;
+      _updateStatusMessage = '다운로드를 완료했습니다. 설치 화면을 여는 중입니다.';
+      notifyListeners();
+
+      _updateStatusMessage =
+          await AppUpdateService.openInstaller(result.filePath);
+    } catch (error) {
+      _updateStatusMessage = _normalizeUpdateError(error);
+      rethrow;
+    } finally {
+      _isUpdateActionInProgress = false;
+      notifyListeners();
+    }
+  }
+
+  Future<void> installDownloadedAppUpdate() async {
+    if (!supportsInAppUpdateInstall) {
+      throw const ApiException('이 기기에서는 인앱 APK 설치를 지원하지 않습니다.');
+    }
+    if (!canInstallDownloadedUpdate) {
+      await downloadAndInstallAppUpdate();
+      return;
+    }
+
+    _isUpdateActionInProgress = true;
+    _updateStatusMessage = '설치 화면을 다시 여는 중입니다.';
+    notifyListeners();
+
+    try {
+      _updateStatusMessage =
+          await AppUpdateService.openInstaller(_downloadedUpdatePath!);
+    } catch (error) {
+      _updateStatusMessage = _normalizeUpdateError(error);
+      rethrow;
+    } finally {
+      _isUpdateActionInProgress = false;
       notifyListeners();
     }
   }
@@ -165,6 +415,7 @@ class AppState extends ChangeNotifier {
         _loginId = user['login_id']?.toString();
         _role = user['role']?.toString();
         _csrfToken = payload['csrf_token']?.toString();
+        _startKeepAlive();
       } else {
         await _clearAuthState(preserveSetupFlags: true);
       }
@@ -182,8 +433,13 @@ class AppState extends ChangeNotifier {
     }
   }
 
-  Future<void> login(String loginId, String password) async {
+  Future<void> login(
+    String loginId,
+    String password, {
+    bool? rememberMe,
+  }) async {
     final trimmedId = loginId.trim();
+    final useRememberMe = rememberMe ?? _rememberMe;
     if (trimmedId.isEmpty || password.isEmpty) {
       throw const ApiException('아이디와 비밀번호를 입력하세요.');
     }
@@ -194,6 +450,7 @@ class AppState extends ChangeNotifier {
       body: {
         'login_id': trimmedId,
         'password': password,
+        'remember_me': useRememberMe,
       },
       includeCsrfToken: false,
     );
@@ -207,6 +464,8 @@ class AppState extends ChangeNotifier {
 
     _authenticated = true;
     _offlineMode = false;
+    _rememberMe = useRememberMe;
+    await _prefs.setBool(_rememberMeKey, _rememberMe);
     _sessionCookie = response.sessionCookie;
     await _secureStorage.write(key: _sessionCookieKey, value: _sessionCookie);
     _csrfToken = response.data['csrf_token']?.toString();
@@ -214,8 +473,18 @@ class AppState extends ChangeNotifier {
     _role = user['role']?.toString();
     _setupRequired = false;
     _lastSessionSyncAt = DateTime.now();
+    _startKeepAlive();
     await _persistSetupState();
     _refreshCacheCount();
+    notifyListeners();
+  }
+
+  Future<void> setRememberMe(bool value) async {
+    if (_rememberMe == value) {
+      return;
+    }
+    _rememberMe = value;
+    await _prefs.setBool(_rememberMeKey, value);
     notifyListeners();
   }
 
@@ -247,6 +516,55 @@ class AppState extends ChangeNotifier {
     await _clearAuthState(preserveSetupFlags: false);
     _refreshCacheCount();
     notifyListeners();
+  }
+
+  Future<void> _loadCurrentAppVersion() async {
+    try {
+      final packageInfo = await PackageInfo.fromPlatform();
+      _currentAppVersion =
+          packageInfo.version.trim().isEmpty ? '1.0.0' : packageInfo.version.trim();
+      _currentAppBuild = int.tryParse(packageInfo.buildNumber.trim()) ?? 1;
+      return;
+    } catch (_) {
+      const versionText = String.fromEnvironment(
+        'APP_VERSION',
+        defaultValue: '1.0.0+1',
+      );
+      final split = versionText.split('+');
+      _currentAppVersion =
+          split.first.trim().isEmpty ? '1.0.0' : split.first.trim();
+      _currentAppBuild =
+          split.length > 1 ? int.tryParse(split[1].trim()) ?? 1 : 1;
+    }
+  }
+
+  String get _updatePlatform {
+    if (kIsWeb) {
+      return 'web';
+    }
+
+    switch (defaultTargetPlatform) {
+      case TargetPlatform.android:
+        return 'android';
+      case TargetPlatform.iOS:
+        return 'ios';
+      case TargetPlatform.linux:
+        return 'linux';
+      case TargetPlatform.macOS:
+        return 'macos';
+      case TargetPlatform.windows:
+        return 'windows';
+      case TargetPlatform.fuchsia:
+        return 'fuchsia';
+    }
+  }
+
+  String _normalizeUpdateError(Object error) {
+    final message = error.toString();
+    if (message.startsWith('Exception: ')) {
+      return message.substring('Exception: '.length);
+    }
+    return message;
   }
 
   Future<int> clearCache() async {
@@ -483,6 +801,7 @@ class AppState extends ChangeNotifier {
   }
 
   Future<void> _clearAuthState({bool preserveSetupFlags = false}) async {
+    _stopKeepAlive();
     _authenticated = false;
     _offlineMode = false;
     _sessionCookie = null;
@@ -498,6 +817,42 @@ class AppState extends ChangeNotifier {
       await _prefs.remove(_setupRequiredKey);
       await _prefs.remove(_bootstrapConfiguredKey);
     }
+  }
+
+  void _startKeepAlive() {
+    if (!_authenticated) {
+      _stopKeepAlive();
+      return;
+    }
+    _keepAliveTimer?.cancel();
+    _keepAliveTimer = Timer.periodic(_keepAliveInterval, (_) {
+      _runKeepAliveTick();
+    });
+  }
+
+  void _stopKeepAlive() {
+    _keepAliveTimer?.cancel();
+    _keepAliveTimer = null;
+  }
+
+  Future<void> _runKeepAliveTick() async {
+    if (!_authenticated || _keepAliveInFlight) {
+      return;
+    }
+    _keepAliveInFlight = true;
+    try {
+      await refreshSession(notify: false);
+    } catch (_) {
+      // Ignore transient keepalive errors.
+    } finally {
+      _keepAliveInFlight = false;
+    }
+  }
+
+  @override
+  void dispose() {
+    _stopKeepAlive();
+    super.dispose();
   }
 
   void _refreshCacheCount() {

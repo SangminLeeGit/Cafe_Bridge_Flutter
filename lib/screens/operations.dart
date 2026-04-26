@@ -7,7 +7,7 @@ import 'menu_workspace.dart';
 import 'signage.dart';
 import 'sync.dart';
 
-/// 운영 허브 — 원가관리, 메뉴 워크스페이스, 동기화로 이동하는 허브 화면.
+/// 운영 허브 — 원가관리, 메뉴 작업대, 동기화로 이동하는 허브 화면.
 class OperationsScreen extends StatelessWidget {
   const OperationsScreen({super.key});
 
@@ -37,11 +37,11 @@ class OperationsScreen extends StatelessWidget {
         const SizedBox(height: 8),
         _OperationTile(
           icon: Icons.menu_book_outlined,
-          title: '메뉴 워크스페이스',
+          title: '메뉴 작업대',
           subtitle: '가격 변경 · 신규 상품 등록 작업 관리',
           onTap: () => Navigator.of(context).push(
             MaterialPageRoute(builder: (_) => const _FullScreenPage(
-              title: '메뉴 워크스페이스',
+              title: '메뉴 작업대',
               child: MenuWorkspaceScreen(),
             )),
           ),

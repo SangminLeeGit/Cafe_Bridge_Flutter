@@ -1,5 +1,7 @@
 // Models for the costing (원가 관리) feature.
 
+import 'api_contracts.dart';
+
 class CostingDashboardSummary {
   final int ingredientCount;
   final int pricedIngredientCount;
@@ -19,12 +21,12 @@ class CostingDashboardSummary {
 
   factory CostingDashboardSummary.fromJson(Map<String, dynamic> json) {
     return CostingDashboardSummary(
-      ingredientCount: _asInt(json['ingredient_count']),
-      pricedIngredientCount: _asInt(json['priced_ingredient_count']),
-      recipeCount: _asInt(json['recipe_count']),
-      alertRecipeCount: _asInt(json['alert_recipe_count']),
-      recentPriceChangeCount: _asInt(json['recent_price_change_count']),
-      lastPriceChangeAt: _asString(json['last_price_change_at']),
+      ingredientCount: asInt(json['ingredient_count']),
+      pricedIngredientCount: asInt(json['priced_ingredient_count']),
+      recipeCount: asInt(json['recipe_count']),
+      alertRecipeCount: asInt(json['alert_recipe_count']),
+      recentPriceChangeCount: asInt(json['recent_price_change_count']),
+      lastPriceChangeAt: asString(json['last_price_change_at']),
     );
   }
 }
@@ -60,18 +62,18 @@ class RecipeSummaryRow {
 
   factory RecipeSummaryRow.fromJson(Map<String, dynamic> json) {
     return RecipeSummaryRow(
-      recipeId: _asInt(json['recipe_id']),
-      menuCode: _asString(json['menu_code']),
-      menuName: _asString(json['menu_name']),
-      sizeCode: _asString(json['size_code']),
-      temperatureCode: _asString(json['temperature_code']),
-      sellingPrice: _asInt(json['selling_price']),
-      targetCostRatio: _asDouble(json['target_cost_ratio']),
-      totalCost: _asInt(json['total_cost']),
-      costRatio: _asDouble(json['cost_ratio']),
-      marginAmount: _asInt(json['margin_amount']),
-      status: _asString(json['status']),
-      itemCount: _asInt(json['item_count']),
+      recipeId: asInt(json['recipe_id']),
+      menuCode: asString(json['menu_code']),
+      menuName: asString(json['menu_name']),
+      sizeCode: asString(json['size_code']),
+      temperatureCode: asString(json['temperature_code']),
+      sellingPrice: asInt(json['selling_price']),
+      targetCostRatio: asDouble(json['target_cost_ratio']),
+      totalCost: asInt(json['total_cost']),
+      costRatio: asDouble(json['cost_ratio']),
+      marginAmount: asInt(json['margin_amount']),
+      status: asString(json['status']),
+      itemCount: asInt(json['item_count']),
     );
   }
 
@@ -93,12 +95,12 @@ class CostingDashboardData {
 
   factory CostingDashboardData.fromJson(Map<String, dynamic> json) {
     return CostingDashboardData(
-      error: _asString(json['error']),
-      summary: CostingDashboardSummary.fromJson(_asMap(json['summary'])),
-      recentRecipes: _asListOfMaps(json['recent_recipes'])
+      error: asString(json['error']),
+      summary: CostingDashboardSummary.fromJson(asMap(json['summary'])),
+      recentRecipes: asListOfMaps(json['recent_recipes'])
           .map(RecipeSummaryRow.fromJson)
           .toList(growable: false),
-      alerts: _asListOfMaps(json['alerts'])
+      alerts: asListOfMaps(json['alerts'])
           .map(RecipeSummaryRow.fromJson)
           .toList(growable: false),
     );
@@ -131,15 +133,15 @@ class Ingredient {
   factory Ingredient.fromJson(Map<String, dynamic> json) {
     final rawCost = json['current_unit_cost'];
     return Ingredient(
-      ingredientId: _asInt(json['ingredient_id']),
-      name: _asString(json['name']),
-      category: _asString(json['category']),
-      baseUnit: _asString(json['base_unit']),
-      supplierName: _asString(json['supplier_name']),
+      ingredientId: asInt(json['ingredient_id']),
+      name: asString(json['name']),
+      category: asString(json['category']),
+      baseUnit: asString(json['base_unit']),
+      supplierName: asString(json['supplier_name']),
       isActive: json['is_active'] == true,
-      notes: _asString(json['notes']),
-      priceCount: _asInt(json['price_count']),
-      currentUnitCost: rawCost == null ? null : _asDouble(rawCost),
+      notes: asString(json['notes']),
+      priceCount: asInt(json['price_count']),
+      currentUnitCost: rawCost == null ? null : asDouble(rawCost),
     );
   }
 }
@@ -169,15 +171,15 @@ class IngredientPrice {
 
   factory IngredientPrice.fromJson(Map<String, dynamic> json) {
     return IngredientPrice(
-      priceId: _asInt(json['price_id']),
-      ingredientId: _asInt(json['ingredient_id']),
-      unitCost: _asDouble(json['unit_cost']),
-      packageSize: json['package_size'] == null ? null : _asDouble(json['package_size']),
-      packageCost: json['package_cost'] == null ? null : _asDouble(json['package_cost']),
-      packageUnit: _asString(json['package_unit']),
-      effectiveDate: _asString(json['effective_date']),
-      supplierName: _asString(json['supplier_name']),
-      notes: _asString(json['notes']),
+      priceId: asInt(json['price_id']),
+      ingredientId: asInt(json['ingredient_id']),
+      unitCost: asDouble(json['unit_cost']),
+      packageSize: json['package_size'] == null ? null : asDouble(json['package_size']),
+      packageCost: json['package_cost'] == null ? null : asDouble(json['package_cost']),
+      packageUnit: asString(json['package_unit']),
+      effectiveDate: asString(json['effective_date']),
+      supplierName: asString(json['supplier_name']),
+      notes: asString(json['notes']),
     );
   }
 }
@@ -207,15 +209,15 @@ class RecipeItem {
 
   factory RecipeItem.fromJson(Map<String, dynamic> json) {
     return RecipeItem(
-      recipeItemId: _asInt(json['recipe_item_id']),
-      recipeId: _asInt(json['recipe_id']),
-      ingredientId: _asInt(json['ingredient_id']),
-      ingredientName: _asString(json['ingredient_name']),
-      ingredientBaseUnit: _asString(json['ingredient_base_unit']),
-      qty: _asDouble(json['qty']),
-      currentUnitCost: json['current_unit_cost'] == null ? null : _asDouble(json['current_unit_cost']),
-      lineCost: json['line_cost'] == null ? null : _asDouble(json['line_cost']),
-      notes: _asString(json['notes']),
+      recipeItemId: asInt(json['recipe_item_id']),
+      recipeId: asInt(json['recipe_id']),
+      ingredientId: asInt(json['ingredient_id']),
+      ingredientName: asString(json['ingredient_name']),
+      ingredientBaseUnit: asString(json['ingredient_base_unit']),
+      qty: asDouble(json['qty']),
+      currentUnitCost: json['current_unit_cost'] == null ? null : asDouble(json['current_unit_cost']),
+      lineCost: json['line_cost'] == null ? null : asDouble(json['line_cost']),
+      notes: asString(json['notes']),
     );
   }
 }
@@ -237,11 +239,11 @@ class RecipeCalculateSummary {
 
   factory RecipeCalculateSummary.fromJson(Map<String, dynamic> json) {
     return RecipeCalculateSummary(
-      totalCost: _asInt(json['total_cost']),
-      costRatio: _asDouble(json['cost_ratio']),
-      marginAmount: _asInt(json['margin_amount']),
-      recommendedPrice: _asInt(json['recommended_price']),
-      itemCount: _asInt(json['item_count']),
+      totalCost: asInt(json['total_cost']),
+      costRatio: asDouble(json['cost_ratio']),
+      marginAmount: asInt(json['margin_amount']),
+      recommendedPrice: asInt(json['recommended_price']),
+      itemCount: asInt(json['item_count']),
     );
   }
 }
@@ -259,42 +261,11 @@ class RecipeDetailData {
 
   factory RecipeDetailData.fromJson(Map<String, dynamic> json) {
     return RecipeDetailData(
-      recipe: RecipeSummaryRow.fromJson(_asMap(json['recipe'])),
-      items: _asListOfMaps(json['items'])
+      recipe: RecipeSummaryRow.fromJson(asMap(json['recipe'])),
+      items: asListOfMaps(json['items'])
           .map(RecipeItem.fromJson)
           .toList(growable: false),
-      summary: RecipeCalculateSummary.fromJson(_asMap(json['summary'])),
+      summary: RecipeCalculateSummary.fromJson(asMap(json['summary'])),
     );
   }
-}
-
-// ─── Helpers ──────────────────────────────────────────────────────────────────
-
-List<Map<String, dynamic>> _asListOfMaps(Object? source) {
-  if (source is! List) return const [];
-  return source
-      .whereType<Map>()
-      .map((item) => Map<String, dynamic>.from(item))
-      .toList(growable: false);
-}
-
-Map<String, dynamic> _asMap(Object? source) {
-  if (source is Map) return Map<String, dynamic>.from(source);
-  return const {};
-}
-
-String _asString(Object? value) => value?.toString() ?? '';
-
-int _asInt(Object? value) {
-  if (value is int) return value;
-  if (value is double) return value.round();
-  if (value is String) return int.tryParse(value) ?? 0;
-  return 0;
-}
-
-double _asDouble(Object? value) {
-  if (value is double) return value;
-  if (value is int) return value.toDouble();
-  if (value is String) return double.tryParse(value) ?? 0;
-  return 0;
 }

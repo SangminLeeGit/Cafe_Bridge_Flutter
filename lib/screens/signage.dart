@@ -6,18 +6,60 @@ import '../widgets/empty_state.dart';
 
 // ─── 모델 ─────────────────────────────────────────────────────────────────────
 
+dynamic _cloneJsonValue(dynamic value) {
+  if (value is Map) {
+    return value.map<String, dynamic>(
+      (key, nestedValue) => MapEntry(key.toString(), _cloneJsonValue(nestedValue)),
+    );
+  }
+  if (value is List) {
+    return value.map(_cloneJsonValue).toList();
+  }
+  return value;
+}
+
+Map<String, dynamic> _stringKeyedMap(dynamic value) {
+  if (value is! Map) {
+    return <String, dynamic>{};
+  }
+  return value.map<String, dynamic>(
+    (key, nestedValue) => MapEntry(key.toString(), nestedValue),
+  );
+}
+
+Map<String, dynamic> _extractExtraFields(
+  Map<String, dynamic> source,
+  Set<String> knownKeys,
+) {
+  final extras = <String, dynamic>{};
+  for (final entry in source.entries) {
+    if (!knownKeys.contains(entry.key)) {
+      extras[entry.key] = _cloneJsonValue(entry.value);
+    }
+  }
+  return extras;
+}
+
+Map<String, dynamic> _cloneJsonMap(Map<String, dynamic> source) {
+  return source.map(
+    (key, value) => MapEntry(key, _cloneJsonValue(value)),
+  );
+}
+
 class _SignageItem {
   String korean;
   String english;
   int price;
   String note;
+  final Map<String, dynamic> extraFields;
 
   _SignageItem({
     required this.korean,
     required this.english,
     required this.price,
     this.note = '',
-  });
+    Map<String, dynamic>? extraFields,
+  }) : extraFields = extraFields ?? <String, dynamic>{};
 
   factory _SignageItem.fromJson(Map<String, dynamic> j) => _SignageItem(
         korean: (j['korean'] ?? '').toString(),
@@ -26,9 +68,11 @@ class _SignageItem {
             ? (j['price'] as int)
             : int.tryParse(j['price'].toString()) ?? 0,
         note: (j['note'] ?? '').toString(),
+        extraFields: _extractExtraFields(j, {'korean', 'english', 'price', 'note'}),
       );
 
   Map<String, dynamic> toJson() => {
+        ...extraFields,
         'korean': korean,
         'english': english,
         'price': price,
@@ -40,6 +84,7 @@ class _SignageItem {
         english: english,
         price: price,
         note: note,
+        extraFields: _cloneJsonMap(extraFields),
       );
 }
 
@@ -48,13 +93,15 @@ class _SignageCategory {
   String title;
   String description;
   List<_SignageItem> items;
+  final Map<String, dynamic> extraFields;
 
   _SignageCategory({
     required this.id,
     required this.title,
     this.description = '',
     required this.items,
-  });
+    Map<String, dynamic>? extraFields,
+  }) : extraFields = extraFields ?? <String, dynamic>{};
 
   factory _SignageCategory.fromJson(Map<String, dynamic> j) => _SignageCategory(
         id: (j['id'] ?? '').toString(),
@@ -63,9 +110,11 @@ class _SignageCategory {
         items: (j['items'] as List? ?? [])
             .map((e) => _SignageItem.fromJson(e as Map<String, dynamic>))
             .toList(),
+        extraFields: _extractExtraFields(j, {'id', 'title', 'description', 'items'}),
       );
 
   Map<String, dynamic> toJson() => {
+        ...extraFields,
         'id': id,
         'title': title,
         'description': description.isEmpty ? null : description,
@@ -77,6 +126,7 @@ class _SignageCategory {
         title: title,
         description: description,
         items: items.map((e) => e.clone()).toList(),
+        extraFields: _cloneJsonMap(extraFields),
       );
 }
 
@@ -86,6 +136,8 @@ class _SignageMenu {
   String shopNameLine2;
   String announcementText;
   List<_SignageCategory> categories;
+  final Map<String, dynamic> extraFields;
+  final Map<String, dynamic> announcementExtraFields;
 
   _SignageMenu({
     required this.shopName,
@@ -93,13 +145,14 @@ class _SignageMenu {
     required this.shopNameLine2,
     required this.announcementText,
     required this.categories,
-  });
+    Map<String, dynamic>? extraFields,
+    Map<String, dynamic>? announcementExtraFields,
+  })  : extraFields = extraFields ?? <String, dynamic>{},
+        announcementExtraFields = announcementExtraFields ?? <String, dynamic>{};
 
   factory _SignageMenu.fromJson(Map<String, dynamic> j) {
-    final announcement = j['announcement'];
-    final text = announcement is Map
-        ? (announcement['text'] ?? '').toString()
-        : '';
+    final announcement = _stringKeyedMap(j['announcement']);
+    final text = (announcement['text'] ?? '').toString();
     return _SignageMenu(
       shopName: (j['shopName'] ?? '').toString(),
       shopNameLine1: (j['shopNameLine1'] ?? '').toString(),
@@ -108,14 +161,23 @@ class _SignageMenu {
       categories: (j['categories'] as List? ?? [])
           .map((e) => _SignageCategory.fromJson(e as Map<String, dynamic>))
           .toList(),
+      extraFields: _extractExtraFields(
+        j,
+        {'shopName', 'shopNameLine1', 'shopNameLine2', 'announcement', 'categories'},
+      ),
+      announcementExtraFields: _extractExtraFields(announcement, {'text'}),
     );
   }
 
   Map<String, dynamic> toJson() => {
+        ...extraFields,
         'shopName': shopName,
         'shopNameLine1': shopNameLine1,
         'shopNameLine2': shopNameLine2,
-        'announcement': {'text': announcementText},
+        'announcement': {
+          ...announcementExtraFields,
+          'text': announcementText,
+        },
         'categories': categories.map((e) => e.toJson()).toList(),
       };
 
@@ -125,6 +187,8 @@ class _SignageMenu {
         shopNameLine2: shopNameLine2,
         announcementText: announcementText,
         categories: categories.map((e) => e.clone()).toList(),
+        extraFields: _cloneJsonMap(extraFields),
+        announcementExtraFields: _cloneJsonMap(announcementExtraFields),
       );
 }
 
@@ -717,17 +781,13 @@ class _ItemRow extends StatelessWidget {
   });
 
   void _openEditSheet(BuildContext context) {
-    showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      useSafeArea: true,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
-      ),
-      builder: (_) => _ItemEditSheet(
-        item: item,
-        index: index,
-        onChanged: onChanged,
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => _ItemEditSheet(
+          item: item,
+          index: index,
+          onChanged: onChanged,
+        ),
       ),
     );
   }
@@ -830,7 +890,7 @@ class _ItemRow extends StatelessWidget {
   }
 }
 
-// ─── 품목 편집 Bottom Sheet ───────────────────────────────────────────────────
+// ─── 품목 편집 Screen ────────────────────────────────────────────────────────
 
 class _ItemEditSheet extends StatefulWidget {
   final _SignageItem item;
@@ -883,96 +943,89 @@ class _ItemEditSheetState extends State<_ItemEditSheet> {
 
   @override
   Widget build(BuildContext context) {
-    final bottomInset = MediaQuery.of(context).viewInsets.bottom;
-    return Padding(
-      padding: EdgeInsets.only(bottom: bottomInset),
-      child: SingleChildScrollView(
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(20, 12, 20, 24),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              // 드래그 핸들
-              Center(
-                child: Container(
-                  width: 40,
-                  height: 4,
-                  margin: const EdgeInsets.only(bottom: 16),
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('품목 편집'),
+        bottom: PreferredSize(
+          preferredSize: const Size.fromHeight(1),
+          child: Container(height: 1, color: const Color(0xFFE2E8F0)),
+        ),
+      ),
+      body: SafeArea(
+        child: ListView(
+          padding: const EdgeInsets.fromLTRB(20, 16, 20, 24),
+          children: [
+            Row(
+              children: [
+                Container(
+                  width: 28,
+                  height: 28,
                   decoration: BoxDecoration(
-                    color: const Color(0xFFCBD5E1),
-                    borderRadius: BorderRadius.circular(2),
+                    color: const Color(0xFF0D9488),
+                    borderRadius: BorderRadius.circular(7),
                   ),
-                ),
-              ),
-              // 헤더
-              Row(
-                children: [
-                  Container(
-                    width: 28,
-                    height: 28,
-                    decoration: BoxDecoration(
-                      color: const Color(0xFF0D9488),
-                      borderRadius: BorderRadius.circular(7),
-                    ),
-                    alignment: Alignment.center,
-                    child: Text(
-                      '${widget.index}',
-                      style: const TextStyle(
-                        fontSize: 13,
-                        fontWeight: FontWeight.w700,
-                        color: Colors.white,
-                      ),
-                    ),
-                  ),
-                  const SizedBox(width: 10),
-                  const Text(
-                    '품목 편집',
-                    style: TextStyle(
-                      fontSize: 16,
+                  alignment: Alignment.center,
+                  child: Text(
+                    '${widget.index}',
+                    style: const TextStyle(
+                      fontSize: 13,
                       fontWeight: FontWeight.w700,
-                      color: Color(0xFF0F172A),
+                      color: Colors.white,
                     ),
                   ),
-                ],
-              ),
-              const SizedBox(height: 20),
-              _SheetField(
-                label: '한글명',
-                controller: _koreanCtrl,
-                hint: '메뉴 이름',
-                autofocus: true,
-              ),
-              const SizedBox(height: 14),
-              _SheetField(
-                label: 'English',
-                controller: _englishCtrl,
-                hint: 'Menu name',
-              ),
-              const SizedBox(height: 14),
-              _SheetField(
-                label: '가격 (원)',
-                controller: _priceCtrl,
-                hint: '0',
-                keyboardType: TextInputType.number,
-                textAlign: TextAlign.right,
-              ),
-              const SizedBox(height: 14),
-              _SheetField(
-                label: '비고 (선택)',
-                controller: _noteCtrl,
-                hint: '예: 매운맛, 계절한정 등',
-              ),
-              const SizedBox(height: 24),
-              FilledButton(
-                onPressed: _save,
-                style: FilledButton.styleFrom(
-                  backgroundColor: const Color(0xFF0D9488),
-                  minimumSize: const Size(double.infinity, 48),
                 ),
-                child: const Text('저장', style: TextStyle(fontSize: 15)),
-              ),
-            ],
+                const SizedBox(width: 10),
+                const Text(
+                  '메뉴 항목 정보',
+                  style: TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.w700,
+                    color: Color(0xFF0F172A),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 20),
+            _SheetField(
+              label: '한글명',
+              controller: _koreanCtrl,
+              hint: '메뉴 이름',
+              autofocus: true,
+            ),
+            const SizedBox(height: 14),
+            _SheetField(
+              label: 'English',
+              controller: _englishCtrl,
+              hint: 'Menu name',
+            ),
+            const SizedBox(height: 14),
+            _SheetField(
+              label: '가격 (원)',
+              controller: _priceCtrl,
+              hint: '0',
+              keyboardType: TextInputType.number,
+              textAlign: TextAlign.right,
+            ),
+            const SizedBox(height: 14),
+            _SheetField(
+              label: '비고 (선택)',
+              controller: _noteCtrl,
+              hint: '예: 매운맛, 계절한정 등',
+            ),
+          ],
+        ),
+      ),
+      bottomNavigationBar: SafeArea(
+        top: false,
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(20, 8, 20, 20),
+          child: FilledButton(
+            onPressed: _save,
+            style: FilledButton.styleFrom(
+              backgroundColor: const Color(0xFF0D9488),
+              minimumSize: const Size(double.infinity, 50),
+            ),
+            child: const Text('저장', style: TextStyle(fontSize: 15)),
           ),
         ),
       ),
