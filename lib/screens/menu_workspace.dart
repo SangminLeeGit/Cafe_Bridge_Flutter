@@ -78,19 +78,19 @@ class _CategoryOptionCatalog {
       }
     }
 
-    List<String> _sorted(Iterable<String> values) {
+    List<String> sortedValues(Iterable<String> values) {
       final list = values.toList(growable: false);
       list.sort((left, right) => left.compareTo(right));
       return list;
     }
 
     return _CategoryOptionCatalog(
-      majorOptions: _sorted(majorSet),
+      majorOptions: sortedValues(majorSet),
       middleOptionsByMajor: {
-        for (final entry in middleMap.entries) entry.key: _sorted(entry.value),
+        for (final entry in middleMap.entries) entry.key: sortedValues(entry.value),
       },
       minorOptionsByMajorMiddle: {
-        for (final entry in minorMap.entries) entry.key: _sorted(entry.value),
+        for (final entry in minorMap.entries) entry.key: sortedValues(entry.value),
       },
     );
   }
@@ -354,7 +354,7 @@ class _WorkspaceTabState extends State<_WorkspaceTab>
       final response = await appState.fetchMapParsed<Map<String, dynamic>>(
         '/api/menu-workspace/price-apply-runs',
         parser: (json) {
-          final raw = json is Map<String, dynamic> ? json : Map<String, dynamic>.from(json as Map);
+          final raw = json;
           return {
             'runs': (raw['runs'] as List? ?? [])
                 .whereType<Map>()
@@ -389,7 +389,7 @@ class _WorkspaceTabState extends State<_WorkspaceTab>
       final response = await appState.fetchMapParsed<Map<String, dynamic>>(
         '/api/menu-workspace/new-item-apply-history',
         parser: (json) {
-          final raw = json is Map<String, dynamic> ? json : Map<String, dynamic>.from(json as Map);
+          final raw = json;
           return {
             'tasks': (raw['tasks'] as List? ?? [])
                 .whereType<Map>()
@@ -424,7 +424,7 @@ class _WorkspaceTabState extends State<_WorkspaceTab>
       final response = await appState.fetchMapParsed<Map<String, dynamic>>(
         '/api/price/browser-apply-history',
         parser: (json) {
-          final raw = json is Map<String, dynamic> ? json : Map<String, dynamic>.from(json as Map);
+          final raw = json;
           return {
             'tasks': (raw['tasks'] as List? ?? [])
                 .whereType<Map>()
@@ -459,7 +459,7 @@ class _WorkspaceTabState extends State<_WorkspaceTab>
       final response = await appState.fetchMapParsed<Map<String, dynamic>>(
         '/api/menu-workspace/item-delete-history',
         parser: (json) {
-          final raw = json is Map<String, dynamic> ? json : Map<String, dynamic>.from(json as Map);
+          final raw = json;
           return {
             'tasks': (raw['tasks'] as List? ?? [])
                 .whereType<Map>()
@@ -940,9 +940,10 @@ class _ProductBrowserTabState extends State<_ProductBrowserTab>
           ),
         Padding(
           padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
-          child: Row(
-            children: [
-              Text(
+          child: LayoutBuilder(
+            builder: (context, constraints) {
+              final compactLayout = constraints.maxWidth < 520;
+              final summaryText = Text(
                 _hasSearched
                     ? 'POS 상품 검색 결과 (${_products.length}건)'
                     : '전체 메뉴 (${_products.length}건)',
@@ -951,31 +952,62 @@ class _ProductBrowserTabState extends State<_ProductBrowserTab>
                   fontSize: 13,
                   color: Color(0xFF64748B),
                 ),
-              ),
-              const Spacer(),
-              TextButton.icon(
-                onPressed: _refreshCurrent,
-                icon: const Icon(Icons.refresh, size: 16),
-                label: const Text('새로고침',
-                    style: TextStyle(fontSize: 12)),
-                style: TextButton.styleFrom(
-                  foregroundColor: const Color(0xFF64748B),
-                  visualDensity: VisualDensity.compact,
-                ),
-              ),
-              const SizedBox(width: 6),
-              FilledButton.icon(
-                onPressed: isOperator ? _openNewItemScreen : null,
-                icon: const Icon(Icons.add_box_outlined, size: 16),
-                label: const Text('신규 메뉴 추가',
-                    style: TextStyle(fontSize: 12)),
-                style: FilledButton.styleFrom(
-                  visualDensity: VisualDensity.compact,
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                ),
-              ),
-            ],
+              );
+              final actionButtons = Wrap(
+                spacing: 6,
+                runSpacing: 6,
+                alignment: WrapAlignment.end,
+                children: [
+                  TextButton.icon(
+                    onPressed: _refreshCurrent,
+                    icon: const Icon(Icons.refresh, size: 16),
+                    label: const Text('새로고침', style: TextStyle(fontSize: 12)),
+                    style: TextButton.styleFrom(
+                      foregroundColor: const Color(0xFF64748B),
+                      visualDensity: VisualDensity.compact,
+                    ),
+                  ),
+                  FilledButton.icon(
+                    onPressed: isOperator ? _openNewItemScreen : null,
+                    icon: const Icon(Icons.add_box_outlined, size: 16),
+                    label: const Text(
+                      '신규 메뉴 추가',
+                      style: TextStyle(fontSize: 12),
+                    ),
+                    style: FilledButton.styleFrom(
+                      visualDensity: VisualDensity.compact,
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 12,
+                        vertical: 8,
+                      ),
+                    ),
+                  ),
+                ],
+              );
+
+              if (compactLayout) {
+                return Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    summaryText,
+                    const SizedBox(height: 8),
+                    Align(
+                      alignment: Alignment.centerRight,
+                      child: actionButtons,
+                    ),
+                  ],
+                );
+              }
+
+              return Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Expanded(child: summaryText),
+                  const SizedBox(width: 12),
+                  actionButtons,
+                ],
+              );
+            },
           ),
         ),
         Expanded(
@@ -1404,7 +1436,7 @@ class _NewMenuAddScreenState extends State<_NewMenuAddScreen> {
               children: [
                 Expanded(
                   child: DropdownButtonFormField<String>(
-                    value: _majorCategory.isEmpty ? null : _majorCategory,
+                    initialValue: _majorCategory.isEmpty ? null : _majorCategory,
                     hint: const Text('대분류 선택'),
                     decoration: const InputDecoration(
                       labelText: '대분류 *',
@@ -1412,14 +1444,14 @@ class _NewMenuAddScreenState extends State<_NewMenuAddScreen> {
                     ),
                     items: widget.categoryCatalog.majorOptions.map(
                       (option) => DropdownMenuItem<String>(value: option, child: Text(option)),
-                    ],
+                    ).toList(growable: false),
                     onChanged: isBusy ? null : _onMajorCategoryChanged,
                   ),
                 ),
                 const SizedBox(width: 12),
                 Expanded(
                   child: DropdownButtonFormField<String>(
-                    value: _middleCategory.isEmpty ? null : _middleCategory,
+                    initialValue: _middleCategory.isEmpty ? null : _middleCategory,
                     hint: Text(_middleCategoryHint),
                     disabledHint: Text(_middleCategoryHint),
                     decoration: const InputDecoration(
@@ -1438,7 +1470,7 @@ class _NewMenuAddScreenState extends State<_NewMenuAddScreen> {
             ),
             const SizedBox(height: 12),
             DropdownButtonFormField<String>(
-              value: _minorCategory.isEmpty ? null : _minorCategory,
+              initialValue: _minorCategory.isEmpty ? null : _minorCategory,
               hint: Text(_minorCategoryHint),
               disabledHint: Text(_minorCategoryHint),
               decoration: const InputDecoration(
@@ -1500,7 +1532,7 @@ class _NewMenuAddScreenState extends State<_NewMenuAddScreen> {
               children: [
                 Expanded(
                   child: DropdownButtonFormField<String>(
-                    value: _taxMode,
+                    initialValue: _taxMode,
                     decoration: const InputDecoration(
                       labelText: '과세유무',
                       border: OutlineInputBorder(),
@@ -1517,7 +1549,7 @@ class _NewMenuAddScreenState extends State<_NewMenuAddScreen> {
                 const SizedBox(width: 12),
                 Expanded(
                   child: DropdownButtonFormField<String>(
-                    value: _useMode,
+                    initialValue: _useMode,
                     decoration: const InputDecoration(
                       labelText: '사용구분',
                       border: OutlineInputBorder(),
@@ -1534,7 +1566,7 @@ class _NewMenuAddScreenState extends State<_NewMenuAddScreen> {
                 const SizedBox(width: 12),
                 Expanded(
                   child: DropdownButtonFormField<String>(
-                    value: _stockMode,
+                    initialValue: _stockMode,
                     decoration: const InputDecoration(
                       labelText: '재고관리',
                       border: OutlineInputBorder(),

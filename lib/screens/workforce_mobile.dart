@@ -13,10 +13,10 @@ class WorkforceScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return DefaultTabController(
+    return const DefaultTabController(
       length: 5,
       child: Column(
-        children: const [
+        children: [
           _WorkforceHeader(),
           Expanded(
             child: TabBarView(
@@ -43,9 +43,9 @@ class _WorkforceHeader extends StatelessWidget {
     return Container(
       color: Colors.white,
       padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
-      child: Column(
+      child: const Column(
         crossAxisAlignment: CrossAxisAlignment.start,
-        children: const [
+        children: [
           Text('인력 관리', style: TextStyle(fontWeight: FontWeight.w800, fontSize: 18, color: Color(0xFF0F172A))),
           SizedBox(height: 4),
           Text('근무 일정, 직원, 급여를 관리합니다.', style: TextStyle(color: Color(0xFF64748B), fontSize: 13)),
@@ -153,7 +153,7 @@ class _DashboardTabState extends State<_DashboardTab> {
                       children: [
                         Expanded(
                           child: DropdownButtonFormField<String>(
-                            value: payType,
+                            initialValue: payType,
                             decoration: const InputDecoration(labelText: '급여 타입'),
                             items: const [
                               DropdownMenuItem(value: 'hourly', child: Text('시급')),
@@ -166,7 +166,7 @@ class _DashboardTabState extends State<_DashboardTab> {
                         const SizedBox(width: 12),
                         Expanded(
                           child: DropdownButtonFormField<String>(
-                            value: payCycle,
+                            initialValue: payCycle,
                             decoration: const InputDecoration(labelText: '급여 주기'),
                             items: const [
                               DropdownMenuItem(value: 'weekly', child: Text('주급')),
@@ -246,6 +246,8 @@ class _DashboardTabState extends State<_DashboardTab> {
   }
 
   Future<void> _deleteWorkplace(Workplace workplace) async {
+    final appState = context.read<AppState>();
+    final messenger = ScaffoldMessenger.of(context);
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (dialogContext) => AlertDialog(
@@ -259,11 +261,11 @@ class _DashboardTabState extends State<_DashboardTab> {
     );
     if (confirmed != true) return;
     try {
-      await context.read<AppState>().postJson('/api/workforce/workplaces/${workplace.id}', method: 'DELETE');
+      await appState.postJson('/api/workforce/workplaces/${workplace.id}', method: 'DELETE');
       await _load();
     } catch (error) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(error.toString())));
+      messenger.showSnackBar(SnackBar(content: Text(error.toString())));
     }
   }
 
@@ -826,7 +828,7 @@ class _EmployeesTabState extends State<_EmployeesTab> {
       );
       if (!mounted) return;
       setState(() {
-        _list = response.data as List<Employee>;
+        _list = response.data;
         _loading = false;
       });
     } catch (error) {
@@ -842,8 +844,8 @@ class _EmployeesTabState extends State<_EmployeesTab> {
 
   Future<void> _editEmployee({Employee? employee}) async {
     final workplaces = await _loadWorkplaces();
+    if (!mounted) return;
     if (workplaces.isEmpty) {
-      if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('먼저 근무지를 등록하세요.')));
       return;
     }
@@ -875,7 +877,7 @@ class _EmployeesTabState extends State<_EmployeesTab> {
                   mainAxisSize: MainAxisSize.min,
                   children: [
                     DropdownButtonFormField<int>(
-                      value: workplaceId,
+                      initialValue: workplaceId,
                       decoration: const InputDecoration(labelText: '근무지'),
                       items: workplaces.map((workplace) => DropdownMenuItem(value: workplace.id, child: Text(workplace.name))).toList(growable: false),
                       onChanged: (value) => setModalState(() => workplaceId = value ?? workplaceId),
@@ -884,7 +886,7 @@ class _EmployeesTabState extends State<_EmployeesTab> {
                     TextFormField(initialValue: employeeNo, decoration: const InputDecoration(labelText: '사원번호'), onChanged: (value) => employeeNo = value),
                     TextFormField(initialValue: role, decoration: const InputDecoration(labelText: '직책'), onChanged: (value) => role = value),
                     DropdownButtonFormField<String>(
-                      value: employmentType,
+                      initialValue: employmentType,
                       decoration: const InputDecoration(labelText: '고용형태'),
                       items: const [
                         DropdownMenuItem(value: 'part_time', child: Text('파트타임')),
@@ -912,7 +914,7 @@ class _EmployeesTabState extends State<_EmployeesTab> {
                       children: [
                         Expanded(
                           child: DropdownButtonFormField<String>(
-                            value: taxPreset,
+                            initialValue: taxPreset,
                             decoration: const InputDecoration(labelText: '세금 프리셋'),
                             items: const [
                               DropdownMenuItem(value: 'inherit', child: Text('상속')),
@@ -1126,7 +1128,7 @@ class _EmployeesTabState extends State<_EmployeesTab> {
                         const SizedBox(width: 12),
                         Expanded(
                           child: DropdownButtonFormField<String>(
-                            value: leaveType,
+                            initialValue: leaveType,
                             decoration: const InputDecoration(labelText: '휴무 타입'),
                             items: const [
                               DropdownMenuItem(value: 'none', child: Text('정상근무')),
@@ -1142,7 +1144,7 @@ class _EmployeesTabState extends State<_EmployeesTab> {
                       ],
                     ),
                     DropdownButtonFormField<String>(
-                      value: holidayType,
+                      initialValue: holidayType,
                       decoration: const InputDecoration(labelText: '휴일 타입'),
                       items: const [
                         DropdownMenuItem(value: 'none', child: Text('일반일')),
@@ -1203,6 +1205,8 @@ class _EmployeesTabState extends State<_EmployeesTab> {
   }
 
   Future<void> _deleteEmployee(Employee employee) async {
+    final appState = context.read<AppState>();
+    final messenger = ScaffoldMessenger.of(context);
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (dialogContext) => AlertDialog(
@@ -1215,12 +1219,13 @@ class _EmployeesTabState extends State<_EmployeesTab> {
       ),
     );
     if (confirmed != true) return;
+    if (!mounted) return;
     try {
-      await context.read<AppState>().postJson('/api/workforce/employees/${employee.id}', method: 'DELETE');
+      await appState.postJson('/api/workforce/employees/${employee.id}', method: 'DELETE');
       await _load();
     } catch (error) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(error.toString())));
+      messenger.showSnackBar(SnackBar(content: Text(error.toString())));
     }
   }
 
@@ -1279,7 +1284,7 @@ class _EmployeesTabState extends State<_EmployeesTab> {
             StatCard(label: '전체 직원', value: '${list.length}명', accent: true),
             StatCard(label: '재직 중', value: '${list.where((employee) => employee.isActive).length}명'),
             StatCard(label: '연결 계정', value: '${list.where((employee) => employee.linkedAuthUserId != null).length}명'),
-            StatCard(label: '이번 달 급여', value: '상세에서 확인'),
+            const StatCard(label: '이번 달 급여', value: '상세에서 확인'),
           ]),
           const SizedBox(height: 16),
           Panel(
@@ -1343,9 +1348,9 @@ class _Tag extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
       decoration: BoxDecoration(
-        color: color.withOpacity(0.08),
+        color: color.withValues(alpha: 0.08),
         borderRadius: BorderRadius.circular(999),
-        border: Border.all(color: color.withOpacity(0.25)),
+        border: Border.all(color: color.withValues(alpha: 0.25)),
       ),
       child: Text(label, style: TextStyle(color: color, fontSize: 11, fontWeight: FontWeight.w700)),
     );

@@ -727,11 +727,22 @@ class _UserManagementScreenState extends State<_UserManagementScreen> {
       _error = '';
     });
     try {
-      final result = await appState.fetchListParsed<List<AdminUserContract>>(
+      final result = await appState.fetchMapParsed<List<AdminUserContract>>(
         '/api/auth/users',
-        parser: (json) => json
-            .map((e) => AdminUserContract.fromJson(e as Map<String, dynamic>))
-            .toList(),
+        parser: (json) {
+          final raw = json['users'];
+          if (raw is! List) {
+            return const <AdminUserContract>[];
+          }
+          return raw
+              .whereType<Map>()
+              .map(
+                (item) => AdminUserContract.fromJson(
+                  Map<String, dynamic>.from(item),
+                ),
+              )
+              .toList(growable: false);
+        },
         cacheTtl: Duration.zero,
       );
       if (!mounted) return;
@@ -897,11 +908,22 @@ class _AuditLogScreenState extends State<_AuditLogScreen> {
       _error = '';
     });
     try {
-      final result = await appState.fetchListParsed<List<AuditLogEntryContract>>(
+      final result = await appState.fetchMapParsed<List<AuditLogEntryContract>>(
         '/api/auth/audit-logs',
-        parser: (json) => json
-            .map((e) => AuditLogEntryContract.fromJson(e as Map<String, dynamic>))
-            .toList(),
+        parser: (json) {
+          final raw = json['logs'];
+          if (raw is! List) {
+            return const <AuditLogEntryContract>[];
+          }
+          return raw
+              .whereType<Map>()
+              .map(
+                (item) => AuditLogEntryContract.fromJson(
+                  Map<String, dynamic>.from(item),
+                ),
+              )
+              .toList(growable: false);
+        },
         cacheTtl: Duration.zero,
       );
       if (!mounted) return;
@@ -1226,10 +1248,23 @@ class _AdminDeployPanelState extends State<_AdminDeployPanel> {
     final errors = <String>[];
 
     try {
-      final history = await appState.fetchListParsed<List<_DeployTask>>(
+      final history = await appState.fetchMapParsed<List<_DeployTask>>(
         '/api/deploy-history',
         params: const {'limit': 20},
-        parser: (json) => json.map((e) => _DeployTask.fromJson(e as Map<String, dynamic>)).toList(),
+        parser: (json) {
+          final raw = json['tasks'];
+          if (raw is! List) {
+            return const <_DeployTask>[];
+          }
+          return raw
+              .whereType<Map>()
+              .map(
+                (item) => _DeployTask.fromJson(
+                  Map<String, dynamic>.from(item),
+                ),
+              )
+              .toList(growable: false);
+        },
         cacheTtl: Duration.zero,
       );
       if (mounted) {

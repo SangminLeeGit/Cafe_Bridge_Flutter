@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../services/api.dart';
 import '../state/app_state.dart';
 import '../widgets/app_update_banner.dart';
 
@@ -49,7 +50,7 @@ class _LoginScreenState extends State<LoginScreen> {
         return;
       }
       setState(() {
-        _errorMessage = error.toString();
+        _errorMessage = _describeLoginError(error);
       });
     } finally {
       if (mounted) {
@@ -193,6 +194,32 @@ class _LoginScreenState extends State<LoginScreen> {
         ),
       ),
     );
+  }
+
+  String _describeLoginError(Object error) {
+    if (error is ApiException) {
+      switch (error.statusCode) {
+        case 401:
+          return '아이디 또는 비밀번호가 올바르지 않습니다.';
+        case 403:
+          return error.message.isNotEmpty
+              ? error.message
+              : '로그인 요청이 서버 설정과 일치하지 않습니다. API 주소를 확인하세요.';
+        case 423:
+          return error.message.isNotEmpty
+              ? error.message
+              : '계정이 잠겨 있습니다. 잠시 후 다시 시도하세요.';
+        case 429:
+          return error.message.isNotEmpty
+              ? error.message
+              : '로그인 시도가 너무 많습니다. 잠시 후 다시 시도하세요.';
+        case 504:
+          return '로그인 요청 시간이 초과되었습니다. 서버 연결을 확인하세요.';
+        default:
+          return error.message.isNotEmpty ? error.message : '로그인 처리 중 오류가 발생했습니다.';
+      }
+    }
+    return '로그인 서버에 연결하지 못했습니다. API 요청 주소를 확인하세요.';
   }
 
   Widget _buildInfoBanner({

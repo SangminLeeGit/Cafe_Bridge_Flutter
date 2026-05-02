@@ -252,7 +252,7 @@ class AppState extends ChangeNotifier {
       }
       if (policyWarning.isNotEmpty) {
         _lastUpdateCheckMessage =
-            '${_lastUpdateCheckMessage} ($policyWarning)';
+            '$_lastUpdateCheckMessage ($policyWarning)';
       }
 
       final nextTarget = '${_updateInfo!.latestVersion}+${_updateInfo!.latestBuild}';

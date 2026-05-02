@@ -199,16 +199,51 @@ class ApiService {
     try {
       final decoded = json.decode(utf8.decode(response.bodyBytes));
       if (decoded is Map<String, dynamic>) {
-        return (decoded['detail'] ??
-                decoded['error'] ??
-                response.reasonPhrase ??
-                '오류')
-            .toString();
+        final detail = _normalizeErrorDetail(decoded['detail']);
+        if (detail.isNotEmpty) {
+          return detail;
+        }
+        final error = _normalizeErrorDetail(decoded['error']);
+        if (error.isNotEmpty) {
+          return error;
+        }
+        return response.reasonPhrase ?? '오류';
       }
     } catch (_) {
       // Ignore secondary parse failures and use the HTTP reason phrase.
     }
     return response.reasonPhrase ?? '오류';
+  }
+
+  static String _normalizeErrorDetail(Object? detail) {
+    if (detail == null) {
+      return '';
+    }
+    if (detail is String) {
+      return detail.trim();
+    }
+    if (detail is List) {
+      return detail
+          .map(_normalizeErrorDetail)
+          .where((item) => item.isNotEmpty)
+          .join('; ');
+    }
+    if (detail is Map) {
+      final nested = Map<String, dynamic>.from(detail);
+      final location = nested['loc'];
+      final locationLabel = location is List
+          ? location.map((item) => item.toString()).join('.')
+          : '';
+      final message = _normalizeErrorDetail(nested['msg']);
+      if (locationLabel.isNotEmpty && message.isNotEmpty) {
+        return '$locationLabel: $message';
+      }
+      if (message.isNotEmpty) {
+        return message;
+      }
+      return _normalizeErrorDetail(nested['detail']);
+    }
+    return detail.toString().trim();
   }
 
   static Future<http.Response> _send(

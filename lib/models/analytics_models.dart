@@ -1,5 +1,3 @@
-import 'api_contracts.dart';
-
 class MonthlyDayRecord {
   final String businessDate;
   final int grossAmount;
