@@ -52,26 +52,26 @@ jobs:
 
           REPO_URL="$(git config --get remote.origin.url)"
           REPO_FULL_NAME="$(python3 - "$REPO_URL" <<'PY'
-import sys
-from urllib.parse import urlsplit
+          import sys
+          from urllib.parse import urlsplit
 
-value = (sys.argv[1] or "").strip()
-if "://" in value:
-    path = urlsplit(value).path
-elif ":" in value and "@" in value.split(":", 1)[0]:
-    path = "/" + value.split(":", 1)[1]
-else:
-    path = value
-parts = [part for part in path.split("/") if part]
-if len(parts) < 2:
-    raise SystemExit("failed to parse remote origin URL")
-owner = parts[-2].strip()
-repo = parts[-1].strip()
-if repo.endswith(".git"):
-    repo = repo[:-4]
-print(f"{owner}/{repo}")
-PY
-)"
+          value = (sys.argv[1] or "").strip()
+          if "://" in value:
+              path = urlsplit(value).path
+          elif ":" in value and "@" in value.split(":", 1)[0]:
+              path = "/" + value.split(":", 1)[1]
+          else:
+              path = value
+          parts = [part for part in path.split("/") if part]
+          if len(parts) < 2:
+              raise SystemExit("failed to parse remote origin URL")
+          owner = parts[-2].strip()
+          repo = parts[-1].strip()
+          if repo.endswith(".git"):
+              repo = repo[:-4]
+          print(f"{owner}/{repo}")
+          PY
+          )"
 
           BRANCH_NAME="${GITHUB_REF_NAME:-}"
           if [[ -z "$BRANCH_NAME" ]]; then
@@ -169,31 +169,31 @@ PY
           set -euo pipefail
 
           PAYLOAD="$(python3 - <<'PY'
-import json
-import os
+          import json
+          import os
 
-print(json.dumps({
-    "repo_full_name": os.environ["REPO_FULL_NAME"],
-    "branch": os.environ["BRANCH_NAME"],
-    "commit_sha": os.environ["COMMIT_SHA"],
-    "status": "building",
-    "ref": f"refs/heads/{os.environ['BRANCH_NAME']}",
-    "workflow_run_id": os.environ.get("GITHUB_RUN_ID", ""),
-    "requested_by": os.environ.get("REQUESTED_BY", ""),
-    "deploy_task_id": os.environ.get("DEPLOY_TASK_ID", ""),
-}, ensure_ascii=False, separators=(",", ":")))
-PY
-)"
+          print(json.dumps({
+              "repo_full_name": os.environ["REPO_FULL_NAME"],
+              "branch": os.environ["BRANCH_NAME"],
+              "commit_sha": os.environ["COMMIT_SHA"],
+              "status": "building",
+              "ref": f"refs/heads/{os.environ['BRANCH_NAME']}",
+              "workflow_run_id": os.environ.get("GITHUB_RUN_ID", ""),
+              "requested_by": os.environ.get("REQUESTED_BY", ""),
+              "deploy_task_id": os.environ.get("DEPLOY_TASK_ID", ""),
+          }, ensure_ascii=False, separators=(",", ":")))
+          PY
+          )"
           TIMESTAMP="$(date +%s)"
           SIGNATURE="$(TIMESTAMP="$TIMESTAMP" PAYLOAD="$PAYLOAD" SECRET="$EASYPOS_FLUTTER_CI_CALLBACK_SECRET" python3 - <<'PY'
-import hashlib
-import hmac
-import os
+          import hashlib
+          import hmac
+          import os
 
-message = f"{os.environ['TIMESTAMP']}\n{os.environ['PAYLOAD']}".encode("utf-8")
-print(hmac.new(os.environ["SECRET"].encode("utf-8"), message, hashlib.sha256).hexdigest())
-PY
-)"
+          message = f"{os.environ['TIMESTAMP']}\n{os.environ['PAYLOAD']}".encode("utf-8")
+          print(hmac.new(os.environ["SECRET"].encode("utf-8"), message, hashlib.sha256).hexdigest())
+          PY
+          )"
           curl -fsS \
             -X POST \
             -H "Content-Type: application/json" \
@@ -219,31 +219,31 @@ PY
           fi
 
           PAYLOAD="$(python3 - <<'PY'
-import json
-import os
+          import json
+          import os
 
-print(json.dumps({
-    "repo_full_name": os.environ["REPO_FULL_NAME"],
-    "branch": os.environ["BRANCH_NAME"],
-    "commit_sha": os.environ["COMMIT_SHA"],
-    "status": "succeeded",
-    "ref": f"refs/heads/{os.environ['BRANCH_NAME']}",
-    "workflow_run_id": os.environ.get("GITHUB_RUN_ID", ""),
-    "requested_by": os.environ.get("REQUESTED_BY", ""),
-    "deploy_task_id": os.environ.get("DEPLOY_TASK_ID", ""),
-}, ensure_ascii=False, separators=(",", ":")))
-PY
-)"
+          print(json.dumps({
+              "repo_full_name": os.environ["REPO_FULL_NAME"],
+              "branch": os.environ["BRANCH_NAME"],
+              "commit_sha": os.environ["COMMIT_SHA"],
+              "status": "succeeded",
+              "ref": f"refs/heads/{os.environ['BRANCH_NAME']}",
+              "workflow_run_id": os.environ.get("GITHUB_RUN_ID", ""),
+              "requested_by": os.environ.get("REQUESTED_BY", ""),
+              "deploy_task_id": os.environ.get("DEPLOY_TASK_ID", ""),
+          }, ensure_ascii=False, separators=(",", ":")))
+          PY
+          )"
           TIMESTAMP="$(date +%s)"
           SIGNATURE="$(TIMESTAMP="$TIMESTAMP" PAYLOAD="$PAYLOAD" SECRET="$EASYPOS_FLUTTER_CI_CALLBACK_SECRET" python3 - <<'PY'
-import hashlib
-import hmac
-import os
+          import hashlib
+          import hmac
+          import os
 
-message = f"{os.environ['TIMESTAMP']}\n{os.environ['PAYLOAD']}".encode("utf-8")
-print(hmac.new(os.environ["SECRET"].encode("utf-8"), message, hashlib.sha256).hexdigest())
-PY
-)"
+          message = f"{os.environ['TIMESTAMP']}\n{os.environ['PAYLOAD']}".encode("utf-8")
+          print(hmac.new(os.environ["SECRET"].encode("utf-8"), message, hashlib.sha256).hexdigest())
+          PY
+          )"
           curl -fsS \
             -X POST \
             -H "Content-Type: application/json" \
@@ -269,34 +269,34 @@ PY
           SHA256="$(sha256sum "$APK_PATH" | awk '{print $1}')"
           FILE_SIZE="$(stat -c %s "$APK_PATH")"
           METADATA_JSON="$(SHA256="$SHA256" FILE_SIZE="$FILE_SIZE" python3 - <<'PY'
-import json
-import os
+          import json
+          import os
 
-print(json.dumps({
-    "repo_full_name": os.environ["REPO_FULL_NAME"],
-    "branch": os.environ["BRANCH_NAME"],
-    "commit_sha": os.environ["COMMIT_SHA"],
-    "version_name": os.environ["VERSION_NAME"],
-    "build_number": int(os.environ["BUILD_NUMBER"]),
-    "ref": f"refs/heads/{os.environ['BRANCH_NAME']}",
-    "workflow_run_id": os.environ.get("GITHUB_RUN_ID", ""),
-    "requested_by": os.environ.get("REQUESTED_BY", ""),
-    "release_notes": os.environ.get("RELEASE_NOTES", ""),
-    "sha256": os.environ["SHA256"],
-    "deploy_task_id": os.environ.get("DEPLOY_TASK_ID", ""),
-}, ensure_ascii=False, separators=(",", ":")))
-PY
-)"
+          print(json.dumps({
+              "repo_full_name": os.environ["REPO_FULL_NAME"],
+              "branch": os.environ["BRANCH_NAME"],
+              "commit_sha": os.environ["COMMIT_SHA"],
+              "version_name": os.environ["VERSION_NAME"],
+              "build_number": int(os.environ["BUILD_NUMBER"]),
+              "ref": f"refs/heads/{os.environ['BRANCH_NAME']}",
+              "workflow_run_id": os.environ.get("GITHUB_RUN_ID", ""),
+              "requested_by": os.environ.get("REQUESTED_BY", ""),
+              "release_notes": os.environ.get("RELEASE_NOTES", ""),
+              "sha256": os.environ["SHA256"],
+              "deploy_task_id": os.environ.get("DEPLOY_TASK_ID", ""),
+          }, ensure_ascii=False, separators=(",", ":")))
+          PY
+          )"
           TIMESTAMP="$(date +%s)"
           SIGNATURE="$(TIMESTAMP="$TIMESTAMP" METADATA_JSON="$METADATA_JSON" SECRET="$EASYPOS_FLUTTER_CI_CALLBACK_SECRET" python3 - <<'PY'
-import hashlib
-import hmac
-import os
+          import hashlib
+          import hmac
+          import os
 
-message = f"{os.environ['TIMESTAMP']}\n{os.environ['METADATA_JSON']}".encode("utf-8")
-print(hmac.new(os.environ["SECRET"].encode("utf-8"), message, hashlib.sha256).hexdigest())
-PY
-)"
+          message = f"{os.environ['TIMESTAMP']}\n{os.environ['METADATA_JSON']}".encode("utf-8")
+          print(hmac.new(os.environ["SECRET"].encode("utf-8"), message, hashlib.sha256).hexdigest())
+          PY
+          )"
           curl -fsS \
             -X POST \
             -H "X-EasyPOS-CI-Timestamp: ${TIMESTAMP}" \
@@ -312,32 +312,32 @@ PY
           set -euo pipefail
 
           PAYLOAD="$(python3 - <<'PY'
-import json
-import os
+          import json
+          import os
 
-print(json.dumps({
-    "repo_full_name": os.environ.get("REPO_FULL_NAME", ""),
-    "branch": os.environ.get("BRANCH_NAME", ""),
-    "commit_sha": os.environ.get("COMMIT_SHA", ""),
-    "status": "failed",
-    "ref": f"refs/heads/{os.environ.get('BRANCH_NAME', '')}",
-    "workflow_run_id": os.environ.get("GITHUB_RUN_ID", ""),
-    "requested_by": os.environ.get("REQUESTED_BY", ""),
-    "error_message": "android release workflow failed",
-    "deploy_task_id": os.environ.get("DEPLOY_TASK_ID", ""),
-}, ensure_ascii=False, separators=(",", ":")))
-PY
-)"
+          print(json.dumps({
+              "repo_full_name": os.environ.get("REPO_FULL_NAME", ""),
+              "branch": os.environ.get("BRANCH_NAME", ""),
+              "commit_sha": os.environ.get("COMMIT_SHA", ""),
+              "status": "failed",
+              "ref": f"refs/heads/{os.environ.get('BRANCH_NAME', '')}",
+              "workflow_run_id": os.environ.get("GITHUB_RUN_ID", ""),
+              "requested_by": os.environ.get("REQUESTED_BY", ""),
+              "error_message": "android release workflow failed",
+              "deploy_task_id": os.environ.get("DEPLOY_TASK_ID", ""),
+          }, ensure_ascii=False, separators=(",", ":")))
+          PY
+          )"
           TIMESTAMP="$(date +%s)"
           SIGNATURE="$(TIMESTAMP="$TIMESTAMP" PAYLOAD="$PAYLOAD" SECRET="$EASYPOS_FLUTTER_CI_CALLBACK_SECRET" python3 - <<'PY'
-import hashlib
-import hmac
-import os
+          import hashlib
+          import hmac
+          import os
 
-message = f"{os.environ['TIMESTAMP']}\n{os.environ['PAYLOAD']}".encode("utf-8")
-print(hmac.new(os.environ["SECRET"].encode("utf-8"), message, hashlib.sha256).hexdigest())
-PY
-)"
+          message = f"{os.environ['TIMESTAMP']}\n{os.environ['PAYLOAD']}".encode("utf-8")
+          print(hmac.new(os.environ["SECRET"].encode("utf-8"), message, hashlib.sha256).hexdigest())
+          PY
+          )"
           curl -fsS \
             -X POST \
             -H "Content-Type: application/json" \
