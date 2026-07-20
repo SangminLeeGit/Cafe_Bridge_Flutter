@@ -26,7 +26,6 @@ variables:
 android_release_apk:
   stage: build
   tags: [android-release]
-  resource_group: easypos-android-release
   interruptible: false
   script:
     - ./.gitlab/ci/android-release.sh
