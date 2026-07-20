@@ -25,7 +25,7 @@ variables:
 
 android_release_apk:
   stage: build
-  tags: [android]
+  tags: [android-release]
   resource_group: easypos-android-release
   interruptible: false
   script:
@@ -38,4 +38,3 @@ android_release_apk:
   rules:
     - if: '$CI_PIPELINE_SOURCE == "push" && $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'
     - if: '$CI_PIPELINE_SOURCE =~ /^(web|api|trigger)$/'
-
