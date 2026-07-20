@@ -26,6 +26,8 @@ variables:
 android_release_apk:
   stage: build
   tags: [android-release]
+  resource_group: easypos-android-release
+  timeout: 30 minutes
   interruptible: false
   script:
     - ./.gitlab/ci/android-release.sh
@@ -34,6 +36,9 @@ android_release_apk:
     expire_in: 14 days
     paths:
       - build/app/outputs/flutter-apk/app-release.apk
+  after_script:
+    - if command -v gradle >/dev/null 2>&1; then gradle --stop || true; fi
+    - pkill -u "$(id -u)" -f 'KotlinCompileDaemon' || true
   rules:
     - if: '$CI_PIPELINE_SOURCE == "push" && $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'
     - if: '$CI_PIPELINE_SOURCE =~ /^(api|trigger)$/'

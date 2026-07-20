@@ -273,6 +273,12 @@ export PATH="$(dirname "$FLUTTER_BIN"):$PATH"
 # The shared Flutter SDK is owned by the image-maintenance account while
 # GitLab Runner executes as gitlab-runner; allow Flutter's git metadata read.
 git config --global --add safe.directory /opt/flutter 2>/dev/null || true
+export GRADLE_OPTS="${GRADLE_OPTS:-} -Dorg.gradle.daemon=false -Dorg.gradle.workers.max=2 -Dorg.gradle.jvmargs=-Xmx1536m\ -XX:MaxMetaspaceSize=512m\ -Dfile.encoding=UTF-8 -Dkotlin.daemon.jvm.options=-Xmx1024m -Dkotlin.compiler.execution.strategy=in-process"
+cleanup_gradle() {
+  if command -v gradle >/dev/null 2>&1; then gradle --stop >/dev/null 2>&1 || true; fi
+  pkill -u "$(id -u)" -f 'KotlinCompileDaemon' >/dev/null 2>&1 || true
+}
+trap cleanup_gradle EXIT INT TERM
 "$FLUTTER_BIN" pub get
 "$FLUTTER_BIN" build apk --release --build-name "$VERSION_NAME" --build-number "$BUILD_NUMBER"
 )
