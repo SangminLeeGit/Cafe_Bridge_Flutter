@@ -270,6 +270,9 @@ echo '[GitLab CI] Build release APK'
 set -Eeuo pipefail
 set -euo pipefail
 export PATH="$(dirname "$FLUTTER_BIN"):$PATH"
+# The shared Flutter SDK is owned by the image-maintenance account while
+# GitLab Runner executes as gitlab-runner; allow Flutter's git metadata read.
+git config --global --add safe.directory /opt/flutter 2>/dev/null || true
 "$FLUTTER_BIN" pub get
 "$FLUTTER_BIN" build apk --release --build-name "$VERSION_NAME" --build-number "$BUILD_NUMBER"
 )
