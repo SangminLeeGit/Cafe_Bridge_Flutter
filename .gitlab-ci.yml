@@ -37,4 +37,4 @@ android_release_apk:
       - build/app/outputs/flutter-apk/app-release.apk
   rules:
     - if: '$CI_PIPELINE_SOURCE == "push" && $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'
-    - if: '$CI_PIPELINE_SOURCE =~ /^(web|api|trigger)$/'
+    - if: '$CI_PIPELINE_SOURCE =~ /^(api|trigger)$/'
