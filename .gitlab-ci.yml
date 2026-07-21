@@ -25,7 +25,7 @@ variables:
 
 android_release_apk:
   stage: build
-  tags: [android-release]
+  tags: [central-android-release]
   resource_group: easypos-android-release
   timeout: 30 minutes
   interruptible: false
