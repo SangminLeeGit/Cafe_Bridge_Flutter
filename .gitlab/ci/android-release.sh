@@ -79,8 +79,8 @@ PY
 curl -fsS \
   -X POST \
   -H "Content-Type: application/json" \
-  -H "X-EasyPOS-CI-Timestamp: ${TIMESTAMP}" \
-  -H "X-EasyPOS-CI-Signature: ${SIGNATURE}" \
+  -H "X-Cafe-Bridge-CI-Timestamp: ${TIMESTAMP}" \
+  -H "X-Cafe-Bridge-CI-Signature: ${SIGNATURE}" \
   --data "$PAYLOAD" \
   "$REPORT_URL"
 )
@@ -259,8 +259,8 @@ PY
 curl -fsS \
   -X POST \
   -H "Content-Type: application/json" \
-  -H "X-EasyPOS-CI-Timestamp: ${TIMESTAMP}" \
-  -H "X-EasyPOS-CI-Signature: ${SIGNATURE}" \
+  -H "X-Cafe-Bridge-CI-Timestamp: ${TIMESTAMP}" \
+  -H "X-Cafe-Bridge-CI-Signature: ${SIGNATURE}" \
   --data "$PAYLOAD" \
   "$REPORT_URL"
 )
@@ -320,8 +320,8 @@ PY
 curl -fsS \
   -X POST \
   -H "Content-Type: application/json" \
-  -H "X-EasyPOS-CI-Timestamp: ${TIMESTAMP}" \
-  -H "X-EasyPOS-CI-Signature: ${SIGNATURE}" \
+  -H "X-Cafe-Bridge-CI-Timestamp: ${TIMESTAMP}" \
+  -H "X-Cafe-Bridge-CI-Signature: ${SIGNATURE}" \
   --data "$PAYLOAD" \
   "$REPORT_URL"
 )
@@ -373,8 +373,8 @@ PY
 )"
 curl -fsS \
   -X POST \
-  -H "X-EasyPOS-CI-Timestamp: ${TIMESTAMP}" \
-  -H "X-EasyPOS-CI-Signature: ${SIGNATURE}" \
+  -H "X-Cafe-Bridge-CI-Timestamp: ${TIMESTAMP}" \
+  -H "X-Cafe-Bridge-CI-Signature: ${SIGNATURE}" \
   --form-string "metadata_json=${METADATA_JSON}" \
   -F "apk=@${APK_PATH};type=application/vnd.android.package-archive" \
   "$REGISTER_URL"
