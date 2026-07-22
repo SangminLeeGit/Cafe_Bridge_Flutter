@@ -42,7 +42,7 @@ load_github_env() {
 finalize_job() {
   job_status=$?
   set +e
-if (( job_status != 0 )); then
+if (( job_status != 0 )) && [[ -n "${REPORT_URL:-}" && -n "${CAFE_BRIDGE_FLUTTER_CI_CALLBACK_SECRET:-}" ]]; then
 echo '[GitLab CI] Report build failure'
 (
 set -Eeuo pipefail
@@ -177,10 +177,11 @@ if [[ "$CURRENT_LATEST_BUILD" =~ ^[0-9]+$ ]] && (( CURRENT_LATEST_BUILD >= EFFEC
 fi
 
 FLUTTER_BIN="${CAFE_BRIDGE_FLUTTER_BIN:-}"
-if [[ -z "$FLUTTER_BIN" ]]; then
+if [[ -z "$FLUTTER_BIN" || ! -x "$FLUTTER_BIN" ]]; then
   for candidate in \
     "$(command -v flutter 2>/dev/null || true)" \
     "/opt/flutter/bin/flutter" \
+    "/home/sangmin/tools/flutter/bin/flutter" \
     "$HOME/flutter/bin/flutter" \
     "$HOME/tools/flutter/bin/flutter"; do
     if [[ -n "$candidate" && -x "$candidate" ]]; then
@@ -201,6 +202,9 @@ elif [[ -n "${ANDROID_HOME:-}" && -d "${ANDROID_HOME}" ]]; then
   echo "ANDROID_SDK_ROOT=${ANDROID_HOME}" >> "$GITHUB_ENV"
 elif [[ -n "${ANDROID_SDK_ROOT:-}" && -d "${ANDROID_SDK_ROOT}" ]]; then
   echo "ANDROID_HOME=${ANDROID_SDK_ROOT}" >> "$GITHUB_ENV"
+elif [[ -d "/root/android-sdk" ]]; then
+  echo "ANDROID_HOME=/root/android-sdk" >> "$GITHUB_ENV"
+  echo "ANDROID_SDK_ROOT=/root/android-sdk" >> "$GITHUB_ENV"
 fi
 
 {
