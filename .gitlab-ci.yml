@@ -26,7 +26,7 @@ variables:
 android_release_apk:
   stage: build
   tags: [central-android-release]
-  resource_group: easypos-android-release
+  resource_group: cafe-bridge-android-release
   timeout: 30 minutes
   interruptible: false
   script:
@@ -41,4 +41,4 @@ android_release_apk:
     - pkill -u "$(id -u)" -f 'KotlinCompileDaemon' || true
   rules:
     - if: '$CI_PIPELINE_SOURCE == "push" && $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'
-    - if: '$CI_PIPELINE_SOURCE =~ /^(api|trigger)$/'
+    - if: '$CI_PIPELINE_SOURCE =~ /^(api|trigger|web)$/'

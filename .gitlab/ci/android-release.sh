@@ -13,7 +13,6 @@ if [[ -n "${CI_COMMIT_TAG:-}" ]]; then
 else
   export GITHUB_REF="refs/heads/${CI_COMMIT_BRANCH}"
 fi
-export GITEA_REF="${GITHUB_REF}"
 export GITHUB_ENV="${CI_PROJECT_DIR}/.gitlab/github-env"
 export RUNNER_TEMP="${CI_PROJECT_DIR}/.gitlab/tmp"
 mkdir -p "${RUNNER_TEMP}"
@@ -67,7 +66,7 @@ print(json.dumps({
 PY
 )"
 TIMESTAMP="$(date +%s)"
-SIGNATURE="$(TIMESTAMP="$TIMESTAMP" PAYLOAD="$PAYLOAD" SECRET="$EASYPOS_FLUTTER_CI_CALLBACK_SECRET" python3 - <<'PY'
+SIGNATURE="$(TIMESTAMP="$TIMESTAMP" PAYLOAD="$PAYLOAD" SECRET="$CAFE_BRIDGE_FLUTTER_CI_CALLBACK_SECRET" python3 - <<'PY'
 import hashlib
 import hmac
 import os
@@ -96,18 +95,15 @@ echo '[GitLab CI] Prepare CI environment'
 set -Eeuo pipefail
 set -euo pipefail
 
-EASYPOS_CI_BASE_URL="${EASYPOS_CI_BASE_URL:-${EASYPOS_CI_BASE_URL:-}}"
-EASYPOS_FLUTTER_CI_CALLBACK_SECRET="${EASYPOS_FLUTTER_CI_CALLBACK_SECRET:-${EASYPOS_FLUTTER_CI_CALLBACK_SECRET:-}}"
-EASYPOS_FLUTTER_BIN="${EASYPOS_FLUTTER_BIN:-${EASYPOS_FLUTTER_BIN:-}}"
-EASYPOS_ANDROID_SDK_ROOT="${EASYPOS_ANDROID_SDK_ROOT:-${EASYPOS_ANDROID_SDK_ROOT:-}}"
-export EASYPOS_CI_BASE_URL EASYPOS_FLUTTER_CI_CALLBACK_SECRET EASYPOS_FLUTTER_BIN EASYPOS_ANDROID_SDK_ROOT
+export CAFE_BRIDGE_CI_BASE_URL CAFE_BRIDGE_FLUTTER_CI_CALLBACK_SECRET
+export CAFE_BRIDGE_FLUTTER_BIN CAFE_BRIDGE_ANDROID_SDK_ROOT
 
-if [[ -z "${EASYPOS_CI_BASE_URL:-}" ]]; then
-  echo "EASYPOS_CI_BASE_URL secret is required" >&2
+if [[ -z "${CAFE_BRIDGE_CI_BASE_URL:-}" ]]; then
+  echo "CAFE_BRIDGE_CI_BASE_URL secret is required" >&2
   exit 1
 fi
-if [[ -z "${EASYPOS_FLUTTER_CI_CALLBACK_SECRET:-}" ]]; then
-  echo "EASYPOS_FLUTTER_CI_CALLBACK_SECRET secret is required" >&2
+if [[ -z "${CAFE_BRIDGE_FLUTTER_CI_CALLBACK_SECRET:-}" ]]; then
+  echo "CAFE_BRIDGE_FLUTTER_CI_CALLBACK_SECRET secret is required" >&2
   exit 1
 fi
 
@@ -136,7 +132,7 @@ PY
 
 BRANCH_NAME="${GITHUB_REF_NAME:-}"
 if [[ -z "$BRANCH_NAME" ]]; then
-  RAW_REF="${GITHUB_REF:-${GITEA_REF:-}}"
+  RAW_REF="${GITHUB_REF:-}"
   BRANCH_NAME="${RAW_REF#refs/heads/}"
 fi
 if [[ -z "$BRANCH_NAME" ]]; then
@@ -174,13 +170,13 @@ VERSION_RAW="$(awk '/^version:/{print $2; exit}' pubspec.yaml)"
 VERSION_NAME="${VERSION_RAW%%+*}"
 PUBSPEC_BUILD="${VERSION_RAW##*+}"
 
-CURRENT_LATEST_BUILD="$(curl -fsS "${EASYPOS_CI_BASE_URL%/}/api/app-update/check?platform=android&channel=prod&version=0.0.0&build=0" | python3 -c 'import json,sys; data=json.load(sys.stdin); print(int(data.get("latest_build") or 0))')"
+CURRENT_LATEST_BUILD="$(curl -fsS "${CAFE_BRIDGE_CI_BASE_URL%/}/api/app-update/check?platform=android&channel=prod&version=0.0.0&build=0" | python3 -c 'import json,sys; data=json.load(sys.stdin); print(int(data.get("latest_build") or 0))')"
 EFFECTIVE_BUILD="$PUBSPEC_BUILD"
 if [[ "$CURRENT_LATEST_BUILD" =~ ^[0-9]+$ ]] && (( CURRENT_LATEST_BUILD >= EFFECTIVE_BUILD )); then
   EFFECTIVE_BUILD="$((CURRENT_LATEST_BUILD + 1))"
 fi
 
-FLUTTER_BIN="${EASYPOS_FLUTTER_BIN:-}"
+FLUTTER_BIN="${CAFE_BRIDGE_FLUTTER_BIN:-}"
 if [[ -z "$FLUTTER_BIN" ]]; then
   for candidate in \
     "$(command -v flutter 2>/dev/null || true)" \
@@ -198,9 +194,9 @@ if [[ -z "$FLUTTER_BIN" || ! -x "$FLUTTER_BIN" ]]; then
   exit 1
 fi
 
-if [[ -n "${EASYPOS_ANDROID_SDK_ROOT:-}" && -d "${EASYPOS_ANDROID_SDK_ROOT}" ]]; then
-  echo "ANDROID_HOME=${EASYPOS_ANDROID_SDK_ROOT}" >> "$GITHUB_ENV"
-  echo "ANDROID_SDK_ROOT=${EASYPOS_ANDROID_SDK_ROOT}" >> "$GITHUB_ENV"
+if [[ -n "${CAFE_BRIDGE_ANDROID_SDK_ROOT:-}" && -d "${CAFE_BRIDGE_ANDROID_SDK_ROOT}" ]]; then
+  echo "ANDROID_HOME=${CAFE_BRIDGE_ANDROID_SDK_ROOT}" >> "$GITHUB_ENV"
+  echo "ANDROID_SDK_ROOT=${CAFE_BRIDGE_ANDROID_SDK_ROOT}" >> "$GITHUB_ENV"
 elif [[ -n "${ANDROID_HOME:-}" && -d "${ANDROID_HOME}" ]]; then
   echo "ANDROID_SDK_ROOT=${ANDROID_HOME}" >> "$GITHUB_ENV"
 elif [[ -n "${ANDROID_SDK_ROOT:-}" && -d "${ANDROID_SDK_ROOT}" ]]; then
@@ -218,8 +214,8 @@ fi
   echo "BUILD_NUMBER=$EFFECTIVE_BUILD"
   echo "FLUTTER_BIN=$FLUTTER_BIN"
   echo "APK_PATH=$PWD/build/app/outputs/flutter-apk/app-release.apk"
-  echo "REPORT_URL=${EASYPOS_CI_BASE_URL%/}/api/ci/flutter-apk/report"
-  echo "REGISTER_URL=${EASYPOS_CI_BASE_URL%/}/api/ci/flutter-apk/register"
+  echo "REPORT_URL=${CAFE_BRIDGE_CI_BASE_URL%/}/api/ci/flutter-apk/report"
+  echo "REGISTER_URL=${CAFE_BRIDGE_CI_BASE_URL%/}/api/ci/flutter-apk/register"
   echo "DEPLOY_TASK_ID=$INPUT_DEPLOY_TASK_ID"
   echo "DRY_RUN_BUILD=$DRY_RUN_BUILD"
 } >> "$GITHUB_ENV"
@@ -247,7 +243,7 @@ print(json.dumps({
 PY
 )"
 TIMESTAMP="$(date +%s)"
-SIGNATURE="$(TIMESTAMP="$TIMESTAMP" PAYLOAD="$PAYLOAD" SECRET="$EASYPOS_FLUTTER_CI_CALLBACK_SECRET" python3 - <<'PY'
+SIGNATURE="$(TIMESTAMP="$TIMESTAMP" PAYLOAD="$PAYLOAD" SECRET="$CAFE_BRIDGE_FLUTTER_CI_CALLBACK_SECRET" python3 - <<'PY'
 import hashlib
 import hmac
 import os
@@ -308,7 +304,7 @@ print(json.dumps({
 PY
 )"
 TIMESTAMP="$(date +%s)"
-SIGNATURE="$(TIMESTAMP="$TIMESTAMP" PAYLOAD="$PAYLOAD" SECRET="$EASYPOS_FLUTTER_CI_CALLBACK_SECRET" python3 - <<'PY'
+SIGNATURE="$(TIMESTAMP="$TIMESTAMP" PAYLOAD="$PAYLOAD" SECRET="$CAFE_BRIDGE_FLUTTER_CI_CALLBACK_SECRET" python3 - <<'PY'
 import hashlib
 import hmac
 import os
@@ -362,7 +358,7 @@ print(json.dumps({
 PY
 )"
 TIMESTAMP="$(date +%s)"
-SIGNATURE="$(TIMESTAMP="$TIMESTAMP" METADATA_JSON="$METADATA_JSON" SECRET="$EASYPOS_FLUTTER_CI_CALLBACK_SECRET" python3 - <<'PY'
+SIGNATURE="$(TIMESTAMP="$TIMESTAMP" METADATA_JSON="$METADATA_JSON" SECRET="$CAFE_BRIDGE_FLUTTER_CI_CALLBACK_SECRET" python3 - <<'PY'
 import hashlib
 import hmac
 import os
