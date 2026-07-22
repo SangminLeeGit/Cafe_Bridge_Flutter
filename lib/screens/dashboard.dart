@@ -5,7 +5,7 @@ import '../models/dashboard_model.dart';
 import '../widgets/cache_notice.dart';
 import '../state/app_state.dart';
 import '../widgets/empty_state.dart';
-import '../widgets/panel.dart';
+import '../widgets/responsive_wrap_grid.dart';
 import '../widgets/stat_card.dart';
 import 'day_detail.dart';
 
@@ -94,9 +94,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
     final data = _data!;
     final latest = data.latestMetrics;
-    final previousDayAmount = data.recentDays.length > 1
-        ? data.recentDays[1].grossAmount
-        : 0;
+    final previousDayAmount =
+        data.recentDays.length > 1 ? data.recentDays[1].grossAmount : 0;
 
     return RefreshIndicator(
       onRefresh: _fetchData,
@@ -105,76 +104,65 @@ class _DashboardScreenState extends State<DashboardScreen> {
         physics: const AlwaysScrollableScrollPhysics(),
         padding: const EdgeInsets.all(16),
         children: [
-          Text(
-            '실시간 요약',
-            style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                  fontWeight: FontWeight.w800,
-                  color: const Color(0xFF0F172A),
-                ),
-          ),
-          const SizedBox(height: 6),
-          Text(
-            data.latestDay != null
+          if (_fromCache && _cachedAt != null) ...[
+            const SizedBox(height: 4),
+            CacheNotice(cachedAt: _cachedAt),
+            const SizedBox(height: 12),
+          ],
+          _DashboardSection(
+            title: '실시간 요약',
+            subtitle: data.latestDay != null
                 ? '기준일 ${UiFormat.weekday(data.latestDay!)}'
                 : '기준일 정보 없음',
-            style: const TextStyle(
-              color: Color(0xFF64748B),
-              fontSize: 14,
-            ),
+            child: _buildCardGrid([
+              StatCard(
+                label: '오늘 매출',
+                value: UiFormat.won(latest.grossAmount),
+                sub:
+                    '전일 대비 ${UiFormat.delta(latest.grossAmount, previousDayAmount)}',
+                accent: true,
+              ),
+              StatCard(
+                label: '주간 누적',
+                value: UiFormat.won(data.weekThis),
+                sub:
+                    '전주 ${UiFormat.won(data.weekPrev)} · ${UiFormat.delta(data.weekThis, data.weekPrev)}',
+              ),
+              StatCard(
+                label: '평균 객단가',
+                value: UiFormat.won(data.avgTicket),
+                sub: '전주 ${UiFormat.won(data.prevAvgTicket)}',
+              ),
+              StatCard(
+                label: '영수건수 / 고객',
+                value:
+                    '${UiFormat.number(latest.receiptCount)} / ${UiFormat.number(latest.customerCount)}',
+                sub:
+                    '카드 ${UiFormat.won(latest.cardAmount)} · 현금 ${UiFormat.won(latest.cashAmount)}',
+              ),
+            ]),
           ),
-          if (_fromCache && _cachedAt != null) ...[
-            const SizedBox(height: 8),
-            CacheNotice(cachedAt: _cachedAt),
-          ],
-          const SizedBox(height: 16),
-          _buildCardGrid([
-            StatCard(
-              label: '오늘 매출',
-              value: UiFormat.won(latest.grossAmount),
-              sub: '전일 대비 ${UiFormat.delta(latest.grossAmount, previousDayAmount)}',
-              accent: true,
-            ),
-            StatCard(
-              label: '주간 누적',
-              value: UiFormat.won(data.weekThis),
-              sub:
-                  '전주 ${UiFormat.won(data.weekPrev)} · ${UiFormat.delta(data.weekThis, data.weekPrev)}',
-            ),
-            StatCard(
-              label: '평균 객단가',
-              value: UiFormat.won(data.avgTicket),
-              sub: '전주 ${UiFormat.won(data.prevAvgTicket)}',
-            ),
-            StatCard(
-              label: '영수건수 / 고객',
-              value:
-                  '${UiFormat.number(latest.receiptCount)} / ${UiFormat.number(latest.customerCount)}',
-              sub:
-                  '카드 ${UiFormat.won(latest.cardAmount)} · 현금 ${UiFormat.won(latest.cashAmount)}',
-            ),
-          ]),
-          const SizedBox(height: 16),
-          Panel(
+          _DashboardSection(
             title: '최근 7일 매출',
             subtitle: '탭하면 일별 상세로 이동합니다.',
             child: _buildRecentDays(context, data),
           ),
-          Panel(
+          _DashboardSection(
             title: '상위 판매 품목',
             subtitle: '최신 영업일 매출 상위 품목',
             child: _buildTopItems(data.topItems),
           ),
-          Panel(
+          _DashboardSection(
             title: '결제수단 구성',
             subtitle: '최신 영업일 결제 비중',
             child: _buildPaymentMix(data.paymentMix),
           ),
-          Panel(
+          _DashboardSection(
             title: '최근 적재 이력',
             subtitle: '백엔드 동기화 상태를 함께 확인합니다.',
             child: _buildRecentRuns(data.recentRuns),
           ),
-          Panel(
+          _DashboardSection(
             title: '성장 / 주의 품목',
             subtitle: '최근 주간 비교',
             child: _buildTrendItems(data),
@@ -185,19 +173,10 @@ class _DashboardScreenState extends State<DashboardScreen> {
   }
 
   Widget _buildCardGrid(List<Widget> cards) {
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        final width = constraints.maxWidth >= 720
-            ? (constraints.maxWidth - 12) / 2
-            : constraints.maxWidth;
-        return Wrap(
-          spacing: 12,
-          runSpacing: 12,
-          children: cards
-              .map((card) => SizedBox(width: width, child: card))
-              .toList(growable: false),
-        );
-      },
+    return ResponsiveWrapGrid(
+      minItemWidth: 280,
+      maxColumns: 2,
+      children: cards,
     );
   }
 
@@ -361,6 +340,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
       );
     }).toList(growable: false);
   }
+
   Widget _buildRecentRuns(List<SyncRun> runs) {
     if (runs.isEmpty) {
       return const Text(
@@ -408,6 +388,54 @@ class _DashboardScreenState extends State<DashboardScreen> {
           ),
         );
       }).toList(growable: false),
+    );
+  }
+}
+
+class _DashboardSection extends StatelessWidget {
+  final String title;
+  final String subtitle;
+  final Widget child;
+
+  const _DashboardSection({
+    required this.title,
+    required this.subtitle,
+    required this.child,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: const Color(0xFFE2E8F0)),
+      ),
+      child: Theme(
+        data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
+        child: ExpansionTile(
+          initiallyExpanded: false,
+          tilePadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+          childrenPadding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+          title: Text(
+            title,
+            style: const TextStyle(
+              fontSize: 16,
+              fontWeight: FontWeight.w600,
+              color: Color(0xFF0F172A),
+            ),
+          ),
+          subtitle: Text(
+            subtitle,
+            style: const TextStyle(
+              fontSize: 12,
+              color: Color(0xFF94A3B8),
+            ),
+          ),
+          children: [child],
+        ),
+      ),
     );
   }
 }

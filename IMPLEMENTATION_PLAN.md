@@ -1,7 +1,7 @@
-# EasyPOS Flutter 모바일 앱 — 기능 순차 구현 계획서
+# Cafe Bridge Flutter 모바일 앱 — 기능 순차 구현 계획서
 
 > 작성일: 2026-04-05  
-> 기준: FastAPI 백엔드 (`easypos_collector/web/app.py`) 전체 엔드포인트 기준  
+> 기준: FastAPI 백엔드 (`cafe_bridge_collector/web/app.py`) 전체 엔드포인트 기준
 > 환경: 주 접속 단말 = 모바일 (Android/iOS), Flutter 3.x / Provider
 
 ---

@@ -208,7 +208,7 @@ class _SyncScreenState extends State<SyncScreen> {
           ),
           const SizedBox(height: 6),
           const Text(
-            'EasyPOS 백엔드에서 특정 날짜의 매출을 적재합니다.',
+            'Cafe Bridge 백엔드에서 특정 날짜의 매출을 적재합니다.',
             style: TextStyle(color: Color(0xFF64748B)),
           ),
           if (_fromCache && _cachedAt != null) ...[

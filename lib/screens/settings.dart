@@ -8,6 +8,7 @@ import '../models/dashboard_model.dart';
 import '../services/api.dart';
 import '../state/app_state.dart';
 import '../widgets/app_update_banner.dart';
+import '../widgets/responsive_wrap_grid.dart';
 
 class SettingsScreen extends StatefulWidget {
   const SettingsScreen({super.key});
@@ -200,9 +201,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
         _buildInfoRow('현재 버전', appState.currentAppVersionLabel),
         _buildInfoRow(
           '배포 버전',
-          appState.updateInfo == null
-              ? '-'
-              : appState.updateInfo!.displayLabel,
+          appState.updateInfo == null ? '-' : appState.updateInfo!.displayLabel,
         ),
         _buildInfoRow(
           '최근 배포 시각',
@@ -304,7 +303,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
             ),
             child: const Row(
               children: [
-                Icon(Icons.admin_panel_settings_outlined, color: Color(0xFF0F172A)),
+                Icon(Icons.admin_panel_settings_outlined,
+                    color: Color(0xFF0F172A)),
                 SizedBox(width: 10),
                 Expanded(
                   child: Text(
@@ -489,8 +489,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
           Text(
             _passwordMessage,
             style: TextStyle(
-              color:
-                  _passwordOk ? const Color(0xFF16A34A) : const Color(0xFFDC2626),
+              color: _passwordOk
+                  ? const Color(0xFF16A34A)
+                  : const Color(0xFFDC2626),
               fontWeight: FontWeight.w600,
             ),
           ),
@@ -579,6 +580,65 @@ class _SettingsScreenState extends State<SettingsScreen> {
             ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+class DeployManagementScreen extends StatelessWidget {
+  const DeployManagementScreen({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    final appState = context.watch<AppState>();
+
+    return Scaffold(
+      appBar: AppBar(
+        title:
+            const Text('배포 관리', style: TextStyle(fontWeight: FontWeight.w700)),
+        bottom: PreferredSize(
+          preferredSize: const Size.fromHeight(1),
+          child: Container(height: 1, color: const Color(0xFFE2E8F0)),
+        ),
+      ),
+      body: SafeArea(
+        child: ListView(
+          padding: const EdgeInsets.all(16),
+          children: [
+            if (appState.hasAdminAccess)
+              const _AdminDeployPanel()
+            else
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(16),
+                  border: Border.all(color: const Color(0xFFE2E8F0)),
+                ),
+                child: const Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Icon(
+                      Icons.lock_outline,
+                      size: 18,
+                      color: Color(0xFF64748B),
+                    ),
+                    SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        '배포 관리는 admin 권한 계정에서만 사용할 수 있습니다.',
+                        style: TextStyle(
+                          color: Color(0xFF475569),
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+          ],
+        ),
       ),
     );
   }
@@ -825,7 +885,8 @@ class _UserManagementScreenState extends State<_UserManagementScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('계정 관리', style: TextStyle(fontWeight: FontWeight.w700)),
+        title:
+            const Text('계정 관리', style: TextStyle(fontWeight: FontWeight.w700)),
         actions: [
           IconButton(
             icon: const Icon(Icons.refresh),
@@ -1109,10 +1170,14 @@ class _VersionInfo {
   });
 
   factory _VersionInfo.fromJson(Map<String, dynamic> json) {
-    final pubspec = (json['pubspec'] as Map?)?.cast<String, dynamic>() ?? const {};
-    final updatePolicy = (json['update_policy'] as Map?)?.cast<String, dynamic>() ?? const {};
-    final latestRelease = (json['latest_release'] as Map?)?.cast<String, dynamic>() ?? const {};
-    final latest = (latestRelease['latest'] as Map?)?.cast<String, dynamic>() ?? const {};
+    final pubspec =
+        (json['pubspec'] as Map?)?.cast<String, dynamic>() ?? const {};
+    final updatePolicy =
+        (json['update_policy'] as Map?)?.cast<String, dynamic>() ?? const {};
+    final latestRelease =
+        (json['latest_release'] as Map?)?.cast<String, dynamic>() ?? const {};
+    final latest =
+        (latestRelease['latest'] as Map?)?.cast<String, dynamic>() ?? const {};
 
     return _VersionInfo(
       pubspecVersionRaw: pubspec['version_raw']?.toString() ?? '',
@@ -1120,7 +1185,8 @@ class _VersionInfo {
       pubspecBuild: int.tryParse(pubspec['build']?.toString() ?? '') ?? 0,
       pubspecPath: pubspec['pubspec_path']?.toString() ?? '',
       latestVersion: updatePolicy['latest_version']?.toString() ?? '',
-      latestBuild: int.tryParse(updatePolicy['latest_build']?.toString() ?? '') ?? 0,
+      latestBuild:
+          int.tryParse(updatePolicy['latest_build']?.toString() ?? '') ?? 0,
       downloadUrl: updatePolicy['download_url']?.toString() ?? '',
       sha256: updatePolicy['sha256']?.toString() ?? '',
       releaseNotes: updatePolicy['release_notes']?.toString() ?? '',
@@ -1134,19 +1200,21 @@ class _VersionInfo {
       latestReleaseExists: latestRelease['exists'] == true,
       latestReleaseReadError: latestRelease['read_error']?.toString(),
       latestReleaseVersion: latest['latest_version']?.toString(),
-      latestReleaseBuild: int.tryParse(latest['latest_build']?.toString() ?? ''),
+      latestReleaseBuild:
+          int.tryParse(latest['latest_build']?.toString() ?? ''),
       latestReleaseFileName: latest['file_name']?.toString(),
       latestReleasePublishedAt: latest['published_at']?.toString(),
       latestReleaseArtifactPath: latest['artifact_path']?.toString(),
       latestReleaseDownloadUrl: latest['download_url']?.toString(),
       latestReleaseSha256: latest['sha256']?.toString(),
-      latestReleaseFileSize: int.tryParse(latest['file_size']?.toString() ?? ''),
+      latestReleaseFileSize:
+          int.tryParse(latest['file_size']?.toString() ?? ''),
     );
   }
 
-    String get policyLabel => formatVersionDisplay(latestVersion, latestBuild);
-    String get pubspecLabel => formatVersionDisplay(pubspecVersion, pubspecBuild);
-    String get releaseLabel => latestReleaseExists
+  String get policyLabel => formatVersionDisplay(latestVersion, latestBuild);
+  String get pubspecLabel => formatVersionDisplay(pubspecVersion, pubspecBuild);
+  String get releaseLabel => latestReleaseExists
       ? formatVersionDisplay(latestReleaseVersion ?? '', latestReleaseBuild)
       : '-';
 }
@@ -1165,12 +1233,19 @@ class _AppUpdateMetrics {
   });
 
   factory _AppUpdateMetrics.fromJson(Map<String, dynamic> json) {
-    final rawPolicySourceTotal = (json['policy_source_total'] as Map?)?.cast<String, dynamic>() ?? const {};
+    final rawPolicySourceTotal =
+        (json['policy_source_total'] as Map?)?.cast<String, dynamic>() ??
+            const {};
     return _AppUpdateMetrics(
-      appUpdateCheckTotal: int.tryParse(json['app_update_check_total']?.toString() ?? '') ?? 0,
-      appUpdateCheckFailedTotal: int.tryParse(json['app_update_check_failed_total']?.toString() ?? '') ?? 0,
-      downloadUrlEmptyTotal: int.tryParse(json['download_url_empty_total']?.toString() ?? '') ?? 0,
-      policySourceTotal: rawPolicySourceTotal.map((key, value) => MapEntry(key, int.tryParse(value.toString()) ?? 0)),
+      appUpdateCheckTotal:
+          int.tryParse(json['app_update_check_total']?.toString() ?? '') ?? 0,
+      appUpdateCheckFailedTotal: int.tryParse(
+              json['app_update_check_failed_total']?.toString() ?? '') ??
+          0,
+      downloadUrlEmptyTotal:
+          int.tryParse(json['download_url_empty_total']?.toString() ?? '') ?? 0,
+      policySourceTotal: rawPolicySourceTotal.map(
+          (key, value) => MapEntry(key, int.tryParse(value.toString()) ?? 0)),
     );
   }
 
@@ -1178,7 +1253,8 @@ class _AppUpdateMetrics {
     if (policySourceTotal.isEmpty) {
       return '-';
     }
-    final entries = policySourceTotal.entries.toList()..sort((a, b) => b.value.compareTo(a.value));
+    final entries = policySourceTotal.entries.toList()
+      ..sort((a, b) => b.value.compareTo(a.value));
     return entries.first.key;
   }
 }
@@ -1195,8 +1271,13 @@ class _AdminDeployPanelState extends State<_AdminDeployPanel> {
   _DeployTask? _currentTask;
   _VersionInfo? _versionInfo;
   _AppUpdateMetrics? _metrics;
+  final TextEditingController _reasonController = TextEditingController();
   bool _loading = true;
   bool _refreshing = false;
+  bool _submitting = false;
+  bool _dryRun = false;
+  String _target = 'flutter-apk';
+  String _message = '';
   String _error = '';
   String _scopeKey = '';
   Timer? _pollTimer;
@@ -1205,7 +1286,8 @@ class _AdminDeployPanelState extends State<_AdminDeployPanel> {
   void didChangeDependencies() {
     super.didChangeDependencies();
     final appState = context.watch<AppState>();
-    final nextScopeKey = '${appState.apiBaseUrl}|${appState.loginId}|${appState.role}|${appState.hasAdminAccess}';
+    final nextScopeKey =
+        '${appState.apiBaseUrl}|${appState.loginId}|${appState.role}|${appState.hasAdminAccess}';
     if (nextScopeKey != _scopeKey) {
       _scopeKey = nextScopeKey;
       if (appState.hasAdminAccess) {
@@ -1219,6 +1301,10 @@ class _AdminDeployPanelState extends State<_AdminDeployPanel> {
           _metrics = null;
           _loading = false;
           _refreshing = false;
+          _submitting = false;
+          _dryRun = false;
+          _target = 'flutter-apk';
+          _message = '';
           _error = '';
         });
       }
@@ -1228,6 +1314,7 @@ class _AdminDeployPanelState extends State<_AdminDeployPanel> {
   @override
   void dispose() {
     _stopPolling();
+    _reasonController.dispose();
     super.dispose();
   }
 
@@ -1246,6 +1333,7 @@ class _AdminDeployPanelState extends State<_AdminDeployPanel> {
     }
 
     final errors = <String>[];
+    final previousTask = _currentTask;
 
     try {
       final history = await appState.fetchMapParsed<List<_DeployTask>>(
@@ -1268,11 +1356,18 @@ class _AdminDeployPanelState extends State<_AdminDeployPanel> {
         cacheTtl: Duration.zero,
       );
       if (mounted) {
+        final nextHistory = history.data;
+        _DeployTask? nextCurrentTask;
+        for (final task in nextHistory) {
+          if (task.isActive) {
+            nextCurrentTask = task;
+            break;
+          }
+        }
         setState(() {
-          _history = history.data;
-          _currentTask = _history.where((task) => task.isActive).isNotEmpty
-              ? _history.where((task) => task.isActive).first
-              : null;
+          _history = nextHistory;
+          _currentTask = nextCurrentTask ??
+              (previousTask?.isActive == true ? previousTask : null);
         });
       }
     } catch (error) {
@@ -1284,13 +1379,14 @@ class _AdminDeployPanelState extends State<_AdminDeployPanel> {
       try {
         final status = await appState.fetchMapParsed<_DeployTask>(
           '/api/deploy/$activeTaskId',
-          parser: (json) => _DeployTask.fromJson(json),
+          parser: _parseDeployTaskResponse,
           cacheTtl: Duration.zero,
         );
         if (mounted) {
           setState(() {
             _currentTask = status.data;
-            final index = _history.indexWhere((task) => task.taskId == status.data.taskId);
+            final index = _history
+                .indexWhere((task) => task.taskId == status.data.taskId);
             if (index >= 0) {
               _history[index] = status.data;
             }
@@ -1356,14 +1452,16 @@ class _AdminDeployPanelState extends State<_AdminDeployPanel> {
         return;
       }
       final appState = context.read<AppState>();
-      if (!appState.hasAdminAccess || _currentTask == null || !_currentTask!.isActive) {
+      if (!appState.hasAdminAccess ||
+          _currentTask == null ||
+          !_currentTask!.isActive) {
         _stopPolling();
         return;
       }
       try {
         final status = await appState.fetchMapParsed<_DeployTask>(
           '/api/deploy/${_currentTask!.taskId}',
-          parser: (json) => _DeployTask.fromJson(json),
+          parser: _parseDeployTaskResponse,
           cacheTtl: Duration.zero,
         );
         if (!mounted) {
@@ -1371,18 +1469,102 @@ class _AdminDeployPanelState extends State<_AdminDeployPanel> {
         }
         setState(() {
           _currentTask = status.data;
-          final index = _history.indexWhere((task) => task.taskId == status.data.taskId);
+          final index =
+              _history.indexWhere((task) => task.taskId == status.data.taskId);
           if (index >= 0) {
             _history[index] = status.data;
+          } else {
+            _history = [status.data, ..._history];
+          }
+          if (status.data.status == 'succeeded') {
+            _message = '${status.data.target} 배포가 완료되었습니다.';
+            _error = '';
+          } else if (status.data.status == 'failed') {
+            _error = status.data.errorMessage.isNotEmpty
+                ? status.data.errorMessage
+                : '${status.data.target} 배포가 실패했습니다.';
           }
         });
         if (!_currentTask!.isActive) {
           _stopPolling();
+          unawaited(_refresh());
         }
       } catch (_) {
         _stopPolling();
       }
     });
+  }
+
+  _DeployTask _parseDeployTaskResponse(Map<String, dynamic> json) {
+    return _DeployTask.fromJson(asMap(json['task']));
+  }
+
+  Future<void> _startDeploy() async {
+    final appState = context.read<AppState>();
+    final reason = _reasonController.text.trim();
+    if (reason.isEmpty) {
+      setState(() {
+        _message = '';
+        _error = '배포 사유를 입력하세요.';
+      });
+      return;
+    }
+
+    setState(() {
+      _submitting = true;
+      _message = '';
+      _error = '';
+    });
+
+    try {
+      final response = await appState.postJson(
+        '/api/deploy',
+        body: {
+          'target': _target,
+          'reason': reason,
+          'dry_run': _dryRun,
+        },
+      );
+      final started = AsyncTaskStartResponse.fromJson(response);
+      if (started.taskId.trim().isEmpty) {
+        throw const ApiException('배포 작업 ID를 받지 못했습니다.');
+      }
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _currentTask = _DeployTask(
+          taskId: started.taskId,
+          target: _target,
+          requestedBy: appState.loginId ?? '',
+          reason: reason,
+          dryRun: _dryRun,
+          status: started.status,
+          currentStep: 'validate',
+          logPath: '',
+          resolvedCommit: '',
+          errorMessage: '',
+        );
+        _reasonController.clear();
+        _message =
+            _dryRun ? '$_target dry-run 배포를 시작했습니다.' : '$_target 배포를 시작했습니다.';
+      });
+      _syncPolling();
+      unawaited(_refresh());
+    } catch (error) {
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _error = error.toString().replaceFirst('Exception: ', '');
+      });
+    } finally {
+      if (mounted) {
+        setState(() {
+          _submitting = false;
+        });
+      }
+    }
   }
 
   void _stopPolling() {
@@ -1396,8 +1578,11 @@ class _AdminDeployPanelState extends State<_AdminDeployPanel> {
     final versionInfo = _versionInfo;
     final metrics = _metrics;
     final runningCount = _history.where((task) => task.isActive).length;
-    final successCount = _history.where((task) => task.status == 'succeeded').length;
-    final failedCount = _history.where((task) => task.status == 'failed').length;
+    final successCount =
+        _history.where((task) => task.status == 'succeeded').length;
+    final failedCount =
+        _history.where((task) => task.status == 'failed').length;
+    final deployBusy = _submitting || (currentTask?.isActive ?? false);
 
     return Container(
       width: double.infinity,
@@ -1412,7 +1597,8 @@ class _AdminDeployPanelState extends State<_AdminDeployPanel> {
         children: [
           Row(
             children: [
-              const Icon(Icons.admin_panel_settings_outlined, color: Color(0xFF0F172A)),
+              const Icon(Icons.admin_panel_settings_outlined,
+                  color: Color(0xFF0F172A)),
               const SizedBox(width: 8),
               const Expanded(
                 child: Text(
@@ -1433,9 +1619,79 @@ class _AdminDeployPanelState extends State<_AdminDeployPanel> {
           ),
           const SizedBox(height: 6),
           const Text(
-            '배포 상태, 최근 이력, 버전 정책, 앱 업데이트 지표를 한 곳에서 확인합니다.',
+            '배포 상태와 이력을 확인합니다.',
             style: TextStyle(color: Color(0xFF64748B)),
           ),
+          const SizedBox(height: 16),
+          const _SectionTitle('배포 요청'),
+          const SizedBox(height: 8),
+          Column(
+            children: [
+              DropdownButtonFormField<String>(
+                initialValue: _target,
+                decoration: const InputDecoration(
+                  border: OutlineInputBorder(),
+                  labelText: '대상',
+                ),
+                items: const [
+                  DropdownMenuItem(
+                    value: 'flutter-apk',
+                    child: Text('flutter-apk'),
+                  ),
+                ],
+                onChanged: deployBusy
+                    ? null
+                    : (value) {
+                        if (value == null) {
+                          return;
+                        }
+                        setState(() {
+                          _target = value;
+                        });
+                      },
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: _reasonController,
+                enabled: !deployBusy,
+                maxLength: 300,
+                decoration: const InputDecoration(
+                  border: OutlineInputBorder(),
+                  labelText: '배포 사유',
+                ),
+              ),
+              SwitchListTile(
+                contentPadding: EdgeInsets.zero,
+                title: const Text('dry-run'),
+                value: _dryRun,
+                onChanged: deployBusy
+                    ? null
+                    : (value) {
+                        setState(() {
+                          _dryRun = value;
+                        });
+                      },
+              ),
+              FilledButton.icon(
+                onPressed: deployBusy ? null : _startDeploy,
+                icon: const Icon(Icons.rocket_launch_outlined),
+                label: Text(deployBusy ? '실행 중...' : '빌드 요청'),
+                style: FilledButton.styleFrom(
+                  minimumSize: const Size(double.infinity, 48),
+                ),
+              ),
+            ],
+          ),
+          if (_message.isNotEmpty) ...[
+            const SizedBox(height: 12),
+            Text(
+              _message,
+              style: const TextStyle(
+                color: Color(0xFF0F766E),
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ],
           if (_error.isNotEmpty) ...[
             const SizedBox(height: 12),
             Text(
@@ -1447,20 +1703,31 @@ class _AdminDeployPanelState extends State<_AdminDeployPanel> {
             ),
           ],
           const SizedBox(height: 16),
-          if (_loading && _history.isEmpty && versionInfo == null && metrics == null)
+          if (_loading &&
+              _history.isEmpty &&
+              versionInfo == null &&
+              metrics == null)
             const Padding(
               padding: EdgeInsets.symmetric(vertical: 24),
               child: Center(child: CircularProgressIndicator()),
             )
           else ...[
-            Wrap(
-              spacing: 12,
-              runSpacing: 12,
+            ResponsiveWrapGrid(
+              minItemWidth: 140,
+              maxColumns: 4,
               children: [
                 _AdminStatCard(label: '최근 작업', value: '${_history.length}건'),
-                _AdminStatCard(label: '진행 중', value: '$runningCount건', accent: runningCount > 0),
+                _AdminStatCard(
+                  label: '진행 중',
+                  value: '$runningCount건',
+                  accent: runningCount > 0,
+                ),
                 _AdminStatCard(label: '성공', value: '$successCount건'),
-                _AdminStatCard(label: '실패', value: '$failedCount건', accent: failedCount > 0),
+                _AdminStatCard(
+                  label: '실패',
+                  value: '$failedCount건',
+                  accent: failedCount > 0,
+                ),
               ],
             ),
             const SizedBox(height: 16),
@@ -1478,12 +1745,22 @@ class _AdminDeployPanelState extends State<_AdminDeployPanel> {
                         ? 'artifact'
                         : currentTask.healthCheckOk == null
                             ? (currentTask.dryRun ? 'skip' : 'pending')
-                            : (currentTask.healthCheckOk == true ? 'ok' : 'fail'),
+                            : (currentTask.healthCheckOk == true
+                                ? 'ok'
+                                : 'fail'),
                   ),
-                  _DetailItem('시작', UiFormat.compactDateTime(currentTask.startedAt)),
-                  _DetailItem('종료', UiFormat.compactDateTime(currentTask.finishedAt)),
-                  _DetailItem('요청자', currentTask.requestedBy.isEmpty ? '-' : currentTask.requestedBy),
-                  _DetailItem('로그', currentTask.logPath.isEmpty ? '-' : currentTask.logPath, mono: true),
+                  _DetailItem(
+                      '시작', UiFormat.compactDateTime(currentTask.startedAt)),
+                  _DetailItem(
+                      '종료', UiFormat.compactDateTime(currentTask.finishedAt)),
+                  _DetailItem(
+                      '요청자',
+                      currentTask.requestedBy.isEmpty
+                          ? '-'
+                          : currentTask.requestedBy),
+                  _DetailItem('로그',
+                      currentTask.logPath.isEmpty ? '-' : currentTask.logPath,
+                      mono: true),
                 ],
               ),
               if (currentTask.reason.isNotEmpty) ...[
@@ -1513,11 +1790,29 @@ class _AdminDeployPanelState extends State<_AdminDeployPanel> {
                   _DetailItem('현재 업데이트 정책', versionInfo.policyLabel),
                   _DetailItem('배포 시 빌드', versionInfo.pubspecLabel),
                   _DetailItem('최근 산출물', versionInfo.releaseLabel),
-                  _DetailItem('pubspec 버전', versionInfo.pubspecVersionRaw.isEmpty ? '-' : versionInfo.pubspecVersionRaw, mono: true),
+                  _DetailItem(
+                      'pubspec 버전',
+                      versionInfo.pubspecVersionRaw.isEmpty
+                          ? '-'
+                          : versionInfo.pubspecVersionRaw,
+                      mono: true),
                   _DetailItem('정책 소스', versionInfo.policySource ?? '-'),
-                  _DetailItem('다운로드 URL', versionInfo.downloadUrl.isEmpty ? '-' : versionInfo.downloadUrl, mono: true),
-                  _DetailItem('최근 배포 시각', versionInfo.latestReleasePublishedAt ?? versionInfo.publishedAt),
-                  _DetailItem('release 디렉토리', versionInfo.releaseDir.isEmpty ? '-' : versionInfo.releaseDir, mono: true),
+                  _DetailItem(
+                      '다운로드 URL',
+                      versionInfo.downloadUrl.isEmpty
+                          ? '-'
+                          : versionInfo.downloadUrl,
+                      mono: true),
+                  _DetailItem(
+                      '최근 배포 시각',
+                      versionInfo.latestReleasePublishedAt ??
+                          versionInfo.publishedAt),
+                  _DetailItem(
+                      'release 디렉토리',
+                      versionInfo.releaseDir.isEmpty
+                          ? '-'
+                          : versionInfo.releaseDir,
+                      mono: true),
                 ],
               ),
               if ((versionInfo.policyWarning ?? '').trim().isNotEmpty) ...[
@@ -1542,14 +1837,28 @@ class _AdminDeployPanelState extends State<_AdminDeployPanel> {
             if (metrics != null) ...[
               const _SectionTitle('업데이트 지표'),
               const SizedBox(height: 8),
-              Wrap(
-                spacing: 12,
-                runSpacing: 12,
+              ResponsiveWrapGrid(
+                minItemWidth: 140,
+                maxColumns: 4,
                 children: [
-                  _AdminStatCard(label: '체크 총량', value: '${metrics.appUpdateCheckTotal}'),
-                  _AdminStatCard(label: '체크 실패', value: '${metrics.appUpdateCheckFailedTotal}', accent: metrics.appUpdateCheckFailedTotal > 0),
-                  _AdminStatCard(label: 'URL 누락', value: '${metrics.downloadUrlEmptyTotal}', accent: metrics.downloadUrlEmptyTotal > 0),
-                  _AdminStatCard(label: '주 정책 소스', value: metrics.topPolicySource),
+                  _AdminStatCard(
+                    label: '체크 총량',
+                    value: '${metrics.appUpdateCheckTotal}',
+                  ),
+                  _AdminStatCard(
+                    label: '체크 실패',
+                    value: '${metrics.appUpdateCheckFailedTotal}',
+                    accent: metrics.appUpdateCheckFailedTotal > 0,
+                  ),
+                  _AdminStatCard(
+                    label: 'URL 누락',
+                    value: '${metrics.downloadUrlEmptyTotal}',
+                    accent: metrics.downloadUrlEmptyTotal > 0,
+                  ),
+                  _AdminStatCard(
+                    label: '주 정책 소스',
+                    value: metrics.topPolicySource,
+                  ),
                 ],
               ),
               if (metrics.policySourceTotal.isNotEmpty) ...[
@@ -1595,13 +1904,17 @@ class _AdminDeployPanelState extends State<_AdminDeployPanel> {
                       .map(
                         (task) => DataRow(
                           cells: [
-                            DataCell(Text(UiFormat.compactDateTime(task.startedAt ?? task.finishedAt))),
+                            DataCell(Text(UiFormat.compactDateTime(
+                                task.startedAt ?? task.finishedAt))),
                             DataCell(Text(task.target)),
                             DataCell(Text(task.status)),
                             DataCell(Text(task.currentStep)),
                             DataCell(Text(task.dryRun ? 'yes' : 'no')),
-                            DataCell(Text(task.requestedBy.isEmpty ? '-' : task.requestedBy)),
-                            DataCell(Text(task.reason.isEmpty ? '-' : task.reason)),
+                            DataCell(Text(task.requestedBy.isEmpty
+                                ? '-'
+                                : task.requestedBy)),
+                            DataCell(
+                                Text(task.reason.isEmpty ? '-' : task.reason)),
                           ],
                         ),
                       )
@@ -1629,7 +1942,7 @@ class _AdminStatCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      width: 160,
+      width: double.infinity,
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
         color: const Color(0xFFF8FAFC),
@@ -1697,13 +2010,12 @@ class _DetailGrid extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Wrap(
-      spacing: 12,
-      runSpacing: 12,
+    return ResponsiveWrapGrid(
+      minItemWidth: 220,
+      maxColumns: 3,
       children: items
           .map(
             (item) => Container(
-              width: 260,
               padding: const EdgeInsets.all(12),
               decoration: BoxDecoration(
                 borderRadius: BorderRadius.circular(12),
@@ -1735,7 +2047,7 @@ class _DetailGrid extends StatelessWidget {
               ),
             ),
           )
-          .toList(),
+          .toList(growable: false),
     );
   }
 }

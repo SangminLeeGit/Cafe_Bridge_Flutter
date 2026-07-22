@@ -1,5 +1,5 @@
-name: easypos_flutter
-description: A new Flutter project for EasyPOS Analytics.
+name: cafe_bridge_flutter
+description: A new Flutter project for Cafe Bridge analytics.
 
 publish_to: 'none' # Remove this line if you wish to publish to pub.dev
 
@@ -32,3 +32,5 @@ dev_dependencies:
 
 flutter:
   uses-material-design: true
+  assets:
+    - assets/branding/cafe_bridge_logo.png

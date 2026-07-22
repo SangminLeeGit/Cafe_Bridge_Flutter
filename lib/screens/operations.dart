@@ -19,58 +19,62 @@ class OperationsScreen extends StatelessWidget {
       padding: const EdgeInsets.all(16),
       children: [
         const _SectionHeader(
-          title: '운영 도구',
-          subtitle: '매장 운영에 필요한 도구 모음입니다.',
+          title: '운영',
+          subtitle: '필요한 작업을 선택하세요.',
         ),
         const SizedBox(height: 16),
         _OperationTile(
           icon: Icons.calculate_outlined,
-          title: '원가 관리',
-          subtitle: '재료 단가 · 레시피 원가율 관리',
+          title: '원가',
+          subtitle: '재료 단가 · 레시피',
           onTap: () => Navigator.of(context).push(
-            MaterialPageRoute(builder: (_) => const _FullScreenPage(
-              title: '원가 관리',
-              child: CostingScreen(),
-            )),
+            MaterialPageRoute(
+                builder: (_) => const _FullScreenPage(
+                      title: '원가',
+                      child: CostingScreen(),
+                    )),
           ),
         ),
         const SizedBox(height: 8),
         _OperationTile(
           icon: Icons.menu_book_outlined,
-          title: '메뉴 작업대',
-          subtitle: '가격 변경 · 신규 상품 등록 작업 관리',
+          title: '상품',
+          subtitle: '가격 변경 · 신규 메뉴',
           onTap: () => Navigator.of(context).push(
-            MaterialPageRoute(builder: (_) => const _FullScreenPage(
-              title: '메뉴 작업대',
-              child: MenuWorkspaceScreen(),
-            )),
+            MaterialPageRoute(
+                builder: (_) => const _FullScreenPage(
+                      title: '상품',
+                      child: MenuWorkspaceScreen(),
+                    )),
           ),
         ),
         if (appState.hasOperatorAccess) ...[
           const SizedBox(height: 8),
           _OperationTile(
             icon: Icons.tv_outlined,
-            title: '메뉴판 제어',
-            subtitle: '사이니지 서버 메뉴판 조회 · 편집 · 반영',
+            title: '메뉴판',
+            subtitle: '조회 · 편집 · 반영',
             badge: 'operator',
             onTap: () => Navigator.of(context).push(
-              MaterialPageRoute(builder: (_) => const _FullScreenPage(
-                title: '메뉴판 제어',
-                child: SignageScreen(),
-              )),
+              MaterialPageRoute(
+                  builder: (_) => const _FullScreenPage(
+                        title: '메뉴판',
+                        child: SignageScreen(),
+                      )),
             ),
           ),
           const SizedBox(height: 8),
           _OperationTile(
             icon: Icons.sync_outlined,
-            title: '데이터 동기화',
-            subtitle: 'EasyPOS 매출 수집 · 적재 실행',
+            title: '동기화',
+            subtitle: '매출 수집 · 적재',
             badge: 'operator',
             onTap: () => Navigator.of(context).push(
-              MaterialPageRoute(builder: (_) => const _FullScreenPage(
-                title: '동기화',
-                child: SyncScreen(),
-              )),
+              MaterialPageRoute(
+                  builder: (_) => const _FullScreenPage(
+                        title: '동기화',
+                        child: SyncScreen(),
+                      )),
             ),
           ),
         ],
@@ -141,7 +145,8 @@ class _OperationTile extends StatelessWidget {
         title: Row(
           children: [
             Expanded(
-              child: Text(title, style: const TextStyle(fontWeight: FontWeight.w700)),
+              child: Text(title,
+                  style: const TextStyle(fontWeight: FontWeight.w700)),
             ),
             if (badge != null)
               Container(
@@ -152,13 +157,15 @@ class _OperationTile extends StatelessWidget {
                 ),
                 child: Text(
                   badge!,
-                  style: const TextStyle(fontSize: 11, color: Color(0xFF64748B)),
+                  style:
+                      const TextStyle(fontSize: 11, color: Color(0xFF64748B)),
                 ),
               ),
           ],
         ),
         subtitle: Text(subtitle),
-        trailing: const Icon(Icons.chevron_right_outlined, color: Color(0xFF94A3B8)),
+        trailing:
+            const Icon(Icons.chevron_right_outlined, color: Color(0xFF94A3B8)),
       ),
     );
   }

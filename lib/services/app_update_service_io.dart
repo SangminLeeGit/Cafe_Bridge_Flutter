@@ -126,11 +126,11 @@ class AppUpdateService {
 
   static String _resolveFileName(Uri uri, String version, int buildNumber) {
     final candidate = uri.pathSegments.isEmpty
-        ? 'easypos-$version+$buildNumber.apk'
+        ? 'cafe-bridge-$version+$buildNumber.apk'
         : uri.pathSegments.last;
     final normalized = candidate.toLowerCase().endsWith('.apk')
         ? candidate
-        : 'easypos-$version+$buildNumber.apk';
+        : 'cafe-bridge-$version+$buildNumber.apk';
     return normalized.replaceAll(RegExp(r'[^A-Za-z0-9._+-]'), '_');
   }
 

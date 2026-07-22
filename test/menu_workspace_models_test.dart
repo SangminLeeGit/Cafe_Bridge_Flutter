@@ -1,4 +1,4 @@
-import 'package:easypos_flutter/models/menu_workspace_models.dart';
+import 'package:cafe_bridge_flutter/models/menu_workspace_models.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
@@ -32,7 +32,8 @@ void main() {
     expect(entry.displayTitle, '아이스 라떼');
   });
 
-  test('WorkspaceTaskHistoryEntry falls back when result payload is absent', () {
+  test('WorkspaceTaskHistoryEntry falls back when result payload is absent',
+      () {
     final entry = WorkspaceTaskHistoryEntry.fromJson({
       'task_id': 'task-2',
       'status': 'failed',

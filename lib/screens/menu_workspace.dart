@@ -87,10 +87,12 @@ class _CategoryOptionCatalog {
     return _CategoryOptionCatalog(
       majorOptions: sortedValues(majorSet),
       middleOptionsByMajor: {
-        for (final entry in middleMap.entries) entry.key: sortedValues(entry.value),
+        for (final entry in middleMap.entries)
+          entry.key: sortedValues(entry.value),
       },
       minorOptionsByMajorMiddle: {
-        for (final entry in minorMap.entries) entry.key: sortedValues(entry.value),
+        for (final entry in minorMap.entries)
+          entry.key: sortedValues(entry.value),
       },
     );
   }
@@ -358,7 +360,8 @@ class _WorkspaceTabState extends State<_WorkspaceTab>
           return {
             'runs': (raw['runs'] as List? ?? [])
                 .whereType<Map>()
-                .map((item) => PriceApplyRun.fromJson(Map<String, dynamic>.from(item)))
+                .map((item) =>
+                    PriceApplyRun.fromJson(Map<String, dynamic>.from(item)))
                 .toList(growable: false),
           };
         },
@@ -366,7 +369,8 @@ class _WorkspaceTabState extends State<_WorkspaceTab>
       );
       if (!mounted) return;
       setState(() {
-        _priceApplyRuns = List<PriceApplyRun>.from(response.data['runs'] as List? ?? const []);
+        _priceApplyRuns = List<PriceApplyRun>.from(
+            response.data['runs'] as List? ?? const []);
         _priceApplyRunsLoading = false;
       });
     } catch (error) {
@@ -393,7 +397,8 @@ class _WorkspaceTabState extends State<_WorkspaceTab>
           return {
             'tasks': (raw['tasks'] as List? ?? [])
                 .whereType<Map>()
-                .map((item) => WorkspaceTaskHistoryEntry.fromJson(Map<String, dynamic>.from(item)))
+                .map((item) => WorkspaceTaskHistoryEntry.fromJson(
+                    Map<String, dynamic>.from(item)))
                 .toList(growable: false),
           };
         },
@@ -401,7 +406,8 @@ class _WorkspaceTabState extends State<_WorkspaceTab>
       );
       if (!mounted) return;
       setState(() {
-        _newItemHistory = List<WorkspaceTaskHistoryEntry>.from(response.data['tasks'] as List? ?? const []);
+        _newItemHistory = List<WorkspaceTaskHistoryEntry>.from(
+            response.data['tasks'] as List? ?? const []);
         _newItemHistoryLoading = false;
       });
     } catch (error) {
@@ -428,7 +434,8 @@ class _WorkspaceTabState extends State<_WorkspaceTab>
           return {
             'tasks': (raw['tasks'] as List? ?? [])
                 .whereType<Map>()
-                .map((item) => WorkspaceTaskHistoryEntry.fromJson(Map<String, dynamic>.from(item)))
+                .map((item) => WorkspaceTaskHistoryEntry.fromJson(
+                    Map<String, dynamic>.from(item)))
                 .toList(growable: false),
           };
         },
@@ -436,7 +443,8 @@ class _WorkspaceTabState extends State<_WorkspaceTab>
       );
       if (!mounted) return;
       setState(() {
-        _browserPriceHistory = List<WorkspaceTaskHistoryEntry>.from(response.data['tasks'] as List? ?? const []);
+        _browserPriceHistory = List<WorkspaceTaskHistoryEntry>.from(
+            response.data['tasks'] as List? ?? const []);
         _browserPriceHistoryLoading = false;
       });
     } catch (error) {
@@ -463,7 +471,8 @@ class _WorkspaceTabState extends State<_WorkspaceTab>
           return {
             'tasks': (raw['tasks'] as List? ?? [])
                 .whereType<Map>()
-                .map((item) => WorkspaceTaskHistoryEntry.fromJson(Map<String, dynamic>.from(item)))
+                .map((item) => WorkspaceTaskHistoryEntry.fromJson(
+                    Map<String, dynamic>.from(item)))
                 .toList(growable: false),
           };
         },
@@ -471,7 +480,8 @@ class _WorkspaceTabState extends State<_WorkspaceTab>
       );
       if (!mounted) return;
       setState(() {
-        _deleteItemHistory = List<WorkspaceTaskHistoryEntry>.from(response.data['tasks'] as List? ?? const []);
+        _deleteItemHistory = List<WorkspaceTaskHistoryEntry>.from(
+            response.data['tasks'] as List? ?? const []);
         _deleteItemHistoryLoading = false;
       });
     } catch (error) {
@@ -518,12 +528,16 @@ class _WorkspaceTabState extends State<_WorkspaceTab>
   Widget build(BuildContext context) {
     super.build(context);
 
-    if (_isLoading && _snapshot == null) return const Center(child: CircularProgressIndicator());
+    if (_isLoading && _snapshot == null) {
+      return const Center(child: CircularProgressIndicator());
+    }
     if (_error.isNotEmpty) {
       return EmptyState(
         title: '메뉴 작업대를 불러오지 못했습니다.',
         message: _error,
-        action: FilledButton(onPressed: () => _loadSnapshot(force: true), child: const Text('다시 시도')),
+        action: FilledButton(
+            onPressed: () => _loadSnapshot(force: true),
+            child: const Text('다시 시도')),
       );
     }
 
@@ -531,7 +545,8 @@ class _WorkspaceTabState extends State<_WorkspaceTab>
     if (snapshot == null) {
       return EmptyState(
         title: '데이터 없음',
-        action: FilledButton(onPressed: () => _loadAll(force: true), child: const Text('새로고침')),
+        action: FilledButton(
+            onPressed: () => _loadAll(force: true), child: const Text('새로고침')),
       );
     }
 
@@ -540,7 +555,8 @@ class _WorkspaceTabState extends State<_WorkspaceTab>
     final appState = context.watch<AppState>();
     final hasReady = (snapshot.statusCounts['ready'] ?? 0) > 0;
     final newItemIssues = {
-      for (final issue in _validation?.issues ?? const <NewItemValidationIssue>[])
+      for (final issue
+          in _validation?.issues ?? const <NewItemValidationIssue>[])
         issue.entryId: issue.messages,
     };
 
@@ -568,8 +584,7 @@ class _WorkspaceTabState extends State<_WorkspaceTab>
                       StatCard(label: '적용 준비', value: '${s.readyCount}개'),
                       StatCard(label: '신규 등록', value: '${s.newItemCount}개'),
                       StatCard(
-                          label: '가격 변동',
-                          value: _wonSigned(s.priceDeltaTotal)),
+                          label: '가격 변동', value: _wonSigned(s.priceDeltaTotal)),
                     ],
                   ),
                   if (hasReady && appState.hasOperatorAccess) ...[
@@ -604,7 +619,9 @@ class _WorkspaceTabState extends State<_WorkspaceTab>
                         ? '검증 정보 없음'
                         : '전체 ${_validation!.entryCount}건 · 통과 ${_validation!.validCount}건 · 이슈 ${_validation!.issueCount}건',
                     trailing: TextButton.icon(
-                      onPressed: _validationLoading ? null : () => _loadValidation(force: true),
+                      onPressed: _validationLoading
+                          ? null
+                          : () => _loadValidation(force: true),
                       icon: const Icon(Icons.verified_outlined, size: 16),
                       label: Text(_validationLoading ? '검증 중...' : '새로고침'),
                       style: TextButton.styleFrom(
@@ -629,11 +646,15 @@ class _WorkspaceTabState extends State<_WorkspaceTab>
                         ),
                         const SizedBox(height: 8),
                         if (_priceApplyRuns.isNotEmpty)
-                          ..._priceApplyRuns.take(3).map((run) => _PriceApplyRunTile(run: run))
-                        else if (!_priceApplyRunsLoading && _priceApplyRunsError.isEmpty)
+                          ..._priceApplyRuns
+                              .take(3)
+                              .map((run) => _PriceApplyRunTile(run: run))
+                        else if (!_priceApplyRunsLoading &&
+                            _priceApplyRunsError.isEmpty)
                           const Text(
                             '최근 가격 적용 이력이 없습니다.',
-                            style: TextStyle(fontSize: 12, color: Color(0xFF64748B)),
+                            style: TextStyle(
+                                fontSize: 12, color: Color(0xFF64748B)),
                           ),
                         const SizedBox(height: 12),
                         _TaskHistoryHeader(
@@ -645,11 +666,15 @@ class _WorkspaceTabState extends State<_WorkspaceTab>
                         ),
                         const SizedBox(height: 8),
                         if (_newItemHistory.isNotEmpty)
-                          ..._newItemHistory.take(3).map((task) => _TaskHistoryTile(task: task))
-                        else if (!_newItemHistoryLoading && _newItemHistoryError.isEmpty)
+                          ..._newItemHistory
+                              .take(3)
+                              .map((task) => _TaskHistoryTile(task: task))
+                        else if (!_newItemHistoryLoading &&
+                            _newItemHistoryError.isEmpty)
                           const Text(
                             '최근 신규 메뉴 작업 이력이 없습니다.',
-                            style: TextStyle(fontSize: 12, color: Color(0xFF64748B)),
+                            style: TextStyle(
+                                fontSize: 12, color: Color(0xFF64748B)),
                           ),
                         const SizedBox(height: 12),
                         _TaskHistoryHeader(
@@ -661,11 +686,15 @@ class _WorkspaceTabState extends State<_WorkspaceTab>
                         ),
                         const SizedBox(height: 8),
                         if (_deleteItemHistory.isNotEmpty)
-                          ..._deleteItemHistory.take(3).map((task) => _TaskHistoryTile(task: task))
-                        else if (!_deleteItemHistoryLoading && _deleteItemHistoryError.isEmpty)
+                          ..._deleteItemHistory
+                              .take(3)
+                              .map((task) => _TaskHistoryTile(task: task))
+                        else if (!_deleteItemHistoryLoading &&
+                            _deleteItemHistoryError.isEmpty)
                           const Text(
                             '최근 신규 메뉴 삭제 이력이 없습니다.',
-                            style: TextStyle(fontSize: 12, color: Color(0xFF64748B)),
+                            style: TextStyle(
+                                fontSize: 12, color: Color(0xFF64748B)),
                           ),
                         const SizedBox(height: 12),
                         _TaskHistoryHeader(
@@ -673,15 +702,20 @@ class _WorkspaceTabState extends State<_WorkspaceTab>
                           loading: _browserPriceHistoryLoading,
                           error: _browserPriceHistoryError,
                           count: _browserPriceHistory.length,
-                          onRefresh: () => _loadBrowserPriceHistory(force: true),
+                          onRefresh: () =>
+                              _loadBrowserPriceHistory(force: true),
                         ),
                         const SizedBox(height: 8),
                         if (_browserPriceHistory.isNotEmpty)
-                          ..._browserPriceHistory.take(3).map((task) => _TaskHistoryTile(task: task))
-                        else if (!_browserPriceHistoryLoading && _browserPriceHistoryError.isEmpty)
+                          ..._browserPriceHistory
+                              .take(3)
+                              .map((task) => _TaskHistoryTile(task: task))
+                        else if (!_browserPriceHistoryLoading &&
+                            _browserPriceHistoryError.isEmpty)
                           const Text(
                             '최근 브라우저 가격 변경 이력이 없습니다.',
-                            style: TextStyle(fontSize: 12, color: Color(0xFF64748B)),
+                            style: TextStyle(
+                                fontSize: 12, color: Color(0xFF64748B)),
                           ),
                       ],
                     ),
@@ -723,8 +757,8 @@ class _WorkspaceTabState extends State<_WorkspaceTab>
   void _showEntryDetail(BuildContext context, MenuEntry entry) {
     Navigator.of(context).push(
       MaterialPageRoute(
-        builder: (_) =>
-            MenuEntryDetailScreen(entry: entry, onUpdated: () => _loadAll(force: true)),
+        builder: (_) => MenuEntryDetailScreen(
+            entry: entry, onUpdated: () => _loadAll(force: true)),
       ),
     );
   }
@@ -794,8 +828,7 @@ class _ProductBrowserTabState extends State<_ProductBrowserTab>
       );
       if (!mounted) return;
       final rows = (result.data['rows'] as List? ?? [])
-          .map((e) =>
-              _ProductRow.fromRegistration(e as Map<String, dynamic>))
+          .map((e) => _ProductRow.fromRegistration(e as Map<String, dynamic>))
           .toList();
       setState(() {
         _products = rows;
@@ -867,7 +900,9 @@ class _ProductBrowserTabState extends State<_ProductBrowserTab>
   void _openNewItemScreen() {
     final appState = context.read<AppState>();
     if (!appState.hasOperatorAccess) return;
-    final categoryCatalog = _CategoryOptionCatalog.fromProducts(_products.where((product) => !product.isLikelyOption).toList(growable: false));
+    final categoryCatalog = _CategoryOptionCatalog.fromProducts(_products
+        .where((product) => !product.isLikelyOption)
+        .toList(growable: false));
     Navigator.of(context).push(
       MaterialPageRoute(
         builder: (_) => _NewMenuAddScreen(
@@ -929,7 +964,8 @@ class _ProductBrowserTabState extends State<_ProductBrowserTab>
               title: '상품등록 조회',
               loading: false,
               error: '',
-              summary: '${_source.toUpperCase()} · ${_freshnessLabel(_syncedAt)}',
+              summary:
+                  '${_source.toUpperCase()} · ${_freshnessLabel(_syncedAt)}',
               trailing: IconButton(
                 onPressed: _refreshCurrent,
                 icon: const Icon(Icons.refresh, size: 18),
@@ -971,7 +1007,7 @@ class _ProductBrowserTabState extends State<_ProductBrowserTab>
                     onPressed: isOperator ? _openNewItemScreen : null,
                     icon: const Icon(Icons.add_box_outlined, size: 16),
                     label: const Text(
-                      '신규 메뉴 추가',
+                      '+ 신규 메뉴',
                       style: TextStyle(fontSize: 12),
                     ),
                     style: FilledButton.styleFrom(
@@ -1018,23 +1054,18 @@ class _ProductBrowserTabState extends State<_ProductBrowserTab>
                       child: Padding(
                         padding: const EdgeInsets.all(24),
                         child: Text(error,
-                            style: const TextStyle(
-                                color: Color(0xFFDC2626))),
+                            style: const TextStyle(color: Color(0xFFDC2626))),
                       ),
                     )
                   : list.isEmpty
                       ? Center(
                           child: Text(
-                            _hasSearched
-                                ? '검색 결과가 없습니다.'
-                                : '상품 목록이 없습니다.',
-                            style: const TextStyle(
-                                color: Color(0xFF64748B)),
+                            _hasSearched ? '검색 결과가 없습니다.' : '상품 목록이 없습니다.',
+                            style: const TextStyle(color: Color(0xFF64748B)),
                           ),
                         )
                       : ListView.separated(
-                          padding:
-                              const EdgeInsets.fromLTRB(16, 4, 16, 24),
+                          padding: const EdgeInsets.fromLTRB(16, 4, 16, 24),
                           itemCount: list.length,
                           separatorBuilder: (_, __) =>
                               const SizedBox(height: 6),
@@ -1050,13 +1081,11 @@ class _ProductBrowserTabState extends State<_ProductBrowserTab>
         if (!isOperator)
           Container(
             width: double.infinity,
-            padding: const EdgeInsets.symmetric(
-                horizontal: 16, vertical: 10),
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
             color: const Color(0xFFFFF7ED),
-             child: const Text(
-              'operator 이상 권한이 있어야 가격변경과 신규 메뉴 등록을 실행할 수 있습니다.',
-              style:
-                  TextStyle(fontSize: 12, color: Color(0xFF92400E)),
+            child: const Text(
+              'operator 이상 권한이 있어야 가격 변경과 신규 메뉴 등록을 실행할 수 있습니다.',
+              style: TextStyle(fontSize: 12, color: Color(0xFF92400E)),
             ),
           ),
       ],
@@ -1132,14 +1161,17 @@ class _NewMenuAddScreenState extends State<_NewMenuAddScreen> {
 
   List<String> get _middleCategoryOptions {
     if (_majorCategory.trim().isEmpty) return const [];
-    return widget.categoryCatalog.middleOptionsByMajor[_majorCategory.trim()] ?? const [];
+    return widget.categoryCatalog.middleOptionsByMajor[_majorCategory.trim()] ??
+        const [];
   }
 
   List<String> get _minorCategoryOptions {
     final major = _majorCategory.trim();
     final middle = _middleCategory.trim();
     if (major.isEmpty || middle.isEmpty) return const [];
-    return widget.categoryCatalog.minorOptionsByMajorMiddle['$major::$middle'] ?? const [];
+    return widget
+            .categoryCatalog.minorOptionsByMajorMiddle['$major::$middle'] ??
+        const [];
   }
 
   String get _middleCategoryHint {
@@ -1159,12 +1191,15 @@ class _NewMenuAddScreenState extends State<_NewMenuAddScreen> {
     final nextMajor = (value ?? '').trim();
     final nextMiddleOptions = nextMajor.isEmpty
         ? const <String>[]
-        : (widget.categoryCatalog.middleOptionsByMajor[nextMajor] ?? const <String>[]);
+        : (widget.categoryCatalog.middleOptionsByMajor[nextMajor] ??
+            const <String>[]);
     final keepMiddle = nextMiddleOptions.contains(_middleCategory.trim());
     final nextMiddle = keepMiddle ? _middleCategory.trim() : '';
     final nextMinorOptions = (nextMajor.isEmpty || nextMiddle.isEmpty)
         ? const <String>[]
-        : (widget.categoryCatalog.minorOptionsByMajorMiddle['$nextMajor::$nextMiddle'] ?? const <String>[]);
+        : (widget.categoryCatalog
+                .minorOptionsByMajorMiddle['$nextMajor::$nextMiddle'] ??
+            const <String>[]);
     final keepMinor = nextMinorOptions.contains(_minorCategory.trim());
     setState(() {
       _majorCategory = nextMajor;
@@ -1175,9 +1210,12 @@ class _NewMenuAddScreenState extends State<_NewMenuAddScreen> {
 
   void _onMiddleCategoryChanged(String? value) {
     final nextMiddle = (value ?? '').trim();
-    final nextMinorOptions = (_majorCategory.trim().isEmpty || nextMiddle.isEmpty)
-        ? const <String>[]
-        : (widget.categoryCatalog.minorOptionsByMajorMiddle['${_majorCategory.trim()}::$nextMiddle'] ?? const <String>[]);
+    final nextMinorOptions =
+        (_majorCategory.trim().isEmpty || nextMiddle.isEmpty)
+            ? const <String>[]
+            : (widget.categoryCatalog.minorOptionsByMajorMiddle[
+                    '${_majorCategory.trim()}::$nextMiddle'] ??
+                const <String>[]);
     final keepMinor = nextMinorOptions.contains(_minorCategory.trim());
     setState(() {
       _middleCategory = nextMiddle;
@@ -1211,7 +1249,9 @@ class _NewMenuAddScreenState extends State<_NewMenuAddScreen> {
     if (itemName.isEmpty) {
       throw const ApiException('상품명을 입력하세요.');
     }
-    if (majorCategory.isEmpty || middleCategory.isEmpty || minorCategory.isEmpty) {
+    if (majorCategory.isEmpty ||
+        middleCategory.isEmpty ||
+        minorCategory.isEmpty) {
       throw const ApiException('대/중/소 분류를 모두 입력하세요.');
     }
     if (targetPrice == null) {
@@ -1245,7 +1285,8 @@ class _NewMenuAddScreenState extends State<_NewMenuAddScreen> {
 
   Future<WorkspaceTaskHistoryEntry> _pollTask(String taskId) async {
     for (var attempt = 0; attempt < 80; attempt++) {
-      final response = await widget.appState.fetchMapParsed<WorkspaceTaskHistoryEntry>(
+      final response =
+          await widget.appState.fetchMapParsed<WorkspaceTaskHistoryEntry>(
         '/api/menu-workspace/new-item-apply/$taskId',
         parser: WorkspaceTaskHistoryEntry.fromJson,
         cacheTtl: Duration.zero,
@@ -1379,7 +1420,7 @@ class _NewMenuAddScreenState extends State<_NewMenuAddScreen> {
     final isBusy = _isSubmitting;
     return Scaffold(
       appBar: AppBar(
-        title: const Text('신규 메뉴 추가'),
+        title: const Text('신규 메뉴'),
         bottom: PreferredSize(
           preferredSize: const Size.fromHeight(1),
           child: Container(height: 1, color: const Color(0xFFE2E8F0)),
@@ -1394,7 +1435,8 @@ class _NewMenuAddScreenState extends State<_NewMenuAddScreen> {
               borderColor: Color(0xFF99F6E4),
               textColor: Color(0xFF0F766E),
               icon: Icons.info_outline,
-              message: '미리보기는 저장 가능성만 확인하고, 등록은 백엔드 신규 메뉴 추가 API를 통해 실제 저장을 시도합니다. 분류는 기존 값만 드롭다운에서 선택합니다.',
+              message:
+                  '미리보기는 저장 가능성만 확인하고, 등록은 백엔드 신규 메뉴 추가 API를 통해 실제 저장을 시도합니다. 분류는 기존 값만 드롭다운에서 선택합니다.',
             ),
             const SizedBox(height: 16),
             TextField(
@@ -1436,22 +1478,27 @@ class _NewMenuAddScreenState extends State<_NewMenuAddScreen> {
               children: [
                 Expanded(
                   child: DropdownButtonFormField<String>(
-                    initialValue: _majorCategory.isEmpty ? null : _majorCategory,
+                    initialValue:
+                        _majorCategory.isEmpty ? null : _majorCategory,
                     hint: const Text('대분류 선택'),
                     decoration: const InputDecoration(
                       labelText: '대분류 *',
                       border: OutlineInputBorder(),
                     ),
-                    items: widget.categoryCatalog.majorOptions.map(
-                      (option) => DropdownMenuItem<String>(value: option, child: Text(option)),
-                    ).toList(growable: false),
+                    items: widget.categoryCatalog.majorOptions
+                        .map(
+                          (option) => DropdownMenuItem<String>(
+                              value: option, child: Text(option)),
+                        )
+                        .toList(growable: false),
                     onChanged: isBusy ? null : _onMajorCategoryChanged,
                   ),
                 ),
                 const SizedBox(width: 12),
                 Expanded(
                   child: DropdownButtonFormField<String>(
-                    initialValue: _middleCategory.isEmpty ? null : _middleCategory,
+                    initialValue:
+                        _middleCategory.isEmpty ? null : _middleCategory,
                     hint: Text(_middleCategoryHint),
                     disabledHint: Text(_middleCategoryHint),
                     decoration: const InputDecoration(
@@ -1459,9 +1506,12 @@ class _NewMenuAddScreenState extends State<_NewMenuAddScreen> {
                       border: OutlineInputBorder(),
                     ),
                     items: _middleCategoryOptions
-                        .map((option) => DropdownMenuItem<String>(value: option, child: Text(option)))
+                        .map((option) => DropdownMenuItem<String>(
+                            value: option, child: Text(option)))
                         .toList(growable: false),
-                    onChanged: isBusy || _majorCategory.trim().isEmpty || _middleCategoryOptions.isEmpty
+                    onChanged: isBusy ||
+                            _majorCategory.trim().isEmpty ||
+                            _middleCategoryOptions.isEmpty
                         ? null
                         : _onMiddleCategoryChanged,
                   ),
@@ -1478,11 +1528,15 @@ class _NewMenuAddScreenState extends State<_NewMenuAddScreen> {
                 border: OutlineInputBorder(),
               ),
               items: _minorCategoryOptions
-                  .map((option) => DropdownMenuItem<String>(value: option, child: Text(option)))
+                  .map((option) => DropdownMenuItem<String>(
+                      value: option, child: Text(option)))
                   .toList(growable: false),
-              onChanged: isBusy || _middleCategory.trim().isEmpty || _minorCategoryOptions.isEmpty
+              onChanged: isBusy ||
+                      _middleCategory.trim().isEmpty ||
+                      _minorCategoryOptions.isEmpty
                   ? null
-                  : (value) => setState(() => _minorCategory = (value ?? '').trim()),
+                  : (value) =>
+                      setState(() => _minorCategory = (value ?? '').trim()),
             ),
             const SizedBox(height: 12),
             Row(
@@ -1543,7 +1597,8 @@ class _NewMenuAddScreenState extends State<_NewMenuAddScreen> {
                     ],
                     onChanged: isBusy
                         ? null
-                        : (value) => setState(() => _taxMode = value ?? _taxMode),
+                        : (value) =>
+                            setState(() => _taxMode = value ?? _taxMode),
                   ),
                 ),
                 const SizedBox(width: 12),
@@ -1560,7 +1615,8 @@ class _NewMenuAddScreenState extends State<_NewMenuAddScreen> {
                     ],
                     onChanged: isBusy
                         ? null
-                        : (value) => setState(() => _useMode = value ?? _useMode),
+                        : (value) =>
+                            setState(() => _useMode = value ?? _useMode),
                   ),
                 ),
                 const SizedBox(width: 12),
@@ -1577,7 +1633,8 @@ class _NewMenuAddScreenState extends State<_NewMenuAddScreen> {
                     ],
                     onChanged: isBusy
                         ? null
-                        : (value) => setState(() => _stockMode = value ?? _stockMode),
+                        : (value) =>
+                            setState(() => _stockMode = value ?? _stockMode),
                   ),
                 ),
               ],
@@ -1639,15 +1696,20 @@ class _NewMenuAddScreenState extends State<_NewMenuAddScreen> {
                       _InfoRow(
                         label: '중분류',
                         value: _categoryDisplayValue(
-                          _lastResolvedCategories['middle_category']?.toString(),
-                          (_lastResolvedCategories['middle_code_full'] ?? _lastResolvedCategories['middle_code'])?.toString(),
+                          _lastResolvedCategories['middle_category']
+                              ?.toString(),
+                          (_lastResolvedCategories['middle_code_full'] ??
+                                  _lastResolvedCategories['middle_code'])
+                              ?.toString(),
                         ),
                       ),
                       _InfoRow(
                         label: '소분류',
                         value: _categoryDisplayValue(
                           _lastResolvedCategories['minor_category']?.toString(),
-                          (_lastResolvedCategories['minor_code_full'] ?? _lastResolvedCategories['minor_code'])?.toString(),
+                          (_lastResolvedCategories['minor_code_full'] ??
+                                  _lastResolvedCategories['minor_code'])
+                              ?.toString(),
                         ),
                       ),
                       if (_lastPreviewSavedCode.isNotEmpty)
@@ -1741,8 +1803,7 @@ class _ProductCard extends StatelessWidget {
             size: 20, color: Color(0xFF94A3B8)),
         title: Text(
           product.itemName,
-          style: const TextStyle(
-              fontWeight: FontWeight.w600, fontSize: 14),
+          style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 14),
         ),
         subtitle: Text(
           [
@@ -1768,14 +1829,14 @@ class _ProductCard extends StatelessWidget {
                   ),
                   if (onTap != null)
                     const Text(
-                      '탭하여 변경',
+                      '탭하여 가격 변경',
                       style: TextStyle(fontSize: 10, color: Color(0xFF0D9488)),
                     ),
                 ],
               )
             else if (onTap != null)
               const Text(
-                '탭하여 변경',
+                '탭하여 가격 변경',
                 style: TextStyle(fontSize: 11, color: Color(0xFF0D9488)),
               ),
             if (onInfoTap != null) ...[
@@ -1807,10 +1868,12 @@ class _ProductRegistrationDetailScreen extends StatefulWidget {
   });
 
   @override
-  State<_ProductRegistrationDetailScreen> createState() => _ProductRegistrationDetailScreenState();
+  State<_ProductRegistrationDetailScreen> createState() =>
+      _ProductRegistrationDetailScreenState();
 }
 
-class _ProductRegistrationDetailScreenState extends State<_ProductRegistrationDetailScreen> {
+class _ProductRegistrationDetailScreenState
+    extends State<_ProductRegistrationDetailScreen> {
   ProductRegistrationLookup? _lookup;
   bool _isLoading = true;
   String _error = '';
@@ -1865,7 +1928,8 @@ class _ProductRegistrationDetailScreenState extends State<_ProductRegistrationDe
   Widget build(BuildContext context) {
     final canEdit = widget.appState.hasOperatorAccess;
     final itemCode = widget.product.itemCode.trim();
-    final source = (_lookup?.source ?? '').isNotEmpty ? _lookup!.source : 'cache';
+    final source =
+        (_lookup?.source ?? '').isNotEmpty ? _lookup!.source : 'cache';
     final syncedAt = _lookup?.syncedAt ?? '';
     return Scaffold(
       appBar: AppBar(
@@ -1897,8 +1961,10 @@ class _ProductRegistrationDetailScreenState extends State<_ProductRegistrationDe
                         : '${_lookup!.found ? '조회 완료' : '미발견'} · ${source.toUpperCase()} · ${_freshnessLabel(syncedAt)}',
                     trailing: canEdit && itemCode.isNotEmpty
                         ? FilledButton.icon(
-                            onPressed: () => widget.onQuickPriceChange(widget.product),
-                            icon: const Icon(Icons.price_change_outlined, size: 16),
+                            onPressed: () =>
+                                widget.onQuickPriceChange(widget.product),
+                            icon: const Icon(Icons.price_change_outlined,
+                                size: 16),
                             label: const Text('가격 변경'),
                           )
                         : null,
@@ -1908,9 +1974,17 @@ class _ProductRegistrationDetailScreenState extends State<_ProductRegistrationDe
                     spacing: 8,
                     runSpacing: 8,
                     children: [
-                      _TinyMetricChip(label: '상품명', value: _lookupValue(widget.product.itemName), accent: true),
-                      _TinyMetricChip(label: '코드', value: _lookupValue(itemCode)),
-                      _TinyMetricChip(label: '판매가', value: widget.product.salePrice == null ? '-' : '${_won(widget.product.salePrice!)}원'),
+                      _TinyMetricChip(
+                          label: '상품명',
+                          value: _lookupValue(widget.product.itemName),
+                          accent: true),
+                      _TinyMetricChip(
+                          label: '코드', value: _lookupValue(itemCode)),
+                      _TinyMetricChip(
+                          label: '판매가',
+                          value: widget.product.salePrice == null
+                              ? '-'
+                              : '${_won(widget.product.salePrice!)}원'),
                     ],
                   ),
                 ],
@@ -1925,7 +1999,9 @@ class _ProductRegistrationDetailScreenState extends State<_ProductRegistrationDe
                   for (final field in _lookupDetailFields)
                     _InfoRow(
                       label: field.label,
-                      value: field.money ? _lookupMoney(_row[field.key]?.toString()) : _lookupValue(_row[field.key]?.toString()),
+                      value: field.money
+                          ? _lookupMoney(_row[field.key]?.toString())
+                          : _lookupValue(_row[field.key]?.toString()),
                     ),
                 ],
               ),
@@ -1935,10 +2011,16 @@ class _ProductRegistrationDetailScreenState extends State<_ProductRegistrationDe
               title: '원본 메타데이터',
               child: Column(
                 children: [
-                  _InfoRow(label: 'source', value: _lookupValue(_lookup?.source)),
-                  _InfoRow(label: 'synced_at', value: _lookupValue(_lookup?.syncedAt)),
-                  _InfoRow(label: 'found', value: _lookup?.found == true ? 'true' : 'false'),
-                  _InfoRow(label: '상품코드', value: _lookupValue(_lookup?.productCode)),
+                  _InfoRow(
+                      label: 'source', value: _lookupValue(_lookup?.source)),
+                  _InfoRow(
+                      label: 'synced_at',
+                      value: _lookupValue(_lookup?.syncedAt)),
+                  _InfoRow(
+                      label: 'found',
+                      value: _lookup?.found == true ? 'true' : 'false'),
+                  _InfoRow(
+                      label: '상품코드', value: _lookupValue(_lookup?.productCode)),
                 ],
               ),
             ),
@@ -1963,8 +2045,7 @@ class _QuickPriceChangeSheet extends StatefulWidget {
   });
 
   @override
-  State<_QuickPriceChangeSheet> createState() =>
-      _QuickPriceChangeSheetState();
+  State<_QuickPriceChangeSheet> createState() => _QuickPriceChangeSheetState();
 }
 
 class _QuickPriceChangeSheetState extends State<_QuickPriceChangeSheet> {
@@ -1982,7 +2063,8 @@ class _QuickPriceChangeSheetState extends State<_QuickPriceChangeSheet> {
 
   Future<BrowserPriceApplyTask> _pollBrowserApplyTask(String taskId) async {
     for (var attempt = 0; attempt < 80; attempt++) {
-      final response = await widget.appState.fetchMapParsed<BrowserPriceApplyTask>(
+      final response =
+          await widget.appState.fetchMapParsed<BrowserPriceApplyTask>(
         '/api/price/browser-apply/$taskId',
         parser: BrowserPriceApplyTask.fromJson,
         cacheTtl: Duration.zero,
@@ -2056,7 +2138,9 @@ class _QuickPriceChangeSheetState extends State<_QuickPriceChangeSheet> {
         messenger.showSnackBar(
           SnackBar(
             content: Text(
-              message.isNotEmpty ? '$itemName · $message' : '$itemName 가격이 POS에 적용됐습니다.',
+              message.isNotEmpty
+                  ? '$itemName · $message'
+                  : '$itemName 가격이 POS에 적용됐습니다.',
             ),
             backgroundColor: const Color(0xFF0D9488),
             duration: const Duration(seconds: 5),
@@ -2127,8 +2211,7 @@ class _QuickPriceChangeSheetState extends State<_QuickPriceChangeSheet> {
                     children: [
                       const Text('현재가',
                           style: TextStyle(
-                              fontSize: 11,
-                              color: Color(0xFF64748B))),
+                              fontSize: 11, color: Color(0xFF64748B))),
                       Text(
                         '${_won(p.salePrice!)}원',
                         style: const TextStyle(
@@ -2156,7 +2239,8 @@ class _QuickPriceChangeSheetState extends State<_QuickPriceChangeSheet> {
                 borderColor: Color(0xFFF59E0B),
                 textColor: Color(0xFF9A3412),
                 icon: Icons.info_outline,
-                message: '옵션/부가 항목처럼 보여 POS 직접 적용이 실패할 수 있습니다. 웹과 같은 Selenium 경로로 요청해도 POS 검색 결과에 없으면 적용되지 않습니다.',
+                message:
+                    '옵션/부가 항목처럼 보여 POS 직접 적용이 실패할 수 있습니다. 웹과 같은 Selenium 경로로 요청해도 POS 검색 결과에 없으면 적용되지 않습니다.',
               ),
             ],
             const SizedBox(height: 16),
@@ -2232,8 +2316,7 @@ class MenuEntryDetailScreen extends StatefulWidget {
   final MenuEntry entry;
   final VoidCallback? onUpdated;
 
-  const MenuEntryDetailScreen(
-      {super.key, required this.entry, this.onUpdated});
+  const MenuEntryDetailScreen({super.key, required this.entry, this.onUpdated});
 
   @override
   State<MenuEntryDetailScreen> createState() => _MenuEntryDetailScreenState();
@@ -2272,7 +2355,7 @@ class _MenuEntryDetailScreenState extends State<MenuEntryDetailScreen> {
       context: context,
       builder: (dialogContext) => AlertDialog(
         title: const Text('신규 메뉴 삭제'),
-        content: Text('${entry.itemName} ($itemCode)를 EasyPOS에서 삭제할까요?'),
+        content: Text('${entry.itemName} ($itemCode)를 Cafe Bridge에서 삭제할까요?'),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(dialogContext).pop(false),
@@ -2280,7 +2363,8 @@ class _MenuEntryDetailScreenState extends State<MenuEntryDetailScreen> {
           ),
           FilledButton(
             onPressed: () => Navigator.of(dialogContext).pop(true),
-            style: FilledButton.styleFrom(backgroundColor: const Color(0xFFB91C1C)),
+            style: FilledButton.styleFrom(
+                backgroundColor: const Color(0xFFB91C1C)),
             child: const Text('삭제'),
           ),
         ],
@@ -2305,8 +2389,11 @@ class _MenuEntryDetailScreenState extends State<MenuEntryDetailScreen> {
       final task = await _pollDeleteTask(taskId);
       final message = task.resultMessage.trim().isNotEmpty
           ? task.resultMessage.trim()
-          : (task.errorMessage.trim().isNotEmpty ? task.errorMessage.trim() : '삭제 결과를 확인해 주세요.');
-      final success = task.status == 'succeeded' && task.resultStatus == 'deleted';
+          : (task.errorMessage.trim().isNotEmpty
+              ? task.errorMessage.trim()
+              : '삭제 결과를 확인해 주세요.');
+      final success =
+          task.status == 'succeeded' && task.resultStatus == 'deleted';
       if (!success) {
         throw ApiException(message);
       }
@@ -2329,7 +2416,8 @@ class _MenuEntryDetailScreenState extends State<MenuEntryDetailScreen> {
     } catch (error) {
       if (!mounted) return;
       messenger.showSnackBar(
-        SnackBar(content: Text(error.toString().replaceFirst('Exception: ', ''))),
+        SnackBar(
+            content: Text(error.toString().replaceFirst('Exception: ', ''))),
       );
       setState(() => _isDeleting = false);
       return;
@@ -2344,15 +2432,17 @@ class _MenuEntryDetailScreenState extends State<MenuEntryDetailScreen> {
     final e = widget.entry;
     final appState = context.read<AppState>();
     final canEdit = appState.hasOperatorAccess;
-    final canDeleteNewItem = canEdit && e.kind == 'new_item' && e.status == 'done' && e.itemCode.trim().isNotEmpty;
+    final canDeleteNewItem = canEdit &&
+        e.kind == 'new_item' &&
+        e.status == 'done' &&
+        e.itemCode.trim().isNotEmpty;
 
     return Scaffold(
       appBar: AppBar(
         title: Text(e.itemName),
         bottom: PreferredSize(
           preferredSize: const Size.fromHeight(1),
-          child: Container(
-              height: 1, color: const Color(0xFFE2E8F0)),
+          child: Container(height: 1, color: const Color(0xFFE2E8F0)),
         ),
         actions: [
           if (canEdit)
@@ -2387,25 +2477,32 @@ class _MenuEntryDetailScreenState extends State<MenuEntryDetailScreen> {
                       value: e.itemCode.isEmpty ? '-' : e.itemCode),
                   _InfoRow(
                       label: '분류',
-                      value: e.categoryHint.isEmpty
-                          ? '-'
-                          : e.categoryHint),
+                      value: e.categoryHint.isEmpty ? '-' : e.categoryHint),
+                  _InfoRow(label: '상태', value: _statusLabel(e.status)),
+                  _InfoRow(label: '종류', value: _kindLabel(e.kind)),
                   _InfoRow(
-                      label: '상태',
-                      value: _statusLabel(e.status)),
+                      label: '단위',
+                      value: e.unitName.isEmpty ? '-' : e.unitName),
                   _InfoRow(
-                      label: '종류', value: _kindLabel(e.kind)),
-                  _InfoRow(label: '단위', value: e.unitName.isEmpty ? '-' : e.unitName),
-                  _InfoRow(label: '과세', value: e.taxMode.isEmpty ? '-' : e.taxMode),
-                  _InfoRow(label: '사용', value: e.useMode.isEmpty ? '-' : e.useMode),
-                  _InfoRow(label: '재고', value: e.stockMode.isEmpty ? '-' : e.stockMode),
-                  _InfoRow(label: '바코드', value: e.barcode.isEmpty ? '-' : e.barcode),
-                  _InfoRow(label: '상품설명', value: e.description.isEmpty ? '-' : e.description),
+                      label: '과세', value: e.taxMode.isEmpty ? '-' : e.taxMode),
                   _InfoRow(
-                      label: '출처',
-                      value: e.source.isEmpty ? '-' : e.source),
-                  _InfoRow(label: '생성', value: e.createdAt.isEmpty ? '-' : e.createdAt),
-                  _InfoRow(label: '수정', value: e.updatedAt.isEmpty ? '-' : e.updatedAt),
+                      label: '사용', value: e.useMode.isEmpty ? '-' : e.useMode),
+                  _InfoRow(
+                      label: '재고',
+                      value: e.stockMode.isEmpty ? '-' : e.stockMode),
+                  _InfoRow(
+                      label: '바코드', value: e.barcode.isEmpty ? '-' : e.barcode),
+                  _InfoRow(
+                      label: '상품설명',
+                      value: e.description.isEmpty ? '-' : e.description),
+                  _InfoRow(
+                      label: '출처', value: e.source.isEmpty ? '-' : e.source),
+                  _InfoRow(
+                      label: '생성',
+                      value: e.createdAt.isEmpty ? '-' : e.createdAt),
+                  _InfoRow(
+                      label: '수정',
+                      value: e.updatedAt.isEmpty ? '-' : e.updatedAt),
                 ],
               ),
             ),
@@ -2559,7 +2656,8 @@ class _StatusUpdateSheetState extends State<_StatusUpdateSheet> {
             const SizedBox(height: 16),
             RadioGroup<String>(
               groupValue: _selectedStatus,
-              onChanged: (v) => setState(() => _selectedStatus = v ?? _selectedStatus),
+              onChanged: (v) =>
+                  setState(() => _selectedStatus = v ?? _selectedStatus),
               child: Column(
                 children: List.generate(statuses.length, (i) {
                   return RadioListTile<String>(
@@ -2671,9 +2769,12 @@ class _WorkspaceInfoStrip extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final color = error.isNotEmpty ? const Color(0xFF9A3412) : const Color(0xFF0F172A);
-    final background = error.isNotEmpty ? const Color(0xFFFFF7ED) : const Color(0xFFF8FAFC);
-    final border = error.isNotEmpty ? const Color(0xFFFCD34D) : const Color(0xFFE2E8F0);
+    final color =
+        error.isNotEmpty ? const Color(0xFF9A3412) : const Color(0xFF0F172A);
+    final background =
+        error.isNotEmpty ? const Color(0xFFFFF7ED) : const Color(0xFFF8FAFC);
+    final border =
+        error.isNotEmpty ? const Color(0xFFFCD34D) : const Color(0xFFE2E8F0);
     return Container(
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
@@ -2700,7 +2801,9 @@ class _WorkspaceInfoStrip extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(title, style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w700)),
+                Text(title,
+                    style: const TextStyle(
+                        fontSize: 12, fontWeight: FontWeight.w700)),
                 const SizedBox(height: 2),
                 Text(
                   error.isNotEmpty ? error : summary,
@@ -2734,11 +2837,15 @@ class _TinyMetricChip extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
       decoration: BoxDecoration(
-        color: accent ? const Color.fromRGBO(13, 148, 136, 0.08) : const Color(0xFFF8FAFC),
+        color: accent
+            ? const Color.fromRGBO(13, 148, 136, 0.08)
+            : const Color(0xFFF8FAFC),
         borderRadius: BorderRadius.circular(999),
-        border: Border.all(color: accent ? const Color(0xFF0D9488) : const Color(0xFFE2E8F0)),
+        border: Border.all(
+            color: accent ? const Color(0xFF0D9488) : const Color(0xFFE2E8F0)),
       ),
-      child: Text('$label $value', style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w600)),
+      child: Text('$label $value',
+          style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w600)),
     );
   }
 }
@@ -2762,9 +2869,11 @@ class _TaskHistoryHeader extends StatelessWidget {
   Widget build(BuildContext context) {
     return Row(
       children: [
-        Text(label, style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700)),
+        Text(label,
+            style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700)),
         const SizedBox(width: 6),
-        Text('($count)', style: const TextStyle(fontSize: 11, color: Color(0xFF64748B))),
+        Text('($count)',
+            style: const TextStyle(fontSize: 11, color: Color(0xFF64748B))),
         const Spacer(),
         if (error.isNotEmpty)
           const Icon(Icons.error_outline, size: 16, color: Color(0xFFDC2626)),
@@ -2811,7 +2920,8 @@ class _PriceApplyRunTile extends StatelessWidget {
               Expanded(
                 child: Text(
                   run.taskId,
-                  style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w700),
+                  style: const TextStyle(
+                      fontSize: 12, fontWeight: FontWeight.w700),
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                 ),
@@ -2834,7 +2944,8 @@ class _PriceApplyRunTile extends StatelessWidget {
           ),
           if (run.errorMessage.isNotEmpty) ...[
             const SizedBox(height: 4),
-            Text(run.errorMessage, style: const TextStyle(fontSize: 11, color: Color(0xFFB45309))),
+            Text(run.errorMessage,
+                style: const TextStyle(fontSize: 11, color: Color(0xFFB45309))),
           ],
         ],
       ),
@@ -2866,7 +2977,8 @@ class _TaskHistoryTile extends StatelessWidget {
               Expanded(
                 child: Text(
                   task.displayTitle,
-                  style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w700),
+                  style: const TextStyle(
+                      fontSize: 12, fontWeight: FontWeight.w700),
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                 ),
@@ -2884,11 +2996,13 @@ class _TaskHistoryTile extends StatelessWidget {
           ),
           if (task.displaySubtitle.isNotEmpty) ...[
             const SizedBox(height: 4),
-            Text(task.displaySubtitle, style: const TextStyle(fontSize: 11, color: Color(0xFF64748B))),
+            Text(task.displaySubtitle,
+                style: const TextStyle(fontSize: 11, color: Color(0xFF64748B))),
           ],
           if (task.resultMessage.isNotEmpty) ...[
             const SizedBox(height: 4),
-            Text(task.resultMessage, style: const TextStyle(fontSize: 11, color: Color(0xFF0F172A))),
+            Text(task.resultMessage,
+                style: const TextStyle(fontSize: 11, color: Color(0xFF0F172A))),
           ],
         ],
       ),
@@ -2946,8 +3060,8 @@ class _FilterBar extends StatelessWidget {
               value: 'done',
               groupValue: filterStatus,
               onSelected: onStatusChanged),
-            const SizedBox(width: 6),
-            _FilterChipWidget(
+          const SizedBox(width: 6),
+          _FilterChipWidget(
               label: '보관',
               value: 'archived',
               groupValue: filterStatus,
@@ -3027,8 +3141,7 @@ class _MenuEntryCard extends StatelessWidget {
           children: [
             Expanded(
                 child: Text(e.itemName,
-                    style: const TextStyle(
-                        fontWeight: FontWeight.w700))),
+                    style: const TextStyle(fontWeight: FontWeight.w700))),
             _KindBadge(kind: e.kind),
           ],
         ),
@@ -3048,7 +3161,8 @@ class _MenuEntryCard extends StatelessWidget {
                 runSpacing: 6,
                 children: issues.take(2).map((issue) {
                   return Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                     decoration: BoxDecoration(
                       color: const Color(0xFFFFF7ED),
                       border: Border.all(color: const Color(0xFFF59E0B)),
@@ -3056,7 +3170,8 @@ class _MenuEntryCard extends StatelessWidget {
                     ),
                     child: Text(
                       issue,
-                      style: const TextStyle(fontSize: 11, color: Color(0xFF9A3412)),
+                      style: const TextStyle(
+                          fontSize: 11, color: Color(0xFF9A3412)),
                     ),
                   );
                 }).toList(growable: false),
@@ -3089,7 +3204,8 @@ class _MenuEntryCard extends StatelessWidget {
               ),
             if (issues.isNotEmpty) ...[
               const SizedBox(height: 4),
-              const Icon(Icons.warning_amber_rounded, size: 18, color: Color(0xFFF59E0B)),
+              const Icon(Icons.warning_amber_rounded,
+                  size: 18, color: Color(0xFFF59E0B)),
             ],
           ],
         ),
@@ -3121,9 +3237,7 @@ class _StatusBadge extends StatelessWidget {
       ),
       child: Text(label,
           style: TextStyle(
-              fontSize: 11,
-              fontWeight: FontWeight.w700,
-              color: color)),
+              fontSize: 11, fontWeight: FontWeight.w700, color: color)),
     );
   }
 }
@@ -3146,8 +3260,7 @@ class _KindBadge extends StatelessWidget {
         borderRadius: BorderRadius.circular(4),
       ),
       child: Text(label,
-          style: const TextStyle(
-              fontSize: 11, color: Color(0xFF64748B))),
+          style: const TextStyle(fontSize: 11, color: Color(0xFF64748B))),
     );
   }
 }
@@ -3172,10 +3285,7 @@ class _ApplyReadyBannerState extends State<_ApplyReadyBanner> {
     try {
       final result = await appState.postJson(
         '/api/menu-workspace/apply-ready',
-        body: {
-          'execute': execute,
-          'reason': execute ? 'mobile-apply' : ''
-        },
+        body: {'execute': execute, 'reason': execute ? 'mobile-apply' : ''},
       );
       if (!mounted) return;
       // 응답: {"apply_result": {"success_count": ..., "items": [...]}, "skipped": [...]}
@@ -3246,15 +3356,12 @@ class _ApplyReadyBannerState extends State<_ApplyReadyBanner> {
           const Expanded(
             child: Text('준비완료 항목이 있습니다.',
                 style: TextStyle(
-                    fontWeight: FontWeight.w600,
-                    color: Color(0xFF0F172A))),
+                    fontWeight: FontWeight.w600, color: Color(0xFF0F172A))),
           ),
           OutlinedButton(
-            onPressed:
-                _isApplying ? null : () => _apply(execute: false),
+            onPressed: _isApplying ? null : () => _apply(execute: false),
             style: OutlinedButton.styleFrom(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 8),
+                padding: const EdgeInsets.symmetric(horizontal: 8),
                 visualDensity: VisualDensity.compact),
             child: const Text('미리보기'),
           ),
@@ -3271,12 +3378,10 @@ class _ApplyReadyBannerState extends State<_ApplyReadyBanner> {
                             '준비완료 상태의 가격변경 항목을 POS에 실제 반영합니다.\n계속하시겠습니까?'),
                         actions: [
                           TextButton(
-                              onPressed: () =>
-                                  Navigator.of(ctx).pop(false),
+                              onPressed: () => Navigator.of(ctx).pop(false),
                               child: const Text('취소')),
                           FilledButton(
-                              onPressed: () =>
-                                  Navigator.of(ctx).pop(true),
+                              onPressed: () => Navigator.of(ctx).pop(true),
                               child: const Text('적용')),
                         ],
                       ),
@@ -3284,8 +3389,7 @@ class _ApplyReadyBannerState extends State<_ApplyReadyBanner> {
                     if (confirmed == true) _apply(execute: true);
                   },
             style: FilledButton.styleFrom(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 8),
+                padding: const EdgeInsets.symmetric(horizontal: 8),
                 backgroundColor: const Color(0xFF0D9488),
                 visualDensity: VisualDensity.compact),
             child: Text(_isApplying ? '적용 중...' : 'POS 적용'),
@@ -3337,14 +3441,12 @@ class _InfoRow extends StatelessWidget {
         children: [
           SizedBox(
             width: 80,
-            child: Text(label,
-                style:
-                    const TextStyle(color: Color(0xFF64748B))),
+            child:
+                Text(label, style: const TextStyle(color: Color(0xFF64748B))),
           ),
           Expanded(
             child: Text(value,
-                style:
-                    const TextStyle(fontWeight: FontWeight.w600)),
+                style: const TextStyle(fontWeight: FontWeight.w600)),
           ),
         ],
       ),

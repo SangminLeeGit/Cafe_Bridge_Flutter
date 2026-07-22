@@ -1,7 +1,7 @@
-# EasyPOS 모바일 모달 UX 개선 계획서
+# Cafe Bridge 모바일 모달 UX 개선 계획서
 
 작성일: 2026-04-08
-대상: easypos_flutter
+대상: cafe_bridge_flutter
 
 ## 1) 문제 정의
 현재 앱은 입력이 필요한 작업에도 `showModalBottomSheet` 기반의 아래에서 올라오는 바텀시트를 자주 사용하고 있다.

@@ -1,7 +1,7 @@
-# EasyPOS 빌드 후 업데이트 배포 구현 보고서 (비스토어 전용)
+# Cafe Bridge 빌드 후 업데이트 배포 구현 보고서 (비스토어 전용)
 
 작성일: 2026-04-07
-대상: easypos_flutter (모바일 앱), easypos_collector (백엔드)
+대상: cafe_bridge_flutter (모바일 앱), cafe_bridge_collector (백엔드)
 전제: Play Store / App Store / TestFlight 사용 불가
 
 ## 1) 목적
@@ -85,7 +85,7 @@
 {
   "latest_version": "1.1.0",
   "latest_build": 23,
-  "download_url": "https://downloads.example.com/easypos/android/app-v1.1.0+23.apk",
+  "download_url": "https://downloads.example.com/cafe-bridge/android/app-v1.1.0+23.apk",
   "sha256": "f2c6...",
   "file_size": 55781234,
   "release_notes": "세션 안정화 및 UX 개선",
@@ -99,7 +99,7 @@
 - 즉시 롤백 가능한 이전 정책 스냅샷 유지
 
 3. 다운로드 아티팩트 보관
-- 경로 규칙: `/easypos/{platform}/{channel}/{version}/...`
+- 경로 규칙: `/cafe-bridge/{platform}/{channel}/{version}/...`
 - immutable 파일명 + 장기 캐시 헤더
 - 업로드 시 해시 자동 계산/저장
 

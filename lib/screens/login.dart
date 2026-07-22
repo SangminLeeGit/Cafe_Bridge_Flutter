@@ -87,25 +87,50 @@ class _LoginScreenState extends State<LoginScreen> {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        const Text(
-                          'EasyPOS Mobile',
-                          style: TextStyle(
-                            fontSize: 13,
-                            fontWeight: FontWeight.w800,
-                            letterSpacing: 1.2,
-                            color: Color(0xFF0F766E),
-                          ),
-                        ),
-                        const SizedBox(height: 12),
-                        Text(
-                          '운영 콘솔 로그인',
-                          style: Theme.of(context)
-                              .textTheme
-                              .headlineMedium
-                              ?.copyWith(
-                                fontWeight: FontWeight.w800,
-                                color: const Color(0xFF0F172A),
+                        Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Image.asset(
+                              'assets/branding/cafe_bridge_logo.png',
+                              width: 64,
+                              height: 64,
+                            ),
+                            const SizedBox(width: 16),
+                            const Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    'Cafe Bridge',
+                                    style: TextStyle(
+                                      fontSize: 13,
+                                      fontWeight: FontWeight.w800,
+                                      letterSpacing: 1.2,
+                                      color: Color(0xFF0F766E),
+                                    ),
+                                  ),
+                                  SizedBox(height: 12),
+                                  Text(
+                                    '운영 콘솔 로그인',
+                                    style: TextStyle(
+                                      fontSize: 30,
+                                      fontWeight: FontWeight.w800,
+                                      color: Color(0xFF0F172A),
+                                    ),
+                                  ),
+                                  SizedBox(height: 6),
+                                  Text(
+                                    '카페 운영과 매출 분석을 한 곳에서 관리합니다.',
+                                    style: TextStyle(
+                                      fontSize: 14,
+                                      height: 1.4,
+                                      color: Color(0xFF475569),
+                                    ),
+                                  ),
+                                ],
                               ),
+                            ),
+                          ],
                         ),
                         const SizedBox(height: 20),
                         if (appState.hasRecommendedUpdate) ...[
@@ -127,7 +152,7 @@ class _LoginScreenState extends State<LoginScreen> {
                             borderColor: const Color(0xFFFED7AA),
                             textColor: const Color(0xFF9A3412),
                             message:
-                                '초기 관리자 계정이 아직 준비되지 않았습니다. `EASYPOS_ADMIN_BOOTSTRAP_ID`, `EASYPOS_ADMIN_BOOTSTRAP_PASSWORD`를 먼저 설정해야 합니다.',
+                                '초기 관리자 계정이 아직 준비되지 않았습니다. `CAFE_BRIDGE_ADMIN_BOOTSTRAP_ID`, `CAFE_BRIDGE_ADMIN_BOOTSTRAP_PASSWORD`를 먼저 설정해야 합니다.',
                           ),
                           const SizedBox(height: 16),
                         ],
@@ -216,7 +241,9 @@ class _LoginScreenState extends State<LoginScreen> {
         case 504:
           return '로그인 요청 시간이 초과되었습니다. 서버 연결을 확인하세요.';
         default:
-          return error.message.isNotEmpty ? error.message : '로그인 처리 중 오류가 발생했습니다.';
+          return error.message.isNotEmpty
+              ? error.message
+              : '로그인 처리 중 오류가 발생했습니다.';
       }
     }
     return '로그인 서버에 연결하지 못했습니다. API 요청 주소를 확인하세요.';

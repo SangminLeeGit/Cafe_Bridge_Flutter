@@ -1,4 +1,4 @@
-package com.example.easypos_flutter
+package org.cafe.bridge.mobile
 
 import io.flutter.embedding.android.FlutterActivity
 

@@ -1,11 +1,11 @@
 {
-    "name": "easypos_flutter",
-    "short_name": "easypos_flutter",
+    "name": "Cafe Bridge",
+    "short_name": "Cafe Bridge",
     "start_url": ".",
     "display": "standalone",
     "background_color": "#0175C2",
     "theme_color": "#0175C2",
-    "description": "A new Flutter project.",
+    "description": "Cafe Bridge mobile console.",
     "orientation": "portrait-primary",
     "prefer_related_applications": false,
     "icons": [

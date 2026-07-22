@@ -7,6 +7,7 @@ import '../state/app_state.dart';
 import '../widgets/cache_notice.dart';
 import '../widgets/empty_state.dart';
 import '../widgets/panel.dart';
+import '../widgets/responsive_wrap_grid.dart';
 import '../widgets/stat_card.dart';
 import 'day_detail.dart';
 
@@ -177,15 +178,21 @@ class _MonthlyTabState extends State<_MonthlyTab> {
           const SizedBox(height: 16),
           _AnalyticsMetricGrid(
             cards: [
-              StatCard(label: '총매출', value: UiFormat.won(data.totals.gross), accent: true),
-              StatCard(label: '평균 객단가', value: UiFormat.won(data.totals.avgTicket)),
+              StatCard(
+                  label: '총매출',
+                  value: UiFormat.won(data.totals.gross),
+                  accent: true),
+              StatCard(
+                  label: '평균 객단가', value: UiFormat.won(data.totals.avgTicket)),
               StatCard(
                 label: '영수 / 고객',
-                value: '${UiFormat.number(data.totals.receipts)} / ${UiFormat.number(data.totals.customers)}',
+                value:
+                    '${UiFormat.number(data.totals.receipts)} / ${UiFormat.number(data.totals.customers)}',
               ),
               StatCard(
                 label: '카드 / 현금',
-                value: '${UiFormat.won(data.totals.card)} / ${UiFormat.won(data.totals.cash)}',
+                value:
+                    '${UiFormat.won(data.totals.card)} / ${UiFormat.won(data.totals.cash)}',
               ),
             ],
           ),
@@ -339,12 +346,16 @@ class _ItemsTabState extends State<_ItemsTab> {
           const SizedBox(height: 16),
           _AnalyticsMetricGrid(
             cards: [
-              StatCard(label: '총 품목수', value: UiFormat.number(data.itemList.length), accent: true),
+              StatCard(
+                  label: '총 품목수',
+                  value: UiFormat.number(data.itemList.length),
+                  accent: true),
               StatCard(label: '누적 매출', value: UiFormat.won(data.grandTotal)),
               StatCard(label: 'ABC A/B/C', value: '$abcA / $abcB / $abcC'),
               StatCard(
                 label: '최상위 품목',
-                value: data.itemList.isEmpty ? '-' : data.itemList.first.itemName,
+                value:
+                    data.itemList.isEmpty ? '-' : data.itemList.first.itemName,
               ),
             ],
           ),
@@ -467,7 +478,9 @@ class _HoursTabState extends State<_HoursTab> {
 
     final peakHour = data.hourlyTotals.isEmpty
         ? null
-        : (data.hourlyTotals.toList()..sort((a, b) => b.totalAmount.compareTo(a.totalAmount))).first;
+        : (data.hourlyTotals.toList()
+              ..sort((a, b) => b.totalAmount.compareTo(a.totalAmount)))
+            .first;
 
     return RefreshIndicator(
       onRefresh: _load,
@@ -488,13 +501,18 @@ class _HoursTabState extends State<_HoursTab> {
           const SizedBox(height: 16),
           _AnalyticsMetricGrid(
             cards: [
-              StatCard(label: '시간대 슬롯', value: UiFormat.number(data.hourlyTotals.length), accent: true),
+              StatCard(
+                  label: '시간대 슬롯',
+                  value: UiFormat.number(data.hourlyTotals.length),
+                  accent: true),
               StatCard(label: '평균 매출', value: UiFormat.won(data.avgAmount)),
               StatCard(label: '변동폭', value: UiFormat.won(data.stdAmount)),
               StatCard(
                 label: '피크 시간',
                 value: peakHour == null ? '-' : '${peakHour.hour}:00',
-                sub: peakHour == null ? null : UiFormat.won(peakHour.totalAmount),
+                sub: peakHour == null
+                    ? null
+                    : UiFormat.won(peakHour.totalAmount),
               ),
             ],
           ),
@@ -640,7 +658,9 @@ class _WeekdayTabState extends State<_WeekdayTab> {
 
     final bestRow = data.rows.isEmpty
         ? null
-        : (data.rows.toList()..sort((a, b) => b.avgAmount.compareTo(a.avgAmount))).first;
+        : (data.rows.toList()
+              ..sort((a, b) => b.avgAmount.compareTo(a.avgAmount)))
+            .first;
 
     return RefreshIndicator(
       onRefresh: _load,
@@ -661,7 +681,10 @@ class _WeekdayTabState extends State<_WeekdayTab> {
           const SizedBox(height: 16),
           _AnalyticsMetricGrid(
             cards: [
-              StatCard(label: '평일 평균', value: UiFormat.won(data.weekdayAvg), accent: true),
+              StatCard(
+                  label: '평일 평균',
+                  value: UiFormat.won(data.weekdayAvg),
+                  accent: true),
               StatCard(label: '주말 평균', value: UiFormat.won(data.weekendAvg)),
               StatCard(
                 label: '최강 요일',
@@ -670,7 +693,8 @@ class _WeekdayTabState extends State<_WeekdayTab> {
               ),
               StatCard(
                 label: '분석 일수',
-                value: UiFormat.number(data.rows.fold<int>(0, (sum, row) => sum + row.dayCount)),
+                value: UiFormat.number(
+                    data.rows.fold<int>(0, (sum, row) => sum + row.dayCount)),
               ),
             ],
           ),
@@ -820,9 +844,14 @@ class _PaymentsTabState extends State<_PaymentsTab> {
           const SizedBox(height: 16),
           _AnalyticsMetricGrid(
             cards: [
-              StatCard(label: '총매출', value: UiFormat.won(data.totals.gross), accent: true),
-              StatCard(label: '카드 비중', value: '${cardShare.toStringAsFixed(1)}%'),
-              StatCard(label: '현금 비중', value: '${cashShare.toStringAsFixed(1)}%'),
+              StatCard(
+                  label: '총매출',
+                  value: UiFormat.won(data.totals.gross),
+                  accent: true),
+              StatCard(
+                  label: '카드 비중', value: '${cardShare.toStringAsFixed(1)}%'),
+              StatCard(
+                  label: '현금 비중', value: '${cashShare.toStringAsFixed(1)}%'),
               StatCard(label: '평균 영수액', value: UiFormat.won(avgReceipt)),
             ],
           ),
@@ -975,7 +1004,8 @@ class _CompareTabState extends State<_CompareTab> {
         children: [
           _AnalyticsHeaderRow(
             title: '기간 비교',
-            subtitle: '${_rangeLabel(_range)} vs ${_rangeLabel(_previousRange(_range))}',
+            subtitle:
+                '${_rangeLabel(_range)} vs ${_rangeLabel(_previousRange(_range))}',
             actionLabel: '기준 기간',
             onAction: _pickRange,
           ),
@@ -986,10 +1016,16 @@ class _CompareTabState extends State<_CompareTab> {
           const SizedBox(height: 16),
           _AnalyticsMetricGrid(
             cards: [
-              StatCard(label: '매출 증감', value: _percentText(data.deltas.gross), accent: true),
-              StatCard(label: '영수 증감', value: _percentText(data.deltas.receipts)),
-              StatCard(label: '고객 증감', value: _percentText(data.deltas.customers)),
-              StatCard(label: '객단가 증감', value: _percentText(data.deltas.avgTicket)),
+              StatCard(
+                  label: '매출 증감',
+                  value: _percentText(data.deltas.gross),
+                  accent: true),
+              StatCard(
+                  label: '영수 증감', value: _percentText(data.deltas.receipts)),
+              StatCard(
+                  label: '고객 증감', value: _percentText(data.deltas.customers)),
+              StatCard(
+                  label: '객단가 증감', value: _percentText(data.deltas.avgTicket)),
             ],
           ),
           const SizedBox(height: 16),
@@ -1015,14 +1051,18 @@ class _CompareTabState extends State<_CompareTab> {
                   style: TextStyle(fontWeight: FontWeight.w700),
                 ),
                 const SizedBox(height: 8),
-                _TopItemList(items: data.current.topItems.take(5).toList(growable: false)),
+                _TopItemList(
+                    items:
+                        data.current.topItems.take(5).toList(growable: false)),
                 const SizedBox(height: 16),
                 const Text(
                   '비교 구간',
                   style: TextStyle(fontWeight: FontWeight.w700),
                 ),
                 const SizedBox(height: 8),
-                _TopItemList(items: data.previous.topItems.take(5).toList(growable: false)),
+                _TopItemList(
+                    items:
+                        data.previous.topItems.take(5).toList(growable: false)),
               ],
             ),
           ),
@@ -1141,10 +1181,17 @@ class _TrendsTabState extends State<_TrendsTab> {
           const SizedBox(height: 16),
           _AnalyticsMetricGrid(
             cards: [
-              StatCard(label: '총매출', value: UiFormat.won(data.summary.totalGross), accent: true),
-              StatCard(label: '평균 객단가', value: UiFormat.won(data.summary.avgTicket)),
-              StatCard(label: '고객당 매출', value: UiFormat.won(data.summary.perCustomer)),
-              StatCard(label: '7일 예측 기준', value: UiFormat.won(data.forecastAvg)),
+              StatCard(
+                  label: '총매출',
+                  value: UiFormat.won(data.summary.totalGross),
+                  accent: true),
+              StatCard(
+                  label: '평균 객단가', value: UiFormat.won(data.summary.avgTicket)),
+              StatCard(
+                  label: '고객당 매출',
+                  value: UiFormat.won(data.summary.perCustomer)),
+              StatCard(
+                  label: '7일 예측 기준', value: UiFormat.won(data.forecastAvg)),
             ],
           ),
           const SizedBox(height: 16),
@@ -1245,19 +1292,10 @@ class _AnalyticsMetricGrid extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        final width = constraints.maxWidth >= 720
-            ? (constraints.maxWidth - 12) / 2
-            : constraints.maxWidth;
-        return Wrap(
-          spacing: 12,
-          runSpacing: 12,
-          children: cards
-              .map((card) => SizedBox(width: width, child: card))
-              .toList(growable: false),
-        );
-      },
+    return ResponsiveWrapGrid(
+      minItemWidth: 280,
+      maxColumns: 2,
+      children: cards,
     );
   }
 }
@@ -1318,8 +1356,10 @@ class _CompareSummaryTile extends StatelessWidget {
         ),
         const SizedBox(height: 8),
         _CompareInfoRow(label: '총매출', value: UiFormat.won(stats.gross)),
-        _CompareInfoRow(label: '영수건수', value: '${UiFormat.number(stats.receipts)}건'),
-        _CompareInfoRow(label: '고객수', value: '${UiFormat.number(stats.customers)}명'),
+        _CompareInfoRow(
+            label: '영수건수', value: '${UiFormat.number(stats.receipts)}건'),
+        _CompareInfoRow(
+            label: '고객수', value: '${UiFormat.number(stats.customers)}명'),
         _CompareInfoRow(label: '평균 객단가', value: UiFormat.won(stats.avgTicket)),
       ],
     );
@@ -1481,7 +1521,8 @@ class _MenuEngineeringTabState extends State<_MenuEngineeringTab> {
     final quadrants = {
       'Star': data.menuItems.where((i) => i.quadrant == 'Star').toList(),
       'Puzzle': data.menuItems.where((i) => i.quadrant == 'Puzzle').toList(),
-      'Plowhorse': data.menuItems.where((i) => i.quadrant == 'Plowhorse').toList(),
+      'Plowhorse':
+          data.menuItems.where((i) => i.quadrant == 'Plowhorse').toList(),
       'Dog': data.menuItems.where((i) => i.quadrant == 'Dog').toList(),
     };
 
@@ -1524,7 +1565,9 @@ class _MenuEngineeringTabState extends State<_MenuEngineeringTab> {
             ],
           ),
           const SizedBox(height: 16),
-          ...quadrants.entries.where((e) => e.value.isNotEmpty).map<Widget>((entry) {
+          ...quadrants.entries
+              .where((e) => e.value.isNotEmpty)
+              .map<Widget>((entry) {
             return Padding(
               padding: const EdgeInsets.only(bottom: 12),
               child: Panel(
@@ -1556,21 +1599,31 @@ class _MenuEngineeringTabState extends State<_MenuEngineeringTab> {
 
   String _quadrantTitle(String q) {
     switch (q) {
-      case 'Star':      return '★ 스타 (주력)';
-      case 'Puzzle':    return '? 퍼즐 (홍보 필요)';
-      case 'Plowhorse': return '🐴 플라우호스 (원가 검토)';
-      case 'Dog':       return '🐕 도그 (퇴출 검토)';
-      default:          return q;
+      case 'Star':
+        return '★ 스타 (주력)';
+      case 'Puzzle':
+        return '? 퍼즐 (홍보 필요)';
+      case 'Plowhorse':
+        return '🐴 플라우호스 (원가 검토)';
+      case 'Dog':
+        return '🐕 도그 (퇴출 검토)';
+      default:
+        return q;
     }
   }
 
   String _quadrantSubtitle(String q) {
     switch (q) {
-      case 'Star':      return '인기 높고 수익성 좋음';
-      case 'Puzzle':    return '수익성 높지만 판매량 부족';
-      case 'Plowhorse': return '판매량 많지만 수익성 낮음';
-      case 'Dog':       return '인기와 수익성 모두 낮음';
-      default:          return '';
+      case 'Star':
+        return '인기 높고 수익성 좋음';
+      case 'Puzzle':
+        return '수익성 높지만 판매량 부족';
+      case 'Plowhorse':
+        return '판매량 많지만 수익성 낮음';
+      case 'Dog':
+        return '인기와 수익성 모두 낮음';
+      default:
+        return '';
     }
   }
 }

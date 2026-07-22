@@ -1,4 +1,4 @@
-# easypos_flutter
+# Cafe Bridge Mobile
 
 A new Flutter project.
 

@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 import 'screens/analytics.dart';
 import 'screens/dashboard.dart';
 import 'screens/login.dart';
+import 'screens/more.dart';
 import 'screens/operations.dart';
 import 'screens/settings.dart';
 import 'screens/workforce.dart';
@@ -18,18 +19,18 @@ Future<void> main() async {
   runApp(
     ChangeNotifierProvider.value(
       value: appState,
-      child: const EasyPosApp(),
+      child: const CafeBridgeApp(),
     ),
   );
 }
 
-class EasyPosApp extends StatelessWidget {
-  const EasyPosApp({super.key});
+class CafeBridgeApp extends StatelessWidget {
+  const CafeBridgeApp({super.key});
 
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'EasyPOS Mobile',
+      title: 'Cafe Bridge Mobile',
       debugShowCheckedModeBanner: false,
       theme: ThemeData(
         useMaterial3: true,
@@ -85,14 +86,14 @@ class _MainLayoutState extends State<MainLayout> {
   List<_NavigationItem> _buildNavigationItems(AppState appState) {
     final items = <_NavigationItem>[
       const _NavigationItem(
-        title: '대시보드',
-        label: '대시보드',
+        title: '홈',
+        label: '홈',
         icon: Icons.space_dashboard_outlined,
         selectedIcon: Icons.space_dashboard,
         screen: DashboardScreen(),
       ),
       const _NavigationItem(
-        title: '분석 허브',
+        title: '분석',
         label: '분석',
         icon: Icons.analytics_outlined,
         selectedIcon: Icons.analytics,
@@ -106,7 +107,7 @@ class _MainLayoutState extends State<MainLayout> {
         screen: OperationsScreen(),
       ),
       const _NavigationItem(
-        title: '인력 관리',
+        title: '인력',
         label: '인력',
         icon: Icons.people_outline,
         selectedIcon: Icons.people,
@@ -120,12 +121,19 @@ class _MainLayoutState extends State<MainLayout> {
         selectedIcon: Icons.settings,
         screen: SettingsScreen(),
       ),
+      const _NavigationItem(
+        title: '더보기',
+        label: '더보기',
+        icon: Icons.widgets_outlined,
+        selectedIcon: Icons.widgets,
+        screen: MoreScreen(),
+      ),
     ];
 
     return items
         .where(
-          (item) => item.minimumRole == null ||
-              appState.canAccess(item.minimumRole!),
+          (item) =>
+              item.minimumRole == null || appState.canAccess(item.minimumRole!),
         )
         .toList(growable: false);
   }
@@ -138,6 +146,14 @@ class _MainLayoutState extends State<MainLayout> {
 
     return Scaffold(
       appBar: AppBar(
+        leadingWidth: 60,
+        leading: Padding(
+          padding: const EdgeInsets.only(left: 14, top: 8, bottom: 8),
+          child: Image.asset(
+            'assets/branding/cafe_bridge_logo.png',
+            fit: BoxFit.contain,
+          ),
+        ),
         title: Text(
           navigationItems[currentIndex].title,
           style: const TextStyle(fontWeight: FontWeight.w700),

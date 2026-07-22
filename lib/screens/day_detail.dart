@@ -6,6 +6,7 @@ import '../state/app_state.dart';
 import '../widgets/cache_notice.dart';
 import '../widgets/empty_state.dart';
 import '../widgets/panel.dart';
+import '../widgets/responsive_wrap_grid.dart';
 import '../widgets/stat_card.dart';
 
 class DayDetailScreen extends StatefulWidget {
@@ -200,19 +201,10 @@ class _DayDetailScreenState extends State<DayDetailScreen> {
       ),
     ];
 
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        final width = constraints.maxWidth >= 720
-            ? (constraints.maxWidth - 12) / 2
-            : constraints.maxWidth;
-        return Wrap(
-          spacing: 12,
-          runSpacing: 12,
-          children: cards
-              .map((card) => SizedBox(width: width, child: card))
-              .toList(growable: false),
-        );
-      },
+    return ResponsiveWrapGrid(
+      minItemWidth: 280,
+      maxColumns: 2,
+      children: cards,
     );
   }
 

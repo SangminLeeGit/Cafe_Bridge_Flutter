@@ -6,6 +6,7 @@ import '../state/app_state.dart';
 import '../widgets/cache_notice.dart';
 import '../widgets/empty_state.dart';
 import '../widgets/panel.dart';
+import '../widgets/responsive_wrap_grid.dart';
 import '../widgets/stat_card.dart';
 
 class CostingScreen extends StatelessWidget {
@@ -160,7 +161,9 @@ class _CostingDashboardTabState extends State<_CostingDashboardTab> {
               ),
               StatCard(
                 label: '최종 단가 등록',
-                value: s.lastPriceChangeAt.isEmpty ? '-' : s.lastPriceChangeAt.substring(0, 10),
+                value: s.lastPriceChangeAt.isEmpty
+                    ? '-'
+                    : s.lastPriceChangeAt.substring(0, 10),
               ),
             ],
           ),
@@ -327,7 +330,9 @@ class _IngredientCard extends StatelessWidget {
         onTap: onTap,
         title: Row(
           children: [
-            Expanded(child: Text(i.name, style: const TextStyle(fontWeight: FontWeight.w700))),
+            Expanded(
+                child: Text(i.name,
+                    style: const TextStyle(fontWeight: FontWeight.w700))),
             if (!i.isActive)
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
@@ -346,7 +351,8 @@ class _IngredientCard extends StatelessWidget {
           '${i.category.isEmpty ? '미분류' : i.category} · ${i.baseUnit} · 단가 이력 ${i.priceCount}건',
         ),
         trailing: i.currentUnitCost == null
-            ? const Text('단가 없음', style: TextStyle(color: Color(0xFF94A3B8), fontSize: 12))
+            ? const Text('단가 없음',
+                style: TextStyle(color: Color(0xFF94A3B8), fontSize: 12))
             : Text(
                 '${i.currentUnitCost!.toStringAsFixed(i.currentUnitCost! < 10 ? 2 : 0)}원/\${i.baseUnit}',
                 style: const TextStyle(fontWeight: FontWeight.w700),
@@ -467,10 +473,12 @@ class _RecipeCard extends StatelessWidget {
         title: Row(
           children: [
             Expanded(
-              child: Text(r.menuName, style: const TextStyle(fontWeight: FontWeight.w700)),
+              child: Text(r.menuName,
+                  style: const TextStyle(fontWeight: FontWeight.w700)),
             ),
             if (r.isOverCost)
-              const Icon(Icons.warning_amber_rounded, size: 16, color: Color(0xFFDC2626)),
+              const Icon(Icons.warning_amber_rounded,
+                  size: 16, color: Color(0xFFDC2626)),
           ],
         ),
         subtitle: Text(
@@ -569,7 +577,8 @@ class _RecipeDetailScreenState extends State<RecipeDetailScreen> {
                 ? EmptyState(
                     title: '레시피를 불러오지 못했습니다.',
                     message: _error,
-                    action: FilledButton(onPressed: _load, child: const Text('다시 시도')),
+                    action: FilledButton(
+                        onPressed: _load, child: const Text('다시 시도')),
                   )
                 : _buildBody(_data!),
       ),
@@ -619,7 +628,8 @@ class _RecipeDetailScreenState extends State<RecipeDetailScreen> {
                   title: Text(item.ingredientName),
                   subtitle: Text('${item.qty} ${item.ingredientBaseUnit}'),
                   trailing: item.lineCost == null
-                      ? const Text('-', style: TextStyle(color: Color(0xFF94A3B8)))
+                      ? const Text('-',
+                          style: TextStyle(color: Color(0xFF94A3B8)))
                       : Text(
                           '${item.lineCost!.toStringAsFixed(0)}원',
                           style: const TextStyle(fontWeight: FontWeight.w700),
@@ -675,7 +685,8 @@ class _IngredientDetailScreenState extends State<IngredientDetailScreen> {
           if (raw is! List) return const <IngredientPrice>[];
           return raw
               .whereType<Map>()
-              .map((e) => IngredientPrice.fromJson(Map<String, dynamic>.from(e)))
+              .map(
+                  (e) => IngredientPrice.fromJson(Map<String, dynamic>.from(e)))
               .toList(growable: false);
         },
         cacheTtl: const Duration(minutes: 5),
@@ -711,7 +722,8 @@ class _IngredientDetailScreenState extends State<IngredientDetailScreen> {
                 ? EmptyState(
                     title: '단가 이력을 불러오지 못했습니다.',
                     message: _error,
-                    action: FilledButton(onPressed: _load, child: const Text('다시 시도')),
+                    action: FilledButton(
+                        onPressed: _load, child: const Text('다시 시도')),
                   )
                 : _buildBody(),
       ),
@@ -778,17 +790,10 @@ class _MetricGrid extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        final width = constraints.maxWidth >= 720
-            ? (constraints.maxWidth - 12) / 2
-            : constraints.maxWidth;
-        return Wrap(
-          spacing: 12,
-          runSpacing: 12,
-          children: cards.map((c) => SizedBox(width: width, child: c)).toList(growable: false),
-        );
-      },
+    return ResponsiveWrapGrid(
+      minItemWidth: 280,
+      maxColumns: 2,
+      children: cards,
     );
   }
 }
