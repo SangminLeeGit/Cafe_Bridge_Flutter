@@ -1,5 +1,6 @@
 stages:
-  - build
+  - validate
+  - release
 
 workflow:
   rules:
@@ -9,6 +10,11 @@ workflow:
     - if: '$CI_PIPELINE_SOURCE == "trigger"'
 
 variables:
+  GIT_DEPTH: "20"
+  PUB_CACHE: "/var/cache/android-builder/pub"
+  GRADLE_USER_HOME: "/var/cache/android-builder/gradle"
+  RUNNER_SCRIPT_TIMEOUT: "50m"
+  RUNNER_AFTER_SCRIPT_TIMEOUT: "5m"
   DEPLOY_TASK_ID:
     value: ""
     description: "Optional server-side deployment task ID."
@@ -23,17 +29,31 @@ variables:
     options: ["false", "true"]
     description: "Build without registering the APK in the application server."
 
+android_validate:
+  stage: validate
+  tags: [cafe-bridge-android-release]
+  timeout: 20 minutes
+  interruptible: true
+  script:
+    - ./.gitlab/ci/android-validate.sh
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "push" && $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'
+    - if: '$CI_PIPELINE_SOURCE =~ /^(api|trigger|web)$/'
+
 android_release_apk:
-  stage: build
-  tags: [central-android-release]
+  stage: release
+  tags: [cafe-bridge-android-release]
+  needs: [android_validate]
   resource_group: cafe-bridge-android-release
-  timeout: 30 minutes
+  timeout: 60 minutes
   interruptible: false
+  environment:
+    name: production
   script:
     - ./.gitlab/ci/android-release.sh
   artifacts:
     when: always
-    expire_in: 14 days
+    expire_in: 30 days
     paths:
       - build/app/outputs/flutter-apk/app-release.apk
   after_script:

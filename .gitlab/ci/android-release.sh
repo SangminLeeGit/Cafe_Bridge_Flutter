@@ -86,6 +86,9 @@ curl -fsS \
 load_github_env
 
 fi
+  if [[ -n "${KEYSTORE_PATH:-}" ]]; then
+    rm -f "$KEYSTORE_PATH"
+  fi
   exit "${job_status}"
 }
 trap finalize_job EXIT
@@ -97,6 +100,9 @@ set -euo pipefail
 
 export CAFE_BRIDGE_CI_BASE_URL CAFE_BRIDGE_FLUTTER_CI_CALLBACK_SECRET
 export CAFE_BRIDGE_FLUTTER_BIN CAFE_BRIDGE_ANDROID_SDK_ROOT
+export CAFE_BRIDGE_ANDROID_KEYSTORE_BASE64 CAFE_BRIDGE_ANDROID_KEY_ALIAS
+export CAFE_BRIDGE_ANDROID_STORE_PASSWORD CAFE_BRIDGE_ANDROID_KEY_PASSWORD
+export CAFE_BRIDGE_ANDROID_CERT_SHA256
 
 if [[ -z "${CAFE_BRIDGE_CI_BASE_URL:-}" ]]; then
   echo "CAFE_BRIDGE_CI_BASE_URL secret is required" >&2
@@ -104,6 +110,18 @@ if [[ -z "${CAFE_BRIDGE_CI_BASE_URL:-}" ]]; then
 fi
 if [[ -z "${CAFE_BRIDGE_FLUTTER_CI_CALLBACK_SECRET:-}" ]]; then
   echo "CAFE_BRIDGE_FLUTTER_CI_CALLBACK_SECRET secret is required" >&2
+  exit 1
+fi
+if [[ -z "${CAFE_BRIDGE_ANDROID_KEYSTORE_BASE64:-}" ]]; then
+  echo "CAFE_BRIDGE_ANDROID_KEYSTORE_BASE64 is required" >&2
+  exit 1
+fi
+if [[ -z "${CAFE_BRIDGE_ANDROID_KEY_ALIAS:-}" || -z "${CAFE_BRIDGE_ANDROID_STORE_PASSWORD:-}" || -z "${CAFE_BRIDGE_ANDROID_KEY_PASSWORD:-}" ]]; then
+  echo "Android release signing credentials are required" >&2
+  exit 1
+fi
+if [[ -z "${CAFE_BRIDGE_ANDROID_CERT_SHA256:-}" ]]; then
+  echo "CAFE_BRIDGE_ANDROID_CERT_SHA256 is required" >&2
   exit 1
 fi
 
@@ -178,34 +196,18 @@ fi
 
 FLUTTER_BIN="${CAFE_BRIDGE_FLUTTER_BIN:-}"
 if [[ -z "$FLUTTER_BIN" || ! -x "$FLUTTER_BIN" ]]; then
-  for candidate in \
-    "$(command -v flutter 2>/dev/null || true)" \
-    "/opt/flutter/bin/flutter" \
-    "/home/sangmin/tools/flutter/bin/flutter" \
-    "$HOME/flutter/bin/flutter" \
-    "$HOME/tools/flutter/bin/flutter"; do
-    if [[ -n "$candidate" && -x "$candidate" ]]; then
-      FLUTTER_BIN="$candidate"
-      break
-    fi
-  done
-fi
-if [[ -z "$FLUTTER_BIN" || ! -x "$FLUTTER_BIN" ]]; then
-  echo "flutter binary not found" >&2
+  echo "CAFE_BRIDGE_FLUTTER_BIN must point to an executable Flutter binary" >&2
   exit 1
 fi
 
-if [[ -n "${CAFE_BRIDGE_ANDROID_SDK_ROOT:-}" && -d "${CAFE_BRIDGE_ANDROID_SDK_ROOT}" ]]; then
-  echo "ANDROID_HOME=${CAFE_BRIDGE_ANDROID_SDK_ROOT}" >> "$GITHUB_ENV"
-  echo "ANDROID_SDK_ROOT=${CAFE_BRIDGE_ANDROID_SDK_ROOT}" >> "$GITHUB_ENV"
-elif [[ -n "${ANDROID_HOME:-}" && -d "${ANDROID_HOME}" ]]; then
-  echo "ANDROID_SDK_ROOT=${ANDROID_HOME}" >> "$GITHUB_ENV"
-elif [[ -n "${ANDROID_SDK_ROOT:-}" && -d "${ANDROID_SDK_ROOT}" ]]; then
-  echo "ANDROID_HOME=${ANDROID_SDK_ROOT}" >> "$GITHUB_ENV"
-elif [[ -d "/root/android-sdk" ]]; then
-  echo "ANDROID_HOME=/root/android-sdk" >> "$GITHUB_ENV"
-  echo "ANDROID_SDK_ROOT=/root/android-sdk" >> "$GITHUB_ENV"
+if [[ -z "${CAFE_BRIDGE_ANDROID_SDK_ROOT:-}" || ! -d "${CAFE_BRIDGE_ANDROID_SDK_ROOT}" ]]; then
+  echo "CAFE_BRIDGE_ANDROID_SDK_ROOT must point to the Android SDK" >&2
+  exit 1
 fi
+
+KEYSTORE_PATH="${RUNNER_TEMP}/cafe-bridge-release.jks"
+printf '%s' "$CAFE_BRIDGE_ANDROID_KEYSTORE_BASE64" | base64 --decode > "$KEYSTORE_PATH"
+chmod 600 "$KEYSTORE_PATH"
 
 {
   echo "REPO_FULL_NAME=$REPO_FULL_NAME"
@@ -217,6 +219,9 @@ fi
   echo "PUBSPEC_BUILD=$PUBSPEC_BUILD"
   echo "BUILD_NUMBER=$EFFECTIVE_BUILD"
   echo "FLUTTER_BIN=$FLUTTER_BIN"
+  echo "ANDROID_HOME=${CAFE_BRIDGE_ANDROID_SDK_ROOT}"
+  echo "ANDROID_SDK_ROOT=${CAFE_BRIDGE_ANDROID_SDK_ROOT}"
+  echo "KEYSTORE_PATH=$KEYSTORE_PATH"
   echo "APK_PATH=$PWD/build/app/outputs/flutter-apk/app-release.apk"
   echo "REPORT_URL=${CAFE_BRIDGE_CI_BASE_URL%/}/api/ci/flutter-apk/report"
   echo "REGISTER_URL=${CAFE_BRIDGE_CI_BASE_URL%/}/api/ci/flutter-apk/register"
@@ -270,10 +275,8 @@ echo '[GitLab CI] Build release APK'
 set -Eeuo pipefail
 set -euo pipefail
 export PATH="$(dirname "$FLUTTER_BIN"):$PATH"
-# The shared Flutter SDK is owned by the image-maintenance account while
-# GitLab Runner executes as gitlab-runner; allow Flutter's git metadata read.
-git config --global --add safe.directory /opt/flutter 2>/dev/null || true
-export GRADLE_OPTS="${GRADLE_OPTS:-} -Dorg.gradle.daemon=false -Dorg.gradle.workers.max=2 -Dorg.gradle.jvmargs=-Xmx1536m\ -XX:MaxMetaspaceSize=512m\ -Dfile.encoding=UTF-8 -Dkotlin.daemon.jvm.options=-Xmx1024m -Dkotlin.compiler.execution.strategy=in-process"
+export ANDROID_HOME ANDROID_SDK_ROOT
+export CAFE_BRIDGE_ANDROID_KEYSTORE_PATH="$KEYSTORE_PATH"
 cleanup_gradle() {
   if command -v gradle >/dev/null 2>&1; then gradle --stop >/dev/null 2>&1 || true; fi
   pkill -u "$(id -u)" -f 'KotlinCompileDaemon' >/dev/null 2>&1 || true
@@ -281,6 +284,27 @@ cleanup_gradle() {
 trap cleanup_gradle EXIT INT TERM
 "$FLUTTER_BIN" pub get
 "$FLUTTER_BIN" build apk --release --build-name "$VERSION_NAME" --build-number "$BUILD_NUMBER"
+
+APKSIGNER="$ANDROID_SDK_ROOT/build-tools/35.0.0/apksigner"
+if [[ ! -x "$APKSIGNER" ]]; then
+  echo "apksigner not found: $APKSIGNER" >&2
+  exit 1
+fi
+APKSIGNER_OUTPUT="$("$APKSIGNER" verify --verbose --print-certs "$APK_PATH")"
+ACTUAL_CERT_SHA256=""
+while IFS= read -r line; do
+  case "$line" in
+    *"certificate SHA-256 digest:"*)
+      ACTUAL_CERT_SHA256="${line##*: }"
+      break
+      ;;
+  esac
+done <<< "$APKSIGNER_OUTPUT"
+ACTUAL_CERT_SHA256="${ACTUAL_CERT_SHA256//:/}"
+if [[ -z "$ACTUAL_CERT_SHA256" || "${ACTUAL_CERT_SHA256,,}" != "${CAFE_BRIDGE_ANDROID_CERT_SHA256,,}" ]]; then
+  echo "APK signing certificate fingerprint mismatch" >&2
+  exit 1
+fi
 )
 load_github_env
 echo '[GitLab CI] Complete dry-run without artifact registration'

@@ -5,6 +5,20 @@ plugins {
     id "dev.flutter.flutter-gradle-plugin"
 }
 
+def releaseKeystorePath = System.getenv("CAFE_BRIDGE_ANDROID_KEYSTORE_PATH") ?: ""
+def releaseKeyAlias = System.getenv("CAFE_BRIDGE_ANDROID_KEY_ALIAS") ?: ""
+def releaseStorePassword = System.getenv("CAFE_BRIDGE_ANDROID_STORE_PASSWORD") ?: ""
+def releaseKeyPassword = System.getenv("CAFE_BRIDGE_ANDROID_KEY_PASSWORD") ?: ""
+def releaseSigningConfigured = [
+    releaseKeystorePath,
+    releaseKeyAlias,
+    releaseStorePassword,
+    releaseKeyPassword,
+].every { !it.trim().isEmpty() }
+def releaseTaskRequested = gradle.startParameter.taskNames.any {
+    it.toLowerCase().contains("release")
+}
+
 android {
     namespace = "org.cafe.bridge.mobile"
     compileSdk = flutter.compileSdkVersion
@@ -30,11 +44,23 @@ android {
         versionName = flutter.versionName
     }
 
+    signingConfigs {
+        release {
+            if (releaseSigningConfigured) {
+                storeFile = file(releaseKeystorePath)
+                storePassword = releaseStorePassword
+                keyAlias = releaseKeyAlias
+                keyPassword = releaseKeyPassword
+            }
+        }
+    }
+
     buildTypes {
         release {
-            // TODO: Add your own signing config for the release build.
-            // Signing with the debug keys for now, so `flutter run --release` works.
-            signingConfig = signingConfigs.debug
+            if (!releaseSigningConfigured && releaseTaskRequested) {
+                throw new GradleException("Cafe Bridge Android release signing variables are required")
+            }
+            signingConfig = signingConfigs.release
         }
     }
 }
