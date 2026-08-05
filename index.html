@@ -3,21 +3,23 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
-  <title>Cafe Bridge mobile design specification</title>
+  <title>Cafe Bridge App 화면 명세서</title>
   <style>
     :root {
       --bg:#F8FAFC; --surface:#FFFFFF; --ink:#0F172A; --secondary:#475569;
       --muted:#64748B; --subtle:#94A3B8; --border:#E2E8F0; --surface-subtle:#F1F5F9;
       --accent:#0D9488; --accent-dark:#0F766E; --success:#16A34A; --warning:#D97706;
-      --danger:#DC2626; --info:#155E75; --focus:color-mix(in srgb, var(--accent) 26%, white); --shadow:0 18px 40px rgba(15,23,42,.08);
+      --danger:#DC2626; --info:#155E75; --focus:var(--accent-dark); --shadow:0 18px 40px rgba(15,23,42,.08);
       font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; color:var(--ink);
     }
     *{box-sizing:border-box} html{scroll-behavior:smooth} body{margin:0;background:var(--bg);line-height:1.5;text-rendering:optimizeLegibility;-webkit-font-smoothing:antialiased}
     a{color:inherit;text-decoration:none} button{font:inherit;cursor:pointer} a:focus-visible,button:focus-visible,[tabindex="0"]:focus-visible{outline:3px solid var(--focus);outline-offset:3px}
+    .skip-link{position:absolute;left:14px;top:8px;z-index:10;padding:10px 12px;border:1px solid var(--accent-dark);border-radius:10px;background:var(--surface);color:var(--accent-dark);font-size:12px;font-weight:800;transform:translateY(-160%);transition:transform .15s ease}.skip-link:focus-visible{transform:translateY(0)}
+    .visually-hidden{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}
     h1,h2,h3,h4{ text-wrap:balance } code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:.92em}
     .spec-shell{max-width:1440px;margin:0 auto;padding:28px 28px 72px}
     .topbar{display:flex;justify-content:space-between;align-items:flex-start;gap:20px;padding:18px 0 20px;border-bottom:1px solid var(--border)}
-    .brand{display:flex;align-items:center;gap:12px}.brand img{width:44px;height:44px;object-fit:contain}.brand h1{margin:0;font-size:20px;letter-spacing:-.03em}.brand p{margin:3px 0 0;color:var(--muted);font-size:12px}
+    .brand{display:flex;align-items:center;gap:12px}.brand-mark{display:grid;place-items:center;width:44px;height:44px;border:1px solid var(--accent);border-radius:12px;background:var(--surface);color:var(--accent-dark);font-size:13px;font-weight:900;letter-spacing:.06em}.brand h1{margin:0;font-size:20px;letter-spacing:-.03em}.brand p{margin:3px 0 0;color:var(--muted);font-size:12px}
     .meta{display:flex;flex-wrap:wrap;justify-content:flex-end;gap:7px}.meta span,.pill{padding:5px 9px;border:1px solid var(--border);border-radius:999px;background:var(--surface);color:var(--secondary);font-size:11px;font-weight:800}
     .meta .accent,.pill.accent{border-color:rgba(13,148,136,.3);background:rgba(13,148,136,.1);color:var(--accent-dark)}
     .hero{display:grid;grid-template-columns:minmax(0,1.3fr) minmax(300px,.7fr);gap:24px;padding:46px 0 34px;align-items:end}
@@ -36,11 +38,12 @@
   </style>
 </head>
 <body>
+  <a class="skip-link" href="#content">본문으로 건너뛰기</a>
   <main id="content" class="spec-shell" data-od-id="design-spec-shell">
     <header class="topbar" data-od-id="design-spec-header">
       <a class="brand" href="#overview" data-od-id="brand-link">
-        <img src="assets/cafe_bridge_logo.png" alt="Cafe Bridge">
-        <span><h1>Cafe Bridge mobile</h1><p>실제 Flutter 구현 기반 디자인 명세</p></span>
+        <span class="brand-mark" aria-hidden="true">CB</span>
+        <div class="brand-copy"><h1>Cafe Bridge mobile</h1><p>실제 Flutter 구현 기반 디자인 명세</p></div>
       </a>
       <div class="meta" aria-label="source metadata">
         <span class="accent">design</span><span>high fidelity</span><span>iOS + Android</span><span>main 8b446e</span>
@@ -81,6 +84,7 @@
       <div class="filter" role="group" aria-label="screen map filters" data-od-id="screen-map-filters">
         <button type="button" data-filter="all" aria-pressed="true">전체</button><button type="button" data-filter="shell" aria-pressed="false">메인 쉘</button><button type="button" data-filter="flow" aria-pressed="false">운영 흐름</button><button type="button" data-filter="admin" aria-pressed="false">관리자</button>
       </div>
+      <p id="screen-map-status" class="visually-hidden" aria-live="polite">전체 9개 화면이 표시됩니다.</p>
       <div class="screen-map">
         <article class="map-card" data-kind="shell" data-od-id="map-login"><h4>로그인</h4><p>아이디·비밀번호·로그인 상태 유지와 서버 상태 배너.</p><footer><span>login.dart · viewer entry</span><a href="screens/login.html">열기</a></footer></article>
         <article class="map-card" data-kind="shell" data-od-id="map-home"><h4>홈</h4><p>실시간 요약, 최근 7일, 상위 품목, 결제수단, 적재 이력.</p><footer><span>dashboard.dart · /api/dashboard</span><a href="screens/ios-home.html">열기</a></footer></article>
@@ -123,10 +127,13 @@
   <script>
     const filterButtons = document.querySelectorAll('[data-filter]');
     const mapCards = document.querySelectorAll('.map-card');
+    const screenMapStatus = document.getElementById('screen-map-status');
     filterButtons.forEach((button) => button.addEventListener('click', () => {
       const filter = button.dataset.filter;
       filterButtons.forEach((item) => item.setAttribute('aria-pressed', String(item === button)));
       mapCards.forEach((card) => { card.hidden = filter !== 'all' && card.dataset.kind !== filter; });
+      const visibleCount = [...mapCards].filter((card) => !card.hidden).length;
+      screenMapStatus.textContent = `${visibleCount}개 화면이 표시됩니다.`;
     }));
   </script>
 </body>
