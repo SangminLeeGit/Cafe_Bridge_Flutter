@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../core/async_request_guard.dart';
 import '../models/touchkey_models.dart';
 import '../state/app_state.dart';
 import '../widgets/empty_state.dart';
@@ -15,7 +16,8 @@ class TouchkeyScreen extends StatefulWidget {
   State<TouchkeyScreen> createState() => _TouchkeyScreenState();
 }
 
-class _TouchkeyScreenState extends State<TouchkeyScreen> {
+class _TouchkeyScreenState extends State<TouchkeyScreen>
+    with AsyncRequestGuard<TouchkeyScreen> {
   TouchkeyPayload? _data;
   bool _isLoading = false;
   String _error = '';
@@ -55,6 +57,8 @@ class _TouchkeyScreenState extends State<TouchkeyScreen> {
   Future<void> _load([
     Map<String, String>? selectedClass,
   ]) async {
+    if (!mounted) return;
+    final request = beginAsyncRequest();
     const nextProgram = 'touchkey';
     final cachedPayload =
         _touchkeyCache[_touchkeyCacheKey(nextProgram, selectedClass)];
@@ -86,7 +90,7 @@ class _TouchkeyScreenState extends State<TouchkeyScreen> {
                 cacheTtl: Duration.zero,
                 allowStaleOnError: false,
               );
-      if (!mounted) {
+      if (!isCurrentAsyncRequest(request)) {
         return;
       }
       _storeTouchkeyCache(
@@ -98,7 +102,7 @@ class _TouchkeyScreenState extends State<TouchkeyScreen> {
         _data = response.data;
       });
     } catch (error) {
-      if (!mounted) {
+      if (!isCurrentAsyncRequest(request)) {
         return;
       }
       setState(() {
@@ -106,7 +110,7 @@ class _TouchkeyScreenState extends State<TouchkeyScreen> {
         _error = error.toString().replaceFirst('Exception: ', '');
       });
     } finally {
-      if (mounted) {
+      if (isCurrentAsyncRequest(request)) {
         setState(() {
           _isLoading = false;
         });

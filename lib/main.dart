@@ -1,4 +1,7 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
+import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:provider/provider.dart';
 
 import 'screens/analytics.dart';
@@ -6,15 +9,18 @@ import 'screens/dashboard.dart';
 import 'screens/login.dart';
 import 'screens/more.dart';
 import 'screens/operations.dart';
-import 'screens/settings.dart';
 import 'screens/workforce.dart';
 import 'state/app_state.dart';
+import 'theme/app_theme.dart';
 import 'widgets/app_update_banner.dart';
+import 'widgets/app_screen.dart';
+
+final _appNavigatorKey = GlobalKey<NavigatorState>();
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   final appState = AppState();
-  await appState.load();
+  await appState.loadLocal(notify: false);
 
   runApp(
     ChangeNotifierProvider.value(
@@ -22,6 +28,7 @@ Future<void> main() async {
       child: const CafeBridgeApp(),
     ),
   );
+  unawaited(appState.loadRemote());
 }
 
 class CafeBridgeApp extends StatelessWidget {
@@ -32,43 +39,72 @@ class CafeBridgeApp extends StatelessWidget {
     return MaterialApp(
       title: 'Cafe Bridge Mobile',
       debugShowCheckedModeBanner: false,
-      theme: ThemeData(
-        useMaterial3: true,
-        scaffoldBackgroundColor: const Color(0xFFF8FAFC),
-        colorScheme: ColorScheme.fromSeed(
-          seedColor: const Color(0xFF0D9488),
-          brightness: Brightness.light,
-        ),
-        appBarTheme: const AppBarTheme(
-          backgroundColor: Colors.white,
-          foregroundColor: Color(0xFF0F172A),
-          elevation: 0,
-        ),
-      ),
-      home: const AppRoot(),
+      locale: const Locale('ko', 'KR'),
+      supportedLocales: const [Locale('ko', 'KR')],
+      localizationsDelegates: const [
+        GlobalMaterialLocalizations.delegate,
+        GlobalWidgetsLocalizations.delegate,
+      ],
+      theme: AppTheme.light(),
+      navigatorKey: _appNavigatorKey,
+      home: AppRoot(navigatorKey: _appNavigatorKey),
     );
   }
 }
 
-class AppRoot extends StatelessWidget {
-  const AppRoot({super.key});
+class AppRoot extends StatefulWidget {
+  final GlobalKey<NavigatorState> navigatorKey;
+
+  const AppRoot({super.key, required this.navigatorKey});
+
+  @override
+  State<AppRoot> createState() => _AppRootState();
+}
+
+class _AppRootState extends State<AppRoot> with WidgetsBindingObserver {
+  bool _wasAuthenticated = false;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      unawaited(context.read<AppState>().handleAppResumed());
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
     final appState = context.watch<AppState>();
 
-    if (appState.isInitializing) {
+    if (appState.isInitializing || appState.isRestoringSession) {
       return const Scaffold(
-        body: Center(
-          child: CircularProgressIndicator(color: Color(0xFF0D9488)),
-        ),
+        body: LoadingState(message: 'Cafe Bridge를 준비하는 중입니다.'),
       );
     }
 
     if (!appState.isAuthenticated) {
+      if (_wasAuthenticated) {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (!mounted) return;
+          widget.navigatorKey.currentState?.popUntil((route) => route.isFirst);
+        });
+      }
+      _wasAuthenticated = false;
       return const LoginScreen();
     }
 
+    _wasAuthenticated = true;
     return const MainLayout();
   }
 }
@@ -83,65 +119,53 @@ class MainLayout extends StatefulWidget {
 class _MainLayoutState extends State<MainLayout> {
   int _currentIndex = 0;
 
-  List<_NavigationItem> _buildNavigationItems(AppState appState) {
-    final items = <_NavigationItem>[
-      const _NavigationItem(
-        title: '홈',
-        label: '홈',
-        icon: Icons.space_dashboard_outlined,
-        selectedIcon: Icons.space_dashboard,
-        screen: DashboardScreen(),
-      ),
-      const _NavigationItem(
-        title: '분석',
-        label: '분석',
-        icon: Icons.analytics_outlined,
-        selectedIcon: Icons.analytics,
-        screen: AnalyticsScreen(),
-      ),
-      const _NavigationItem(
-        title: '운영',
-        label: '운영',
-        icon: Icons.handyman_outlined,
-        selectedIcon: Icons.handyman,
-        screen: OperationsScreen(),
-      ),
-      const _NavigationItem(
-        title: '인력',
-        label: '인력',
-        icon: Icons.people_outline,
-        selectedIcon: Icons.people,
-        screen: WorkforceScreen(),
-        minimumRole: UserRole.operator,
-      ),
-      const _NavigationItem(
-        title: '설정',
-        label: '설정',
-        icon: Icons.settings_outlined,
-        selectedIcon: Icons.settings,
-        screen: SettingsScreen(),
-      ),
-      const _NavigationItem(
-        title: '더보기',
-        label: '더보기',
-        icon: Icons.widgets_outlined,
-        selectedIcon: Icons.widgets,
-        screen: MoreScreen(),
-      ),
-    ];
-
-    return items
-        .where(
-          (item) =>
-              item.minimumRole == null || appState.canAccess(item.minimumRole!),
-        )
-        .toList(growable: false);
-  }
+  static const navigationItems = <_NavigationItem>[
+    _NavigationItem(
+      title: '홈',
+      label: '홈',
+      icon: Icons.space_dashboard_outlined,
+      selectedIcon: Icons.space_dashboard,
+      screen: DashboardScreen(),
+    ),
+    _NavigationItem(
+      title: '인사이트',
+      label: '분석',
+      icon: Icons.analytics_outlined,
+      selectedIcon: Icons.analytics,
+      screen: AnalyticsScreen(),
+    ),
+    _NavigationItem(
+      title: '업무',
+      label: '업무',
+      icon: Icons.handyman_outlined,
+      selectedIcon: Icons.handyman,
+      screen: OperationsScreen(),
+    ),
+    _NavigationItem(
+      title: '인력',
+      label: '인력',
+      icon: Icons.people_outline,
+      selectedIcon: Icons.people,
+      screen: WorkforceScreen(),
+    ),
+    _NavigationItem(
+      title: '더보기',
+      label: '더보기',
+      icon: Icons.widgets_outlined,
+      selectedIcon: Icons.widgets,
+      screen: MoreScreen(),
+    ),
+  ];
 
   @override
   Widget build(BuildContext context) {
-    final appState = context.watch<AppState>();
-    final navigationItems = _buildNavigationItems(appState);
+    final userRole =
+        context.select<AppState, UserRole>((state) => state.userRole);
+    final offlineMode =
+        context.select<AppState, bool>((state) => state.offlineMode);
+    final hasRecommendedUpdate =
+        context.select<AppState, bool>((state) => state.hasRecommendedUpdate);
+    const navigationItems = _MainLayoutState.navigationItems;
     final currentIndex = _currentIndex.clamp(0, navigationItems.length - 1);
 
     return Scaffold(
@@ -150,7 +174,7 @@ class _MainLayoutState extends State<MainLayout> {
         leading: Padding(
           padding: const EdgeInsets.only(left: 14, top: 8, bottom: 8),
           child: Image.asset(
-            'assets/branding/cafe_bridge_logo.png',
+            cafeBridgeLogoAsset,
             fit: BoxFit.contain,
           ),
         ),
@@ -163,13 +187,13 @@ class _MainLayoutState extends State<MainLayout> {
             margin: const EdgeInsets.only(right: 16),
             padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
             decoration: BoxDecoration(
-              color: const Color.fromRGBO(13, 148, 136, 0.1),
-              borderRadius: BorderRadius.circular(999),
+              color: AppColors.primary.withValues(alpha: 0.1),
+              borderRadius: BorderRadius.circular(AppRadii.pill),
             ),
             child: Text(
-              appState.userRole.label,
+              userRole.label,
               style: const TextStyle(
-                color: Color(0xFF0F766E),
+                color: AppColors.primaryDark,
                 fontWeight: FontWeight.w700,
                 fontSize: 12,
               ),
@@ -180,14 +204,14 @@ class _MainLayoutState extends State<MainLayout> {
           preferredSize: const Size.fromHeight(1),
           child: Container(
             height: 1,
-            color: const Color(0xFFE2E8F0),
+            color: AppColors.border,
           ),
         ),
       ),
       body: SafeArea(
         child: Column(
           children: [
-            if (appState.offlineMode)
+            if (offlineMode)
               Container(
                 width: double.infinity,
                 padding:
@@ -198,14 +222,14 @@ class _MainLayoutState extends State<MainLayout> {
                     Icon(
                       Icons.cloud_off_outlined,
                       size: 18,
-                      color: Color(0xFF155E75),
+                      color: AppColors.offlineForeground,
                     ),
                     SizedBox(width: 8),
                     Expanded(
                       child: Text(
                         '오프라인 캐시 모드로 표시 중입니다.',
                         style: TextStyle(
-                          color: Color(0xFF155E75),
+                          color: AppColors.offlineForeground,
                           fontWeight: FontWeight.w600,
                         ),
                       ),
@@ -213,8 +237,7 @@ class _MainLayoutState extends State<MainLayout> {
                   ],
                 ),
               ),
-            if (appState.hasRecommendedUpdate)
-              const AppUpdateBanner(dense: true),
+            if (hasRecommendedUpdate) const AppUpdateBanner(dense: true),
             Expanded(
               child: IndexedStack(
                 index: currentIndex,
@@ -233,8 +256,8 @@ class _MainLayoutState extends State<MainLayout> {
             _currentIndex = index;
           });
         },
-        backgroundColor: Colors.white,
-        indicatorColor: const Color.fromRGBO(13, 148, 136, 0.12),
+        backgroundColor: AppColors.surface,
+        indicatorColor: AppColors.primary.withValues(alpha: 0.12),
         destinations: navigationItems
             .map(
               (item) => NavigationDestination(
@@ -255,7 +278,6 @@ class _NavigationItem {
   final IconData icon;
   final IconData selectedIcon;
   final Widget screen;
-  final UserRole? minimumRole;
 
   const _NavigationItem({
     required this.title,
@@ -263,6 +285,5 @@ class _NavigationItem {
     required this.icon,
     required this.selectedIcon,
     required this.screen,
-    this.minimumRole,
   });
 }

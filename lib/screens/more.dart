@@ -1,9 +1,14 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../navigation/app_navigation.dart';
 import '../state/app_state.dart';
+import '../theme/app_theme.dart';
+import '../widgets/app_screen.dart';
 import '../widgets/panel.dart';
+import 'daily_report_monitor.dart';
 import 'menu_workspace.dart';
+import 'product_lookup.dart';
 import 'settings.dart';
 import 'touchkey.dart';
 
@@ -13,68 +18,121 @@ class MoreScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final appState = context.watch<AppState>();
+    final canAdmin = appState.hasAdminAccess;
 
     return ListView(
-      padding: const EdgeInsets.all(16),
+      padding: const EdgeInsets.all(AppSpacing.page),
       children: [
         const _MoreHeader(),
-        const SizedBox(height: 16),
+        const SizedBox(height: AppSpacing.section),
         Panel(
-          title: '바로가기',
-          child: appState.hasOperatorAccess
-              ? Column(
-                  children: [
-                    _MoreFeatureTile(
-                      icon: Icons.price_change_outlined,
-                      title: '가격',
-                      subtitle: '상품 선택 후 변경',
-                      badge: 'operator',
-                      onTap: () => Navigator.of(context).push(
-                        MaterialPageRoute(
-                          builder: (_) => const _MoreStandalonePage(
-                            title: '상품',
-                            child: MenuWorkspaceScreen(),
-                          ),
-                        ),
-                      ),
-                    ),
-                    const SizedBox(height: 8),
-                    _MoreFeatureTile(
-                      icon: Icons.grid_view_outlined,
-                      title: '터치키',
-                      subtitle: '표와 배치 확인',
-                      badge: 'operator',
-                      onTap: () => Navigator.of(context).push(
-                        MaterialPageRoute(
-                          builder: (_) => const TouchkeyScreen(),
-                        ),
-                      ),
-                    ),
-                  ],
-                )
-              : const _AccessHint(),
-        ),
-        if (appState.hasAdminAccess) ...[
-          const SizedBox(height: 16),
-          Panel(
-            title: '관리',
-            child: Column(
-              children: [
-                _MoreFeatureTile(
-                  icon: Icons.rocket_launch_outlined,
-                  title: '배포 관리',
-                  subtitle: '배포 상태 확인',
-                  badge: 'admin',
-                  onTap: () => Navigator.of(context).push(
-                    MaterialPageRoute(
-                      builder: (_) => const DeployManagementScreen(),
-                    ),
+          title: '운영 도구',
+          subtitle: '조회와 운영 화면으로 이동합니다.',
+          child: Column(
+            children: [
+              _MoreFeatureTile(
+                icon: Icons.inventory_2_outlined,
+                title: '상품 조회',
+                subtitle: '상품 검색 · 상세 조회',
+                onTap: () => AppNavigation.pushGuarded(
+                  context,
+                  minimumRole: UserRole.viewer,
+                  child: const _MoreStandalonePage(
+                    title: '상품 조회',
+                    child: ProductLookupScreen(),
                   ),
                 ),
-              ],
+              ),
+              const SizedBox(height: AppSpacing.compact),
+              _MoreFeatureTile(
+                icon: Icons.grid_view_outlined,
+                title: '터치키',
+                subtitle: 'POS 표와 배치 확인',
+                badge: 'viewer',
+                onTap: () => AppNavigation.pushGuarded(
+                  context,
+                  minimumRole: UserRole.viewer,
+                  child: const TouchkeyScreen(),
+                ),
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: AppSpacing.control),
+        Panel(
+          title: '계정 및 설정',
+          subtitle: '연결·보안·업데이트 상태',
+          child: _MoreFeatureTile(
+            icon: Icons.settings_outlined,
+            title: '앱 설정',
+            subtitle: '서버 주소 · 캐시 · 비밀번호 · 세션',
+            onTap: () => AppNavigation.pushGuarded(
+              context,
+              minimumRole: UserRole.viewer,
+              child: const _MoreStandalonePage(
+                title: '앱 설정',
+                child: SettingsScreen(),
+              ),
             ),
           ),
-        ],
+        ),
+        const SizedBox(height: AppSpacing.control),
+        Panel(
+          title: '관리자 운영',
+          subtitle: '메뉴·배포·일일보고서 읽기 전용 모니터',
+          child: Column(
+            children: [
+              _MoreFeatureTile(
+                icon: Icons.menu_book_outlined,
+                title: '메뉴 작업대',
+                subtitle:
+                    canAdmin ? '관리자 작업 조회 · 실행 이력' : '관리자 권한에서만 접근할 수 있습니다.',
+                badge: canAdmin ? null : 'admin 필요',
+                onTap: canAdmin
+                    ? () => AppNavigation.pushGuarded(
+                          context,
+                          minimumRole: UserRole.admin,
+                          child: const _MoreStandalonePage(
+                            title: '메뉴 작업대',
+                            child: MenuWorkspaceScreen(),
+                          ),
+                        )
+                    : null,
+              ),
+              const SizedBox(height: AppSpacing.compact),
+              _MoreFeatureTile(
+                icon: Icons.rocket_launch_outlined,
+                title: '배포 관리',
+                subtitle: canAdmin
+                    ? '배포 상태 · 승인 정보 · 실행 로그'
+                    : '관리자 권한에서만 접근할 수 있습니다.',
+                badge: canAdmin ? null : 'admin 필요',
+                onTap: canAdmin
+                    ? () => AppNavigation.pushGuarded(
+                          context,
+                          minimumRole: UserRole.admin,
+                          child: const DeployManagementScreen(),
+                        )
+                    : null,
+              ),
+              const SizedBox(height: AppSpacing.compact),
+              _MoreFeatureTile(
+                icon: Icons.summarize_outlined,
+                title: '일일보고서',
+                subtitle:
+                    canAdmin ? '설정 · 실행 · 감사 상태 조회' : '관리자 권한에서만 접근할 수 있습니다.',
+                badge: canAdmin ? null : 'admin 필요',
+                onTap: canAdmin
+                    ? () => AppNavigation.pushGuarded(
+                          context,
+                          minimumRole: UserRole.admin,
+                          child: const DailyReportMonitorScreen(),
+                        )
+                    : null,
+              ),
+            ],
+          ),
+        ),
       ],
     );
   }
@@ -91,16 +149,7 @@ class _MoreStandalonePage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        title: Text(title, style: const TextStyle(fontWeight: FontWeight.w700)),
-        bottom: PreferredSize(
-          preferredSize: const Size.fromHeight(1),
-          child: Container(height: 1, color: const Color(0xFFE2E8F0)),
-        ),
-      ),
-      body: SafeArea(child: child),
-    );
+    return AppScreen(title: title, body: child);
   }
 }
 
@@ -112,17 +161,39 @@ class _MoreHeader extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: const Color(0xFFE2E8F0)),
+        color: AppColors.surface,
+        borderRadius: BorderRadius.circular(AppRadii.card),
+        border: Border.all(color: AppColors.border),
       ),
-      child: const Text(
-        '도구',
-        style: TextStyle(
-          fontSize: 22,
-          fontWeight: FontWeight.w800,
-          color: Color(0xFF0F172A),
-        ),
+      child: Row(
+        children: [
+          Container(
+            width: 44,
+            height: 44,
+            decoration: BoxDecoration(
+              color: AppColors.primary.withValues(alpha: 0.1),
+              borderRadius: BorderRadius.circular(AppRadii.control),
+            ),
+            child: const Icon(
+              Icons.widgets_outlined,
+              color: AppColors.primary,
+            ),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('더보기', style: Theme.of(context).textTheme.titleLarge),
+                const SizedBox(height: 4),
+                Text(
+                  '설정과 권한별 운영 도구를 한 곳에서 확인합니다.',
+                  style: Theme.of(context).textTheme.bodyMedium,
+                ),
+              ],
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -133,7 +204,7 @@ class _MoreFeatureTile extends StatelessWidget {
   final String title;
   final String subtitle;
   final String? badge;
-  final VoidCallback onTap;
+  final VoidCallback? onTap;
 
   const _MoreFeatureTile({
     required this.icon,
@@ -145,18 +216,24 @@ class _MoreFeatureTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final enabled = onTap != null;
     return Card(
-      margin: EdgeInsets.zero,
       child: ListTile(
         onTap: onTap,
+        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
         leading: Container(
           width: 44,
           height: 44,
           decoration: BoxDecoration(
-            color: const Color.fromRGBO(13, 148, 136, 0.10),
-            borderRadius: BorderRadius.circular(10),
+            color: enabled
+                ? AppColors.primary.withValues(alpha: 0.1)
+                : AppColors.surfaceSubtle,
+            borderRadius: BorderRadius.circular(AppRadii.control),
           ),
-          child: Icon(icon, color: const Color(0xFF0D9488)),
+          child: Icon(
+            icon,
+            color: enabled ? AppColors.primary : AppColors.subtle,
+          ),
         ),
         title: Row(
           children: [
@@ -168,57 +245,30 @@ class _MoreFeatureTile extends StatelessWidget {
             ),
             if (badge != null)
               Container(
-                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                 decoration: BoxDecoration(
-                  color: const Color(0xFFF1F5F9),
-                  borderRadius: BorderRadius.circular(4),
+                  color: AppColors.surfaceSubtle,
+                  borderRadius: BorderRadius.circular(AppRadii.pill),
                 ),
                 child: Text(
                   badge!,
                   style: const TextStyle(
                     fontSize: 11,
-                    color: Color(0xFF64748B),
+                    color: AppColors.muted,
+                    fontWeight: FontWeight.w700,
                   ),
                 ),
               ),
           ],
         ),
-        subtitle: Text(subtitle),
-        trailing:
-            const Icon(Icons.chevron_right_outlined, color: Color(0xFF94A3B8)),
-      ),
-    );
-  }
-}
-
-class _AccessHint extends StatelessWidget {
-  const _AccessHint();
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
-        color: const Color(0xFFF8FAFC),
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: const Color(0xFFE2E8F0)),
-      ),
-      child: const Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Icon(Icons.lock_outline, size: 18, color: Color(0xFF64748B)),
-          SizedBox(width: 8),
-          Expanded(
-            child: Text(
-              'operator 이상에서 사용할 수 있습니다.',
-              style: TextStyle(
-                color: Color(0xFF475569),
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-          ),
-        ],
+        subtitle: Padding(
+          padding: const EdgeInsets.only(top: 4),
+          child: Text(subtitle),
+        ),
+        trailing: Icon(
+          enabled ? Icons.chevron_right_outlined : Icons.lock_outline,
+          color: AppColors.subtle,
+        ),
       ),
     );
   }

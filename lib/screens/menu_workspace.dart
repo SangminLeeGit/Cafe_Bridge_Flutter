@@ -3,10 +3,13 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../core/async_request_guard.dart';
 import '../models/api_contracts.dart';
 import '../models/menu_workspace_models.dart';
 import '../services/api.dart';
+import '../services/task_poller.dart';
 import '../state/app_state.dart';
+import '../widgets/access_gate.dart';
 import '../widgets/cache_notice.dart';
 import '../widgets/empty_state.dart';
 import '../widgets/panel.dart';
@@ -203,34 +206,37 @@ class _MenuWorkspaceScreenState extends State<MenuWorkspaceScreen>
 
   @override
   Widget build(BuildContext context) {
-    return Column(
-      children: [
-        TabBar(
-          controller: _tabController,
-          tabs: const [
-            Tab(text: '메뉴 선택'),
-            Tab(text: '작업 목록'),
-          ],
-          labelColor: const Color(0xFF0D9488),
-          unselectedLabelColor: const Color(0xFF64748B),
-          indicatorColor: const Color(0xFF0D9488),
-        ),
-        const Divider(height: 1),
-        Expanded(
-          child: TabBarView(
+    return AccessGate(
+      minimumRole: UserRole.admin,
+      child: Column(
+        children: [
+          TabBar(
             controller: _tabController,
-            children: [
-              _ProductBrowserTab(
-                onPriceChangeRegistered: _onPriceChangeRegistered,
-                onNewItemRegistered: _onPriceChangeRegistered,
-              ),
-              _WorkspaceTab(
-                refreshNotifier: _workspaceRefreshTick,
-              ),
+            tabs: const [
+              Tab(text: '메뉴 선택'),
+              Tab(text: '작업 목록'),
             ],
+            labelColor: const Color(0xFF0D9488),
+            unselectedLabelColor: const Color(0xFF64748B),
+            indicatorColor: const Color(0xFF0D9488),
           ),
-        ),
-      ],
+          const Divider(height: 1),
+          Expanded(
+            child: TabBarView(
+              controller: _tabController,
+              children: [
+                _ProductBrowserTab(
+                  onPriceChangeRegistered: _onPriceChangeRegistered,
+                  onNewItemRegistered: _onPriceChangeRegistered,
+                ),
+                _WorkspaceTab(
+                  refreshNotifier: _workspaceRefreshTick,
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
     );
   }
 }
@@ -270,6 +276,7 @@ class _WorkspaceTabState extends State<_WorkspaceTab>
   String _filterStatus = 'all';
   String _filterKind = 'all';
   String _searchQuery = '';
+  bool _loadAllInFlight = false;
 
   @override
   bool get wantKeepAlive => true;
@@ -495,14 +502,20 @@ class _WorkspaceTabState extends State<_WorkspaceTab>
   }
 
   Future<void> _loadAll({bool force = false}) async {
-    await Future.wait([
-      _loadSnapshot(force: force),
-      _loadValidation(force: force),
-      _loadPriceApplyRuns(force: force),
-      _loadNewItemHistory(force: force),
-      _loadDeleteItemHistory(force: force),
-      _loadBrowserPriceHistory(force: force),
-    ]);
+    if (_loadAllInFlight) return;
+    _loadAllInFlight = true;
+    try {
+      await Future.wait([
+        _loadSnapshot(force: force),
+        _loadValidation(force: force),
+        _loadPriceApplyRuns(force: force),
+        _loadNewItemHistory(force: force),
+        _loadDeleteItemHistory(force: force),
+        _loadBrowserPriceHistory(force: force),
+      ]);
+    } finally {
+      _loadAllInFlight = false;
+    }
   }
 
   List<MenuEntry> get _filteredEntries {
@@ -589,7 +602,7 @@ class _WorkspaceTabState extends State<_WorkspaceTab>
                   ),
                   if (hasReady && appState.hasOperatorAccess) ...[
                     const SizedBox(height: 12),
-                    _ApplyReadyBanner(onApplied: () => _loadAll(force: true)),
+                    const _ApplyReadyBanner(),
                   ],
                   const SizedBox(height: 16),
                   _FilterBar(
@@ -757,8 +770,14 @@ class _WorkspaceTabState extends State<_WorkspaceTab>
   void _showEntryDetail(BuildContext context, MenuEntry entry) {
     Navigator.of(context).push(
       MaterialPageRoute(
-        builder: (_) => MenuEntryDetailScreen(
-            entry: entry, onUpdated: () => _loadAll(force: true)),
+        builder: (_) => AccessGate(
+          minimumRole: UserRole.admin,
+          fullScreen: true,
+          child: MenuEntryDetailScreen(
+            entry: entry,
+            onUpdated: () => _loadAll(force: true),
+          ),
+        ),
       ),
     );
   }
@@ -779,7 +798,7 @@ class _ProductBrowserTab extends StatefulWidget {
 }
 
 class _ProductBrowserTabState extends State<_ProductBrowserTab>
-    with AutomaticKeepAliveClientMixin {
+    with AutomaticKeepAliveClientMixin, AsyncRequestGuard<_ProductBrowserTab> {
   List<_ProductRow> _products = [];
   bool _isLoading = true;
   String _loadError = '';
@@ -808,6 +827,8 @@ class _ProductBrowserTabState extends State<_ProductBrowserTab>
     required String query,
     required bool refresh,
   }) async {
+    if (!mounted) return;
+    final request = beginAsyncRequest();
     final appState = context.read<AppState>();
     final trimmedQuery = query.trim();
     setState(() {
@@ -826,7 +847,7 @@ class _ProductBrowserTabState extends State<_ProductBrowserTab>
         parser: (j) => j,
         cacheTtl: refresh ? Duration.zero : const Duration(minutes: 10),
       );
-      if (!mounted) return;
+      if (!isCurrentAsyncRequest(request)) return;
       final rows = (result.data['rows'] as List? ?? [])
           .map((e) => _ProductRow.fromRegistration(e as Map<String, dynamic>))
           .toList();
@@ -837,7 +858,7 @@ class _ProductBrowserTabState extends State<_ProductBrowserTab>
         _isLoading = false;
       });
     } catch (e) {
-      if (!mounted) return;
+      if (!isCurrentAsyncRequest(request)) return;
       setState(() {
         _loadError = e.toString();
         _isLoading = false;
@@ -873,13 +894,17 @@ class _ProductBrowserTabState extends State<_ProductBrowserTab>
     if (!appState.hasOperatorAccess) return;
     Navigator.of(context).push(
       MaterialPageRoute(
-        builder: (_) => _QuickPriceChangeSheet(
-          product: product,
-          appState: appState,
-          onDirectApplied: () async {
-            await _refreshCurrent();
-            widget.onPriceChangeRegistered?.call();
-          },
+        builder: (_) => AccessGate(
+          minimumRole: UserRole.admin,
+          fullScreen: true,
+          child: _QuickPriceChangeSheet(
+            product: product,
+            appState: appState,
+            onDirectApplied: () async {
+              await _refreshCurrent();
+              widget.onPriceChangeRegistered?.call();
+            },
+          ),
         ),
       ),
     );
@@ -888,15 +913,21 @@ class _ProductBrowserTabState extends State<_ProductBrowserTab>
   void _openProductDetailScreen(_ProductRow product) {
     Navigator.of(context).push(
       MaterialPageRoute(
-        builder: (_) => _ProductRegistrationDetailScreen(
-          product: product,
-          appState: context.read<AppState>(),
-          onQuickPriceChange: _openPriceChangeSheet,
+        builder: (_) => AccessGate(
+          minimumRole: UserRole.admin,
+          fullScreen: true,
+          child: _ProductRegistrationDetailScreen(
+            product: product,
+            appState: context.read<AppState>(),
+            onQuickPriceChange: _openPriceChangeSheet,
+          ),
         ),
       ),
     );
   }
 
+  // Kept for the read-only preview workflow; mobile navigation does not expose it.
+  // ignore: unused_element
   void _openNewItemScreen() {
     final appState = context.read<AppState>();
     if (!appState.hasOperatorAccess) return;
@@ -905,13 +936,17 @@ class _ProductBrowserTabState extends State<_ProductBrowserTab>
         .toList(growable: false));
     Navigator.of(context).push(
       MaterialPageRoute(
-        builder: (_) => _NewMenuAddScreen(
-          appState: appState,
-          categoryCatalog: categoryCatalog,
-          onSubmitted: () {
-            widget.onNewItemRegistered?.call();
-            unawaited(_refreshCurrent());
-          },
+        builder: (_) => AccessGate(
+          minimumRole: UserRole.admin,
+          fullScreen: true,
+          child: _NewMenuAddScreen(
+            appState: appState,
+            categoryCatalog: categoryCatalog,
+            onSubmitted: () {
+              widget.onNewItemRegistered?.call();
+              unawaited(_refreshCurrent());
+            },
+          ),
         ),
       ),
     );
@@ -1003,21 +1038,6 @@ class _ProductBrowserTabState extends State<_ProductBrowserTab>
                       visualDensity: VisualDensity.compact,
                     ),
                   ),
-                  FilledButton.icon(
-                    onPressed: isOperator ? _openNewItemScreen : null,
-                    icon: const Icon(Icons.add_box_outlined, size: 16),
-                    label: const Text(
-                      '+ 신규 메뉴',
-                      style: TextStyle(fontSize: 12),
-                    ),
-                    style: FilledButton.styleFrom(
-                      visualDensity: VisualDensity.compact,
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 12,
-                        vertical: 8,
-                      ),
-                    ),
-                  ),
                 ],
               );
 
@@ -1084,7 +1104,7 @@ class _ProductBrowserTabState extends State<_ProductBrowserTab>
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
             color: const Color(0xFFFFF7ED),
             child: const Text(
-              'operator 이상 권한이 있어야 가격 변경과 신규 메뉴 등록을 실행할 수 있습니다.',
+              'operator 이상 권한이 있어야 가격 변경을 실행할 수 있습니다. 신규 상품 등록은 웹 관리자 화면을 이용하세요.',
               style: TextStyle(fontSize: 12, color: Color(0xFF92400E)),
             ),
           ),
@@ -1131,9 +1151,11 @@ class _NewMenuAddScreenState extends State<_NewMenuAddScreen> {
   String _lastPreviewMessage = '';
   String _lastPreviewSavedCode = '';
   Map<String, dynamic> _lastResolvedCategories = const {};
+  TaskPoller<WorkspaceTaskHistoryEntry>? _poller;
 
   @override
   void dispose() {
+    _poller?.cancel();
     _itemNameController.dispose();
     _itemCodeController.dispose();
     _targetPriceController.dispose();
@@ -1284,20 +1306,36 @@ class _NewMenuAddScreenState extends State<_NewMenuAddScreen> {
   }
 
   Future<WorkspaceTaskHistoryEntry> _pollTask(String taskId) async {
-    for (var attempt = 0; attempt < 80; attempt++) {
-      final response =
-          await widget.appState.fetchMapParsed<WorkspaceTaskHistoryEntry>(
-        '/api/menu-workspace/new-item-apply/$taskId',
-        parser: WorkspaceTaskHistoryEntry.fromJson,
-        cacheTtl: Duration.zero,
+    final poller = TaskPoller<WorkspaceTaskHistoryEntry>(
+      interval: const Duration(seconds: 3),
+      timeout: const Duration(minutes: 6),
+      adapter: TaskStatusAdapter<WorkspaceTaskHistoryEntry>(
+        statusOf: (task) => task.status,
+      ),
+      fetch: () async {
+        final response =
+            await widget.appState.fetchMapParsed<WorkspaceTaskHistoryEntry>(
+          '/api/menu-workspace/new-item-apply/$taskId',
+          parser: WorkspaceTaskHistoryEntry.fromJson,
+          cacheTtl: Duration.zero,
+          allowStaleOnError: false,
+        );
+        return response.data;
+      },
+    );
+    _poller?.cancel();
+    _poller = poller;
+    try {
+      return await poller.poll();
+    } on TaskPollingFailedException<WorkspaceTaskHistoryEntry> catch (error) {
+      return error.value;
+    } on TimeoutException {
+      throw const ApiException(
+        '신규 메뉴 작업 응답이 지연되고 있습니다. 잠시 후 다시 확인해 주세요.',
       );
-      final task = response.data;
-      if (task.status == 'succeeded' || task.status == 'failed') {
-        return task;
-      }
-      await Future.delayed(const Duration(seconds: 3));
+    } finally {
+      if (identical(_poller, poller)) _poller = null;
     }
-    throw const ApiException('신규 메뉴 작업 응답이 지연되고 있습니다. 잠시 후 다시 확인해 주세요.');
   }
 
   Future<void> _submit({required bool execute}) async {
@@ -1389,29 +1427,6 @@ class _NewMenuAddScreenState extends State<_NewMenuAddScreen> {
       if (mounted) {
         setState(() => _isSubmitting = false);
       }
-    }
-  }
-
-  Future<void> _confirmAndSubmit() async {
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (dialogContext) => AlertDialog(
-        title: const Text('신규 메뉴 등록'),
-        content: const Text('입력한 값으로 신규 메뉴를 실제 등록할까요?'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(dialogContext).pop(false),
-            child: const Text('취소'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.of(dialogContext).pop(true),
-            child: const Text('등록'),
-          ),
-        ],
-      ),
-    );
-    if (confirmed == true) {
-      await _submit(execute: true);
     }
   }
 
@@ -1742,26 +1757,21 @@ class _NewMenuAddScreenState extends State<_NewMenuAddScreen> {
         top: false,
         child: Padding(
           padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
-          child: Row(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
             children: [
-              Expanded(
-                child: OutlinedButton(
-                  onPressed: isBusy ? null : () => _submit(execute: false),
-                  style: OutlinedButton.styleFrom(
-                    minimumSize: const Size(double.infinity, 50),
-                  ),
-                  child: Text(isBusy ? '처리 중...' : '미리보기'),
-                ),
+              const Text(
+                '모바일에서는 신규 상품을 실제 등록하지 않습니다. 실제 실행은 웹 관리자 화면을 이용하세요.',
+                textAlign: TextAlign.center,
+                style: TextStyle(color: Color(0xFF92400E)),
               ),
-              const SizedBox(width: 8),
-              Expanded(
-                child: FilledButton(
-                  onPressed: isBusy ? null : _confirmAndSubmit,
-                  style: FilledButton.styleFrom(
-                    minimumSize: const Size(double.infinity, 50),
-                  ),
-                  child: Text(isBusy ? '등록 중...' : '바로 등록'),
+              const SizedBox(height: 8),
+              OutlinedButton(
+                onPressed: isBusy ? null : () => _submit(execute: false),
+                style: OutlinedButton.styleFrom(
+                  minimumSize: const Size(double.infinity, 50),
                 ),
+                child: Text(isBusy ? '처리 중...' : '미리보기'),
               ),
             ],
           ),
@@ -2053,29 +2063,47 @@ class _QuickPriceChangeSheetState extends State<_QuickPriceChangeSheet> {
   final _notesController = TextEditingController();
   bool _isDirectApplying = false;
   String _error = '';
+  TaskPoller<BrowserPriceApplyTask>? _poller;
 
   @override
   void dispose() {
+    _poller?.cancel();
     _targetController.dispose();
     _notesController.dispose();
     super.dispose();
   }
 
   Future<BrowserPriceApplyTask> _pollBrowserApplyTask(String taskId) async {
-    for (var attempt = 0; attempt < 80; attempt++) {
-      final response =
-          await widget.appState.fetchMapParsed<BrowserPriceApplyTask>(
-        '/api/price/browser-apply/$taskId',
-        parser: BrowserPriceApplyTask.fromJson,
-        cacheTtl: Duration.zero,
+    final poller = TaskPoller<BrowserPriceApplyTask>(
+      interval: const Duration(seconds: 3),
+      timeout: const Duration(minutes: 6),
+      adapter: TaskStatusAdapter<BrowserPriceApplyTask>(
+        statusOf: (task) => task.status,
+      ),
+      fetch: () async {
+        final response =
+            await widget.appState.fetchMapParsed<BrowserPriceApplyTask>(
+          '/api/price/browser-apply/$taskId',
+          parser: BrowserPriceApplyTask.fromJson,
+          cacheTtl: Duration.zero,
+          allowStaleOnError: false,
+        );
+        return response.data;
+      },
+    );
+    _poller?.cancel();
+    _poller = poller;
+    try {
+      return await poller.poll();
+    } on TaskPollingFailedException<BrowserPriceApplyTask> catch (error) {
+      return error.value;
+    } on TimeoutException {
+      throw const ApiException(
+        '가격 변경 작업 응답이 지연되고 있습니다. 잠시 후 다시 확인해 주세요.',
       );
-      final task = response.data;
-      if (task.isFinished) {
-        return task;
-      }
-      await Future.delayed(const Duration(seconds: 3));
+    } finally {
+      if (identical(_poller, poller)) _poller = null;
     }
-    throw const ApiException('가격 변경 작업 응답이 지연되고 있습니다. 잠시 후 다시 확인해 주세요.');
   }
 
   Future<void> _applyDirectly() async {
@@ -2101,6 +2129,51 @@ class _QuickPriceChangeSheetState extends State<_QuickPriceChangeSheet> {
 
     try {
       final reason = _notesController.text.trim();
+      final previewStarted = await widget.appState.postJson(
+        '/api/price/browser-apply',
+        body: {
+          'product_code': itemCode,
+          'target_price': targetPrice,
+          'target_column': '판매가',
+          'execute': false,
+          'reason': reason.isNotEmpty ? reason : 'mobile-browser-preview',
+        },
+      );
+      final previewTaskId =
+          AsyncTaskStartResponse.fromJson(previewStarted).taskId.trim();
+      if (previewTaskId.isEmpty) {
+        throw const ApiException('가격 변경 작업 ID를 받지 못했습니다.');
+      }
+      final previewTask = await _pollBrowserApplyTask(previewTaskId);
+      if (previewTask.status != 'succeeded' ||
+          previewTask.result?.status != 'preview') {
+        throw ApiException(
+          previewTask.result?.message.isNotEmpty == true
+              ? previewTask.result!.message
+              : '가격 변경 미리보기에 실패했습니다.',
+        );
+      }
+      if (!mounted) return;
+      final confirmed = await showDialog<bool>(
+        context: context,
+        builder: (dialogContext) => AlertDialog(
+          title: const Text('가격 변경 실행'),
+          content: Text(
+            '${widget.product.itemName}의 판매가를 ${_won(targetPrice)}원으로 실제 반영할까요?',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext, false),
+              child: const Text('취소'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.pop(dialogContext, true),
+              child: const Text('실제 반영'),
+            ),
+          ],
+        ),
+      );
+      if (confirmed != true || !mounted) return;
       final started = await widget.appState.postJson(
         '/api/price/browser-apply',
         body: {
@@ -2115,7 +2188,6 @@ class _QuickPriceChangeSheetState extends State<_QuickPriceChangeSheet> {
       if (taskId.isEmpty) {
         throw const ApiException('가격 변경 작업 ID를 받지 못했습니다.');
       }
-
       final task = await _pollBrowserApplyTask(taskId);
       if (!mounted) return;
 
@@ -2323,119 +2395,11 @@ class MenuEntryDetailScreen extends StatefulWidget {
 }
 
 class _MenuEntryDetailScreenState extends State<MenuEntryDetailScreen> {
-  bool _isDeleting = false;
-
-  Future<WorkspaceTaskHistoryEntry> _pollDeleteTask(String taskId) async {
-    final appState = context.read<AppState>();
-    for (var attempt = 0; attempt < 80; attempt++) {
-      final response = await appState.fetchMapParsed<WorkspaceTaskHistoryEntry>(
-        '/api/menu-workspace/item-delete/$taskId',
-        parser: WorkspaceTaskHistoryEntry.fromJson,
-        cacheTtl: Duration.zero,
-      );
-      final task = response.data;
-      if (task.status == 'succeeded' || task.status == 'failed') {
-        return task;
-      }
-      await Future.delayed(const Duration(seconds: 3));
-    }
-    throw const ApiException('신규 메뉴 삭제 작업 응답이 지연되고 있습니다. 잠시 후 다시 확인해 주세요.');
-  }
-
-  Future<void> _deleteNewItem() async {
-    final entry = widget.entry;
-    final appState = context.read<AppState>();
-    final messenger = ScaffoldMessenger.of(context);
-    final itemCode = entry.itemCode.trim();
-    if (itemCode.isEmpty) {
-      messenger.showSnackBar(const SnackBar(content: Text('삭제할 상품코드가 없습니다.')));
-      return;
-    }
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (dialogContext) => AlertDialog(
-        title: const Text('신규 메뉴 삭제'),
-        content: Text('${entry.itemName} ($itemCode)를 Cafe Bridge에서 삭제할까요?'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(dialogContext).pop(false),
-            child: const Text('취소'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.of(dialogContext).pop(true),
-            style: FilledButton.styleFrom(
-                backgroundColor: const Color(0xFFB91C1C)),
-            child: const Text('삭제'),
-          ),
-        ],
-      ),
-    );
-    if (confirmed != true || !mounted) return;
-
-    setState(() => _isDeleting = true);
-    try {
-      final started = await appState.postJson(
-        '/api/menu-workspace/item-delete',
-        body: {
-          'product_code': itemCode,
-          'execute': true,
-          'reason': 'mobile-workspace-delete:${entry.id}',
-        },
-      );
-      final taskId = AsyncTaskStartResponse.fromJson(started).taskId.trim();
-      if (taskId.isEmpty) {
-        throw const ApiException('신규 메뉴 삭제 작업 ID를 받지 못했습니다.');
-      }
-      final task = await _pollDeleteTask(taskId);
-      final message = task.resultMessage.trim().isNotEmpty
-          ? task.resultMessage.trim()
-          : (task.errorMessage.trim().isNotEmpty
-              ? task.errorMessage.trim()
-              : '삭제 결과를 확인해 주세요.');
-      final success =
-          task.status == 'succeeded' && task.resultStatus == 'deleted';
-      if (!success) {
-        throw ApiException(message);
-      }
-
-      await appState.postJson(
-        '/api/menu-workspace/entries/${entry.id}',
-        method: 'PATCH',
-        body: {'status': 'reviewed', 'item_code': ''},
-      );
-      if (!mounted) return;
-      widget.onUpdated?.call();
-      Navigator.of(context).pop();
-      messenger.showSnackBar(
-        SnackBar(
-          content: Text(message),
-          backgroundColor: const Color(0xFF0D9488),
-          duration: const Duration(seconds: 4),
-        ),
-      );
-    } catch (error) {
-      if (!mounted) return;
-      messenger.showSnackBar(
-        SnackBar(
-            content: Text(error.toString().replaceFirst('Exception: ', ''))),
-      );
-      setState(() => _isDeleting = false);
-      return;
-    }
-    if (mounted) {
-      setState(() => _isDeleting = false);
-    }
-  }
-
   @override
   Widget build(BuildContext context) {
     final e = widget.entry;
     final appState = context.read<AppState>();
     final canEdit = appState.hasOperatorAccess;
-    final canDeleteNewItem = canEdit &&
-        e.kind == 'new_item' &&
-        e.status == 'done' &&
-        e.itemCode.trim().isNotEmpty;
 
     return Scaffold(
       appBar: AppBar(
@@ -2449,17 +2413,6 @@ class _MenuEntryDetailScreenState extends State<MenuEntryDetailScreen> {
             IconButton(
               icon: const Icon(Icons.edit_outlined),
               onPressed: () => _showStatusSheet(context, e),
-            ),
-          if (canDeleteNewItem)
-            IconButton(
-              icon: _isDeleting
-                  ? const SizedBox(
-                      width: 18,
-                      height: 18,
-                      child: CircularProgressIndicator(strokeWidth: 2),
-                    )
-                  : const Icon(Icons.delete_outline),
-              onPressed: _isDeleting ? null : _deleteNewItem,
             ),
         ],
       ),
@@ -2550,12 +2503,16 @@ class _MenuEntryDetailScreenState extends State<MenuEntryDetailScreen> {
     final appState = context.read<AppState>();
     Navigator.of(context).push(
       MaterialPageRoute(
-        builder: (_) => _StatusUpdateSheet(
-          entry: e,
-          appState: appState,
-          onUpdated: () {
-            widget.onUpdated?.call();
-          },
+        builder: (_) => AccessGate(
+          minimumRole: UserRole.admin,
+          fullScreen: true,
+          child: _StatusUpdateSheet(
+            entry: e,
+            appState: appState,
+            onUpdated: () {
+              widget.onUpdated?.call();
+            },
+          ),
         ),
       ),
     );
@@ -2782,7 +2739,10 @@ class _WorkspaceInfoStrip extends StatelessWidget {
         borderRadius: BorderRadius.circular(12),
         border: Border.all(color: border),
       ),
-      child: Row(
+      child: Wrap(
+        spacing: 8,
+        runSpacing: 8,
+        crossAxisAlignment: WrapCrossAlignment.center,
         children: [
           Container(
             width: 8,
@@ -3268,8 +3228,7 @@ class _KindBadge extends StatelessWidget {
 // ─── Apply-Ready Banner ───────────────────────────────────────────────────────
 
 class _ApplyReadyBanner extends StatefulWidget {
-  final VoidCallback onApplied;
-  const _ApplyReadyBanner({required this.onApplied});
+  const _ApplyReadyBanner();
 
   @override
   State<_ApplyReadyBanner> createState() => _ApplyReadyBannerState();
@@ -3324,7 +3283,6 @@ class _ApplyReadyBannerState extends State<_ApplyReadyBanner> {
           duration: const Duration(seconds: 4),
         ));
       }
-      if (execute && applied is int && applied > 0) widget.onApplied();
     } catch (e) {
       if (!mounted) return;
       // ApiException 메시지에서 detail 추출 (e.g. '상품코드와 목표가...')
@@ -3348,51 +3306,33 @@ class _ApplyReadyBannerState extends State<_ApplyReadyBanner> {
         border: Border.all(color: const Color(0xFF0D9488)),
         borderRadius: BorderRadius.circular(10),
       ),
-      child: Row(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Icon(Icons.rocket_launch_outlined,
-              color: Color(0xFF0D9488), size: 20),
-          const SizedBox(width: 8),
-          const Expanded(
-            child: Text('준비완료 항목이 있습니다.',
-                style: TextStyle(
-                    fontWeight: FontWeight.w600, color: Color(0xFF0F172A))),
+          const Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Icon(Icons.rocket_launch_outlined,
+                  color: Color(0xFF0D9488), size: 20),
+              SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  '준비완료 항목이 있습니다. 실제 반영은 웹 관리자 화면을 이용하세요.',
+                  style: TextStyle(
+                    fontWeight: FontWeight.w600,
+                    color: Color(0xFF0F172A),
+                  ),
+                ),
+              ),
+            ],
           ),
+          const SizedBox(height: 8),
           OutlinedButton(
             onPressed: _isApplying ? null : () => _apply(execute: false),
             style: OutlinedButton.styleFrom(
                 padding: const EdgeInsets.symmetric(horizontal: 8),
                 visualDensity: VisualDensity.compact),
             child: const Text('미리보기'),
-          ),
-          const SizedBox(width: 6),
-          FilledButton(
-            onPressed: _isApplying
-                ? null
-                : () async {
-                    final confirmed = await showDialog<bool>(
-                      context: context,
-                      builder: (ctx) => AlertDialog(
-                        title: const Text('가격 적용'),
-                        content: const Text(
-                            '준비완료 상태의 가격변경 항목을 POS에 실제 반영합니다.\n계속하시겠습니까?'),
-                        actions: [
-                          TextButton(
-                              onPressed: () => Navigator.of(ctx).pop(false),
-                              child: const Text('취소')),
-                          FilledButton(
-                              onPressed: () => Navigator.of(ctx).pop(true),
-                              child: const Text('적용')),
-                        ],
-                      ),
-                    );
-                    if (confirmed == true) _apply(execute: true);
-                  },
-            style: FilledButton.styleFrom(
-                padding: const EdgeInsets.symmetric(horizontal: 8),
-                backgroundColor: const Color(0xFF0D9488),
-                visualDensity: VisualDensity.compact),
-            child: Text(_isApplying ? '적용 중...' : 'POS 적용'),
           ),
         ],
       ),

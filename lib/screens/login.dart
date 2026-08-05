@@ -33,6 +33,9 @@ class _LoginScreenState extends State<LoginScreen> {
   }
 
   Future<void> _submit() async {
+    if (_isSubmitting) {
+      return;
+    }
     final appState = context.read<AppState>();
     setState(() {
       _isSubmitting = true;

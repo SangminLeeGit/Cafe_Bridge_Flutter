@@ -22,7 +22,7 @@ class UiFormat {
   }
 
   static String weekday(String date) {
-    final parsed = DateTime.tryParse(date);
+    final parsed = _strictDate(date);
     if (parsed == null) {
       return date;
     }
@@ -46,11 +46,36 @@ class UiFormat {
       return '-';
     }
 
-    final parsed = DateTime.tryParse(value.replaceFirst(' ', 'T'));
+    final normalized = value.trim().replaceFirst(' ', 'T');
+    final parsed = DateTime.tryParse(normalized);
     if (parsed == null) {
       return value;
     }
-    return _dateTimeFormat.format(parsed);
+    if (!normalized.endsWith('Z') &&
+        !RegExp(r'[+-]\d{2}:?\d{2}$').hasMatch(normalized)) {
+      return _dateTimeFormat.format(parsed);
+    }
+    final kst = parsed.toUtc().add(const Duration(hours: 9));
+    return _dateTimeFormat.format(DateTime(
+      kst.year,
+      kst.month,
+      kst.day,
+      kst.hour,
+      kst.minute,
+    ));
+  }
+
+  static DateTime? _strictDate(String value) {
+    final match = RegExp(r'^(\d{4})-(\d{2})-(\d{2})$').firstMatch(value);
+    if (match == null) return null;
+    final year = int.parse(match.group(1)!);
+    final month = int.parse(match.group(2)!);
+    final day = int.parse(match.group(3)!);
+    final parsed = DateTime(year, month, day);
+    if (parsed.year != year || parsed.month != month || parsed.day != day) {
+      return null;
+    }
+    return parsed;
   }
 }
 
@@ -421,10 +446,14 @@ class BillRecord {
   });
 
   String get formattedPayTime {
-    if (payTime.length < 4) {
+    final compact = RegExp(r'^(\d{2})(\d{2})$').firstMatch(payTime);
+    if (compact == null) {
       return payTime;
     }
-    return '${payTime.substring(0, 2)}:${payTime.substring(2, 4)}';
+    final hour = int.parse(compact.group(1)!);
+    final minute = int.parse(compact.group(2)!);
+    if (hour > 23 || minute > 59) return payTime;
+    return '${compact.group(1)}:${compact.group(2)}';
   }
 
   factory BillRecord.fromJson(Map<String, dynamic> json) {
@@ -527,6 +556,8 @@ class SyncTaskStatusData {
   final int loadedCount;
   final String startedAt;
   final String finishedAt;
+  final bool overdue;
+  final String responseError;
 
   const SyncTaskStatusData({
     required this.taskId,
@@ -539,14 +570,18 @@ class SyncTaskStatusData {
     required this.loadedCount,
     required this.startedAt,
     required this.finishedAt,
+    this.overdue = false,
+    this.responseError = '',
   });
 
   bool get isRunning => status == 'pending' || status == 'running';
-  bool get isFinished => status == 'succeeded' || status == 'failed';
+  bool get isFinished =>
+      status == 'succeeded' || status == 'failed' || status == 'partial_failed';
   bool get isSuccessful => status == 'succeeded';
 
   factory SyncTaskStatusData.fromJson(Map<String, dynamic> json) {
     final task = asMap(json['task']);
+    final responseError = asString(json['error']);
     return SyncTaskStatusData(
       taskId: asString(task['task_id']),
       targetDate: asString(task['target_date']),
@@ -558,6 +593,8 @@ class SyncTaskStatusData {
       loadedCount: asInt(task['loaded_count']),
       startedAt: asString(task['started_at']),
       finishedAt: asString(task['finished_at']),
+      overdue: task['overdue'] == true,
+      responseError: responseError,
     );
   }
 }

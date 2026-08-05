@@ -1,12 +1,15 @@
 import 'dart:async';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../core/async_request_guard.dart';
 import '../models/api_contracts.dart';
 import '../models/dashboard_model.dart';
 import '../services/api.dart';
 import '../state/app_state.dart';
+import '../widgets/access_gate.dart';
 import '../widgets/app_update_banner.dart';
 import '../widgets/responsive_wrap_grid.dart';
 
@@ -17,7 +20,8 @@ class SettingsScreen extends StatefulWidget {
   State<SettingsScreen> createState() => _SettingsScreenState();
 }
 
-class _SettingsScreenState extends State<SettingsScreen> {
+class _SettingsScreenState extends State<SettingsScreen>
+    with AsyncRequestGuard<SettingsScreen> {
   late final TextEditingController _controller;
   bool _isChecking = false;
   bool _statusOk = false;
@@ -58,25 +62,44 @@ class _SettingsScreenState extends State<SettingsScreen> {
     super.dispose();
   }
 
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final apiBaseUrl = context.read<AppState>().apiBaseUrl;
+    if (_lastSyncedApiBaseUrl == apiBaseUrl) {
+      return;
+    }
+    _lastSyncedApiBaseUrl = apiBaseUrl;
+    if (_controller.text != apiBaseUrl) {
+      _controller.value = TextEditingValue(
+        text: apiBaseUrl,
+        selection: TextSelection.collapsed(offset: apiBaseUrl.length),
+      );
+    }
+  }
+
   Future<void> _checkConnection() async {
-    final baseUrl = ApiService.normalizeBaseUrl(_controller.text);
+    if (!mounted) return;
+    final request = beginAsyncRequest();
     setState(() {
       _isChecking = true;
       _statusMessage = '';
     });
 
     try {
-      final response = await ApiService.fetchJson(baseUrl, '/healthz');
-      if (!mounted) {
+      final isHealthy = await context.read<AppState>().checkConnection(
+            _controller.text,
+          );
+      if (!isCurrentAsyncRequest(request)) {
         return;
       }
       setState(() {
-        _statusOk = response.data['ok'] == true;
+        _statusOk = isHealthy;
         _statusMessage = _statusOk ? '백엔드 연결 성공' : '헬스체크 응답이 비정상입니다.';
         _isChecking = false;
       });
     } catch (error) {
-      if (!mounted) {
+      if (!isCurrentAsyncRequest(request)) {
         return;
       }
       setState(() {
@@ -90,10 +113,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
   @override
   Widget build(BuildContext context) {
     final appState = context.watch<AppState>();
-    if (_lastSyncedApiBaseUrl != appState.apiBaseUrl) {
-      _lastSyncedApiBaseUrl = appState.apiBaseUrl;
-      _controller.text = appState.apiBaseUrl;
-    }
+    final canEditServer = kDebugMode || appState.hasAdminAccess;
 
     return ListView(
       padding: const EdgeInsets.all(16),
@@ -122,6 +142,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
         const SizedBox(height: 12),
         TextField(
           controller: _controller,
+          readOnly: !canEditServer,
           decoration: const InputDecoration(
             border: OutlineInputBorder(),
             hintText: 'https://pos.cafe-bridge.org',
@@ -132,40 +153,54 @@ class _SettingsScreenState extends State<SettingsScreen> {
           children: [
             Expanded(
               child: FilledButton(
-                onPressed: () async {
-                  final appState = context.read<AppState>();
-                  final messenger = ScaffoldMessenger.of(context);
+                onPressed: !canEditServer
+                    ? null
+                    : () async {
+                        final appState = context.read<AppState>();
+                        final messenger = ScaffoldMessenger.of(context);
 
-                  await appState.updateApiBaseUrl(_controller.text);
-                  if (!context.mounted) {
-                    return;
-                  }
-                  messenger.showSnackBar(
-                    const SnackBar(content: Text('서버 주소를 저장하고 적용했습니다.')),
-                  );
-                },
+                        try {
+                          await appState.updateApiBaseUrl(_controller.text);
+                          if (!context.mounted) {
+                            return;
+                          }
+                          messenger.showSnackBar(
+                            const SnackBar(
+                                content: Text('서버 주소를 저장하고 적용했습니다.')),
+                          );
+                        } on FormatException catch (error) {
+                          if (!context.mounted) {
+                            return;
+                          }
+                          messenger.showSnackBar(
+                            SnackBar(content: Text(error.message)),
+                          );
+                        }
+                      },
                 child: const Text('적용'),
               ),
             ),
             const SizedBox(width: 12),
             Expanded(
               child: OutlinedButton(
-                onPressed: () async {
-                  final appState = context.read<AppState>();
-                  final messenger = ScaffoldMessenger.of(context);
+                onPressed: !canEditServer
+                    ? null
+                    : () async {
+                        final appState = context.read<AppState>();
+                        final messenger = ScaffoldMessenger.of(context);
 
-                  await appState.resetApiBaseUrl();
-                  if (!context.mounted) {
-                    return;
-                  }
-                  setState(() {
-                    _statusMessage = '';
-                  });
-                  messenger.showSnackBar(
-                    const SnackBar(
-                        content: Text('기본 서버 주소로 되돌리고 저장값을 삭제했습니다.')),
-                  );
-                },
+                        await appState.resetApiBaseUrl();
+                        if (!context.mounted) {
+                          return;
+                        }
+                        setState(() {
+                          _statusMessage = '';
+                        });
+                        messenger.showSnackBar(
+                          const SnackBar(
+                              content: Text('기본 서버 주소로 되돌리고 저장값을 삭제했습니다.')),
+                        );
+                      },
                 child: const Text('기본값'),
               ),
             ),
@@ -173,10 +208,17 @@ class _SettingsScreenState extends State<SettingsScreen> {
         ),
         const SizedBox(height: 12),
         OutlinedButton.icon(
-          onPressed: _isChecking ? null : _checkConnection,
+          onPressed: _isChecking || !canEditServer ? null : _checkConnection,
           icon: const Icon(Icons.health_and_safety_outlined),
           label: Text(_isChecking ? '확인 중...' : '연결 테스트'),
         ),
+        if (!canEditServer) ...[
+          const SizedBox(height: 8),
+          const Text(
+            '운영 서버 주소 변경은 admin 또는 디버그 빌드에서만 가능합니다.',
+            style: TextStyle(color: Color(0xFF64748B)),
+          ),
+        ],
         if (_statusMessage.isNotEmpty) ...[
           const SizedBox(height: 10),
           Text(
@@ -516,7 +558,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
         ),
         _buildInfoRow(
           '오늘 날짜',
-          UiFormat.weekday(ApiService.formatDate(DateTime.now())),
+          UiFormat.weekday(ApiService.formatDate(ApiService.kstNow())),
         ),
         if (appState.hasAdminAccess) ...[
           const SizedBox(height: 32),
@@ -535,7 +577,13 @@ class _SettingsScreenState extends State<SettingsScreen> {
           const SizedBox(height: 12),
           OutlinedButton.icon(
             onPressed: () => Navigator.of(context).push(
-              MaterialPageRoute(builder: (_) => const _UserManagementScreen()),
+              MaterialPageRoute(
+                builder: (_) => const AccessGate(
+                  minimumRole: UserRole.admin,
+                  fullScreen: true,
+                  child: _UserManagementScreen(),
+                ),
+              ),
             ),
             icon: const Icon(Icons.manage_accounts_outlined),
             label: const Text('계정 관리'),
@@ -543,7 +591,13 @@ class _SettingsScreenState extends State<SettingsScreen> {
           const SizedBox(height: 8),
           OutlinedButton.icon(
             onPressed: () => Navigator.of(context).push(
-              MaterialPageRoute(builder: (_) => const _AuditLogScreen()),
+              MaterialPageRoute(
+                builder: (_) => const AccessGate(
+                  minimumRole: UserRole.admin,
+                  fullScreen: true,
+                  child: _AuditLogScreen(),
+                ),
+              ),
             ),
             icon: const Icon(Icons.history_outlined),
             label: const Text('감사 로그'),
@@ -819,68 +873,6 @@ class _UserManagementScreenState extends State<_UserManagementScreen> {
     }
   }
 
-  Future<void> _editRole(AdminUserContract user) async {
-    final appState = context.read<AppState>();
-    final roles = ['viewer', 'operator', 'admin'];
-    String selected = user.role;
-
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => StatefulBuilder(
-        builder: (ctx, setDialogState) => AlertDialog(
-          title: Text('${user.loginId} 권한 변경'),
-          content: RadioGroup<String>(
-            groupValue: selected,
-            onChanged: (v) {
-              if (v != null) setDialogState(() => selected = v);
-            },
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: roles
-                  .map(
-                    (r) => RadioListTile<String>(
-                      value: r,
-                      title: Text(r),
-                    ),
-                  )
-                  .toList(),
-            ),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.of(ctx).pop(false),
-              child: const Text('취소'),
-            ),
-            FilledButton(
-              onPressed: () => Navigator.of(ctx).pop(true),
-              child: const Text('적용'),
-            ),
-          ],
-        ),
-      ),
-    );
-
-    if (confirmed != true) return;
-
-    try {
-      await appState.postJson(
-        '/api/auth/users/${user.id}',
-        body: {'role': selected},
-        method: 'PATCH',
-      );
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('${user.loginId} 권한이 $selected로 변경되었습니다.')),
-      );
-      _load();
-    } catch (e) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('오류: $e')),
-      );
-    }
-  }
-
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -908,10 +900,27 @@ class _UserManagementScreenState extends State<_UserManagementScreen> {
                   onRefresh: _load,
                   child: ListView.separated(
                     padding: const EdgeInsets.all(16),
-                    itemCount: _users.length,
+                    itemCount: _users.length + 1,
                     separatorBuilder: (_, __) => const SizedBox(height: 8),
                     itemBuilder: (_, i) {
-                      final u = _users[i];
+                      if (i == 0) {
+                        return Container(
+                          padding: const EdgeInsets.all(14),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFFFFF7ED),
+                            border: Border.all(color: const Color(0xFFFED7AA)),
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          child: const Text(
+                            '모바일에서는 계정을 조회만 할 수 있습니다. 생성, 권한 변경, 활성화 변경은 웹 관리자 화면을 이용하세요.',
+                            style: TextStyle(
+                              color: Color(0xFF9A3412),
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        );
+                      }
+                      final u = _users[i - 1];
                       return Card(
                         margin: EdgeInsets.zero,
                         child: ListTile(
@@ -928,11 +937,7 @@ class _UserManagementScreenState extends State<_UserManagementScreen> {
                           subtitle: Text(
                             '${u.role}  ·  ${u.isActive ? '활성' : '비활성'}',
                           ),
-                          trailing: IconButton(
-                            icon: const Icon(Icons.edit_outlined),
-                            onPressed: () => _editRole(u),
-                            tooltip: '권한 변경',
-                          ),
+                          trailing: const Icon(Icons.visibility_outlined),
                         ),
                       );
                     },
@@ -1271,16 +1276,13 @@ class _AdminDeployPanelState extends State<_AdminDeployPanel> {
   _DeployTask? _currentTask;
   _VersionInfo? _versionInfo;
   _AppUpdateMetrics? _metrics;
-  final TextEditingController _reasonController = TextEditingController();
   bool _loading = true;
   bool _refreshing = false;
-  bool _submitting = false;
-  bool _dryRun = false;
-  String _target = 'flutter-apk';
   String _message = '';
   String _error = '';
   String _scopeKey = '';
   Timer? _pollTimer;
+  bool _pollInFlight = false;
 
   @override
   void didChangeDependencies() {
@@ -1301,9 +1303,6 @@ class _AdminDeployPanelState extends State<_AdminDeployPanel> {
           _metrics = null;
           _loading = false;
           _refreshing = false;
-          _submitting = false;
-          _dryRun = false;
-          _target = 'flutter-apk';
           _message = '';
           _error = '';
         });
@@ -1314,13 +1313,12 @@ class _AdminDeployPanelState extends State<_AdminDeployPanel> {
   @override
   void dispose() {
     _stopPolling();
-    _reasonController.dispose();
     super.dispose();
   }
 
   Future<void> _refresh() async {
     final appState = context.read<AppState>();
-    if (!appState.hasAdminAccess) {
+    if (!appState.hasAdminAccess || _refreshing) {
       return;
     }
 
@@ -1448,7 +1446,7 @@ class _AdminDeployPanelState extends State<_AdminDeployPanel> {
       return;
     }
     _pollTimer = Timer.periodic(const Duration(seconds: 2), (_) async {
-      if (!mounted) {
+      if (!mounted || _pollInFlight) {
         return;
       }
       final appState = context.read<AppState>();
@@ -1458,6 +1456,7 @@ class _AdminDeployPanelState extends State<_AdminDeployPanel> {
         _stopPolling();
         return;
       }
+      _pollInFlight = true;
       try {
         final status = await appState.fetchMapParsed<_DeployTask>(
           '/api/deploy/${_currentTask!.taskId}',
@@ -1491,80 +1490,14 @@ class _AdminDeployPanelState extends State<_AdminDeployPanel> {
         }
       } catch (_) {
         _stopPolling();
+      } finally {
+        _pollInFlight = false;
       }
     });
   }
 
   _DeployTask _parseDeployTaskResponse(Map<String, dynamic> json) {
     return _DeployTask.fromJson(asMap(json['task']));
-  }
-
-  Future<void> _startDeploy() async {
-    final appState = context.read<AppState>();
-    final reason = _reasonController.text.trim();
-    if (reason.isEmpty) {
-      setState(() {
-        _message = '';
-        _error = '배포 사유를 입력하세요.';
-      });
-      return;
-    }
-
-    setState(() {
-      _submitting = true;
-      _message = '';
-      _error = '';
-    });
-
-    try {
-      final response = await appState.postJson(
-        '/api/deploy',
-        body: {
-          'target': _target,
-          'reason': reason,
-          'dry_run': _dryRun,
-        },
-      );
-      final started = AsyncTaskStartResponse.fromJson(response);
-      if (started.taskId.trim().isEmpty) {
-        throw const ApiException('배포 작업 ID를 받지 못했습니다.');
-      }
-      if (!mounted) {
-        return;
-      }
-      setState(() {
-        _currentTask = _DeployTask(
-          taskId: started.taskId,
-          target: _target,
-          requestedBy: appState.loginId ?? '',
-          reason: reason,
-          dryRun: _dryRun,
-          status: started.status,
-          currentStep: 'validate',
-          logPath: '',
-          resolvedCommit: '',
-          errorMessage: '',
-        );
-        _reasonController.clear();
-        _message =
-            _dryRun ? '$_target dry-run 배포를 시작했습니다.' : '$_target 배포를 시작했습니다.';
-      });
-      _syncPolling();
-      unawaited(_refresh());
-    } catch (error) {
-      if (!mounted) {
-        return;
-      }
-      setState(() {
-        _error = error.toString().replaceFirst('Exception: ', '');
-      });
-    } finally {
-      if (mounted) {
-        setState(() {
-          _submitting = false;
-        });
-      }
-    }
   }
 
   void _stopPolling() {
@@ -1582,7 +1515,6 @@ class _AdminDeployPanelState extends State<_AdminDeployPanel> {
         _history.where((task) => task.status == 'succeeded').length;
     final failedCount =
         _history.where((task) => task.status == 'failed').length;
-    final deployBusy = _submitting || (currentTask?.isActive ?? false);
 
     return Container(
       width: double.infinity,
@@ -1623,64 +1555,21 @@ class _AdminDeployPanelState extends State<_AdminDeployPanel> {
             style: TextStyle(color: Color(0xFF64748B)),
           ),
           const SizedBox(height: 16),
-          const _SectionTitle('배포 요청'),
-          const SizedBox(height: 8),
-          Column(
-            children: [
-              DropdownButtonFormField<String>(
-                initialValue: _target,
-                decoration: const InputDecoration(
-                  border: OutlineInputBorder(),
-                  labelText: '대상',
-                ),
-                items: const [
-                  DropdownMenuItem(
-                    value: 'flutter-apk',
-                    child: Text('flutter-apk'),
-                  ),
-                ],
-                onChanged: deployBusy
-                    ? null
-                    : (value) {
-                        if (value == null) {
-                          return;
-                        }
-                        setState(() {
-                          _target = value;
-                        });
-                      },
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(14),
+            decoration: BoxDecoration(
+              color: const Color(0xFFFFF7ED),
+              border: Border.all(color: const Color(0xFFFED7AA)),
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: const Text(
+              '모바일은 배포 상태를 조회하는 모니터입니다. 새 배포 실행은 웹 관리자 화면을 이용하세요.',
+              style: TextStyle(
+                color: Color(0xFF9A3412),
+                fontWeight: FontWeight.w600,
               ),
-              const SizedBox(height: 12),
-              TextField(
-                controller: _reasonController,
-                enabled: !deployBusy,
-                maxLength: 300,
-                decoration: const InputDecoration(
-                  border: OutlineInputBorder(),
-                  labelText: '배포 사유',
-                ),
-              ),
-              SwitchListTile(
-                contentPadding: EdgeInsets.zero,
-                title: const Text('dry-run'),
-                value: _dryRun,
-                onChanged: deployBusy
-                    ? null
-                    : (value) {
-                        setState(() {
-                          _dryRun = value;
-                        });
-                      },
-              ),
-              FilledButton.icon(
-                onPressed: deployBusy ? null : _startDeploy,
-                icon: const Icon(Icons.rocket_launch_outlined),
-                label: Text(deployBusy ? '실행 중...' : '빌드 요청'),
-                style: FilledButton.styleFrom(
-                  minimumSize: const Size(double.infinity, 48),
-                ),
-              ),
-            ],
+            ),
           ),
           if (_message.isNotEmpty) ...[
             const SizedBox(height: 12),

@@ -1,232 +1,92 @@
-# Cafe Bridge Flutter 모바일 앱 — 기능 순차 구현 계획서
+# Cafe Bridge Android 백엔드 정합화 구현 현황
 
-> 작성일: 2026-04-05  
-> 기준: FastAPI 백엔드 (`cafe_bridge_collector/web/app.py`) 전체 엔드포인트 기준
-> 환경: 주 접속 단말 = 모바일 (Android/iOS), Flutter 3.x / Provider
+기준일: 2026-07-24
 
----
+백엔드 `/home/sangmin/cafe-bridge`의 현재 FastAPI 계약을 읽기 전용으로 조사하고 Android 권장 범위를 구현했습니다.
 
-## 현재 구현 상태 (기준선)
+## 완료 페이즈
 
-| 화면 | 상태 | 매핑 엔드포인트 |
-|------|------|----------------|
-| 로그인 | ✅ 완료 | `/api/auth/login`, `/api/auth/session` |
-| 대시보드 | ✅ 완료 | `/api/dashboard`, `/api/sidebar` |
-| 분석 허브 (7탭) | ✅ 완료 | `/api/monthly`, `/api/items`, `/api/hours`, `/api/weekday`, `/api/payments`, `/api/compare`, `/api/trends` |
-| 동기화 | ✅ 완료 | `/api/sync`, `/api/sync/runs`, `/api/sync/{taskId}` |
-| 설정 | ✅ 완료 | `/api/auth/logout`, `/api/auth/change-password`, `/healthz` |
+| 페이즈 | 상태 | 결과 |
+| --- | --- | --- |
+| 계약·역할 기준선 | 완료 | unknown role fail-closed, route `AccessGate`, 5탭 내비게이션 |
+| 캐시·데이터 보안 | 완료 | 민감 endpoint 저장 차단, transport 오류만 stale fallback, pruning |
+| 인증·세션·API | 완료 | remember 정책, keepalive 역할 갱신, 204·timeout·ClientException 지원 |
+| 비동기 작업 | 완료 | 공통 순차 poller, terminal status, 취소, active task 복원 |
+| 분석 | 완료 | 결제수단 전체, forecast 일별 예측, KST, 날짜 검증, 고단가 표현 |
+| Workforce | 완료 | 시프트·프리셋 CRUD, 급여 계산·미리보기, 안전한 employee PATCH |
+| 상품·가격 | 완료 | viewer 공개 조회 API, preview 필수 가격 적용, admin workspace 분리 |
+| 원가 | 완료 | 조회와 저장 없는 레시피 계산, admin 기준정보 변경 제외 |
+| 사이니지·터치키 | 완료 | unknown field 보존, 제한 편집, dirty 이탈 보호, viewer 터치키 조회 |
+| 관리자 | 완료 | 사용자·감사·배포·일일보고서 읽기 전용 모니터 |
+| APK 업데이트 | 완료 | 취소, metadata 재조회, unknown-source 권한, native APK 검증 |
+| UX·접근성 | 완료 | 한국어 locale, KST, 반응형 액션, 터치 영역, 기본 요약 펼침 |
+| 테스트·문서 | 완료 | API·캐시·권한·업데이트·Workforce·분석·모니터 테스트 및 문서화 |
 
-**미구현 백엔드 기능 그룹 (아래 구현 계획 대상):**
+## 웹 유지 범위
 
-- 심화 분석 (메뉴엔지니어링 / 예측 / ABC)  
-- 원가 관리 (Costing)  
-- 메뉴 워크스페이스 (Menu Workspace)  
-- 인력·근태 관리 (Workforce)  
-- 상품 등록 조회 (Product Registration)  
-- 관리자 기능 (사용자 관리 / 감사 로그)
+- 사용자 생성, 권한·활성 변경, 비밀번호 초기화
+- 배포 및 CI 실행
+- 일일보고서 설정, 연동 테스트, 수동 실행, 재생성·재전송
+- 신규상품 실제 등록·삭제와 공식 CSV/XLSX import/export
+- 터치키 위치 편집과 EasyPOS 실제 반영
+- 원가 재료·레시피 기준정보 저장
+- 사이니지 카테고리·레이아웃 구조 변경
 
----
+## 백엔드 제약 대응
 
-## 구현 원칙
+| 제약 | Android 대응 |
+| --- | --- |
+| Employee PATCH가 unset 필드를 `null`로 변환 | 최신 상세 기반 전체 payload 전송 |
+| bulk shift 중복 조건에 employee ID 누락 | bulk 미사용, 단건 생성 |
+| `tax_rule.apply_unit` 미반영 | 모바일 설정에서 제외 |
+| linked employee self-service API 없음 | 개인 직원 계정 기능으로 노출하지 않음 |
+| async task 응답 형식·상태 불일치 | 공통 adapter와 terminal status 집합 사용 |
+| 앱 강제 업데이트 필드 미제공 | 권장 업데이트로 처리하고 로컬 build 재검증 |
 
-1. **모바일 UX 우선** — 긴 폼 대신 카드/모달/바텀시트 활용; 테이블형 데이터는 수평 스크롤
-2. **역할 접근제어 유지** — `AppState.canAccess()` / `UserRole` 체계 그대로 적용
-3. **기존 패턴 재사용** — `fetchMapParsed` / `CacheNotice` / `EmptyState` / `Panel` / `StatCard`
-4. **단계별 독립성** — 각 Phase는 이전 Phase에 코드 의존성 없이 병렬 착수 가능한 단위로 분리
-5. **캐시 보안** — 민감 데이터(원가, 급여)는 `SharedPreferences` 디스크 캐시 비활성화
+세부 완료 내역과 검증 결과는 `ANDROID_BACKEND_ALIGNMENT_COMPLETION_REPORT_2026-07-24.md`에 기록했습니다.
 
----
+## design 브랜치 Android UI 통합 계획
 
-## Phase 1 — 심화 분석 탭 확장 (분석 허브 내 추가 탭)
+기준일: 2026-08-05
 
-> **우선순위: 최고** — 기존 `AnalyticsScreen` 탭바 확장이므로 신규 화면 불필요. 순수 UI 추가.
+### 1. 비교 기준과 발견사항
 
-### 추가 탭 3개
+- 현재 작업 브랜치 기준 커밋은 `main`의 `4a1960a`이며, 로컬에는 없던 `design` 브랜치를 `origin/design`의 `a745913`으로 읽기 전용 fetch했습니다.
+- 디자인 브랜치는 `docs/cafe-bridge-screen-map.md`, 공통 테마, 공통 전체 화면 shell, `main.dart`, 분석·업무·더보기 허브와 공통 위젯을 변경합니다.
+- `design`과 기준 커밋 사이에는 12개 파일, 830줄 추가와 251줄 삭제가 있으며 API 서비스, 응답 모델, 권한 모델, 작업 poller는 변경하지 않습니다.
+- 현재 작업 트리는 이미 인증·캐시·비동기 작업·상품 조회·가격 반영·일일보고서 기능을 추가한 미커밋 상태입니다. 이 변경을 덮어쓰거나 브랜치 병합으로 대체하지 않습니다.
 
-| 탭 이름 | 엔드포인트 | 역할 |
-|---------|-----------|------|
-| 메뉴 엔지니어링 | `GET /api/menu-engineering?from=&to=` | viewer |
-| 수요 예측 | `GET /api/forecast?from=&to=` | viewer |
-| ABC 분석 | `GET /api/abc?from=&to=` | viewer |
+### 2. 선별 적용 결정
 
-### 작업 목록
+| 디자인 의도 | Android/현재 계약에 맞춘 적용 |
+| --- | --- |
+| 5개 핵심 영역과 계층형 분석 | 기존 `IndexedStack`과 5개 하단 탭을 보존하고 제목을 `인사이트`·`업무`로 정리합니다. 분석 10개 기능은 개요·매출 흐름·메뉴 인사이트 3개 상위 탭과 내부 탭으로 재구성하며 endpoint와 모델은 유지합니다. |
+| 업무 허브에서 조회·실행 분리 | 상품 조회는 `viewer`, 원가·가격 반영·메뉴판·동기화는 `operator`, 메뉴 작업대는 `admin` 정책을 유지합니다. 권한 없는 항목도 잠금 카드와 필요한 역할을 보여주되 라우팅과 API 호출은 차단합니다. |
+| 더보기의 도구/관리 구조 | 터치키와 설정은 `viewer`, 일일보고서·메뉴 작업대·배포 관리는 `admin`으로 유지하고 운영 도구·계정 설정·관리자 운영 섹션으로 재배치합니다. 기존 guarded route와 Android 뒤로 가기 동작을 보존합니다. |
+| 전역 토큰과 화면 shell | 기존 코드가 사용하는 `AppColors` 이름을 유지한 채 디자인의 색상·간격·반지름·상태 토큰을 확장합니다. `AppScreen`을 push된 운영 화면에 적용하고 Material 3 버튼·입력·탭·카드·SnackBar 규칙을 전역화합니다. |
+| 상태 표현 | 초기화에는 공통 `LoadingState`를 사용하고, 기존 `EmptyState`의 재시도·빈 데이터 흐름을 보존하면서 아이콘·오류 강조를 확장합니다. 캐시·업데이트·패널·통계 카드도 토큰을 사용합니다. |
+| 웹 전용 요소 배제 | 마우스 hover, 데스크톱 전용 sidebar/table 레이아웃은 복제하지 않습니다. Android safe area, 44dp 이상 터치 영역, 스크롤 가능한 계층형 탭, 반응형 카드 grid, 시스템 뒤로 가기를 사용합니다. |
 
-1. `lib/models/analytics_models.dart` — `MenuEngineeringData`, `ForecastData`, `AbcData` 모델 추가
-2. `lib/screens/analytics.dart` — `DefaultTabController.length` 7 → 10, 탭 3개 추가
-3. 각 탭 위젯:
-   - **메뉴 엔지니어링**: 4분면 구분 리스트 (Star/Puzzle/Plowhorse/Dog) + 요약 카운트 카드
-   - **수요 예측**: 품목별 예측 매출액 리스트, 트렌드 배지
-   - **ABC 분석**: A/B/C 등급별 아코디언 리스트 + 파레토 요약 카드
+### 3. 구현 순서
 
-### 예상 공수: 3~4일
+1. `lib/theme/app_theme.dart`에 디자인 토큰과 Material 3 상태·텍스트 스타일을 현재 컨벤션으로 통합합니다.
+2. `lib/widgets/app_screen.dart`를 추가하고 전체 화면 shell 및 권한/네트워크/로딩 상태 컴포넌트를 공통화합니다.
+3. `main.dart`, `operations.dart`, `more.dart`를 허브·잠금 상태·safe area·뒤로 가기 기준으로 조정합니다.
+4. `analytics.dart`의 10개 분석 기능을 3개 상위 탭의 중첩 탭으로 재구성하고 각 기존 로딩·빈 상태·오류·재시도를 그대로 연결합니다.
+5. `panel.dart`, `stat_card.dart`, `empty_state.dart`, `cache_notice.dart`, `app_update_banner.dart`의 하드코딩 색상과 조작 영역을 공통 토큰으로 교체합니다.
+6. `docs/cafe-bridge-screen-map.md`에 실제 적용된 화면 맵과 권한·상태·백엔드 보존 범위를 기록합니다.
+7. 위젯/기존 테스트를 보강해 탭 구조, 권한 잠금, shell 뒤로 가기와 공통 상태 표시를 검증합니다.
 
----
+### 4. API 및 회귀 보호 기준
 
-## Phase 2 — 원가 관리 화면 (신규 하단 네비게이션 탭)
+- API path, query/body key, JSON parser, 응답 모델, 캐시 정책은 변경하지 않습니다.
+- `AccessGate`와 `AppNavigation.pushGuarded`를 통해 UI 잠금과 서버 권한 검증을 이중으로 유지합니다.
+- 가격 변경·동기화·메뉴판의 진행 중/실패/재시도 상태와 active task 복원을 유지합니다.
+- 테스트는 기존 기능의 login, dashboard, analytics model, cache, task poller, workforce, signage, sync 흐름을 함께 실행합니다.
 
-> **우선순위: 높음** — 점주 의사결정에 직결되는 핵심 기능. viewer 이상 접근 가능.
+### 5. 완료 검증 기준
 
-### 신규 네비게이션 항목
-
-```
-아이콘: Icons.calculate_outlined / Icons.calculate
-라벨: 원가
-title: 원가 관리
-minimumRole: viewer
-```
-
-### 하위 화면 구조 (탭 또는 드릴다운)
-
-```
-원가 관리 (CostingScreen)
-├── 대시보드 탭       GET /api/costing/dashboard?limit=
-├── 재료 관리 탭      GET/POST/PATCH /api/costing/ingredients
-│   └── 재료 상세     GET /api/costing/ingredients/{id}/prices
-│                     POST /api/costing/ingredients/{id}/prices
-└── 레시피 탭         GET/POST/PATCH/DELETE /api/costing/recipes
-    └── 레시피 계산   POST /api/costing/calculate
-```
-
-### 작업 목록
-
-1. `lib/models/costing_models.dart` — `CostingDashboard`, `Ingredient`, `IngredientPrice`, `Recipe`, `RecipeCalculateResult` 모델
-2. `lib/screens/costing.dart` — 3탭 `DefaultTabController`
-3. 재료 탭: 리스트 + 우측 상단 FAB로 신규 추가 (모달 바텀시트), 스와이프로 편집
-4. 레시피 탭: 카드형 리스트, "계산하기" 버튼 → 결과 모달
-5. `main.dart` — `_buildNavigationItems`에 `CostingScreen` 항목 추가
-6. **보안**: 레시피 원가 데이터는 캐시 저장 제외 (`cacheKey: null`)
-
-### 예상 공수: 5~7일
-
----
-
-## Phase 3 — 메뉴 워크스페이스 화면 (신규 하단 네비게이션 탭)
-
-> **우선순위: 높음** — 상품 정보 관리 및 가격 변경의 핵심. admin 기능 포함.
-
-### 신규 네비게이션 항목
-
-```
-아이콘: Icons.menu_book_outlined / Icons.menu_book
-라벨: 메뉴
-title: 메뉴 워크스페이스
-minimumRole: viewer (조회), operator (가격변경), admin (신규등록)
-```
-
-### 하위 화면 구조
-
-```
-메뉴 워크스페이스 (MenuWorkspaceScreen)
-├── 메뉴 목록         GET /api/menu-workspace
-│   ├── 검색/필터
-│   ├── 항목 상세
-│   │   └── 편집     PATCH /api/menu-workspace/entries/{entry_id}      [operator]
-│   ├── 상태 일괄변경  POST /api/menu-workspace/bulk-status             [operator]
-│   └── 신규 항목     POST /api/menu-workspace/new-item                 [admin]
-├── 가격 변경         POST /api/menu-workspace/price-change             [operator]
-│   └── 적용 실행     POST /api/menu-workspace/price-apply             [operator]
-│   └── 실행 이력     GET /api/menu-workspace/price-apply-runs
-├── 상품 등록 조회    GET /api/products/registration                    [viewer]
-│   └── 상품 상세     GET /api/products/registration/{code}
-└── 매장 프로필       GET/PATCH /api/menu-workspace/store-profile        [admin]
-```
-
-### 작업 목록
-
-1. `lib/models/menu_workspace_models.dart` — `MenuEntry`, `StoreProfile`, `PriceApplyRun`, `ProductRegistrationRow` 모델
-2. `lib/screens/menu_workspace.dart` — 탭 기반 메인 화면
-3. 메뉴 목록: `ListView.separated` + 검색바 + 카테고리 필터 칩
-4. 상품등록 탭: 검색으로 조회, 간략 카드 표시
-5. 가격 변경: 변경 대상 리스트 확인 → 실행 확인 다이얼로그 → 진행 상태 폴링
-6. **역할 게이팅**: 편집/삭제/신규 버튼은 `appState.canAccess()` 조건부 렌더링
-
-### 예상 공수: 7~10일
-
----
-
-## Phase 4 — 인력·근태 관리 화면 (신규 하단 네비게이션 탭)
-
-> **우선순위: 중간** — 구조가 가장 복잡함. 모바일 UX 설계에 공을 들여야 함.
-
-### 신규 네비게이션 항목
-
-```
-아이콘: Icons.people_outline / Icons.people
-라벨: 인력
-title: 인력 관리
-minimumRole: operator
-```
-
-### 하위 화면 구조
-
-```
-인력 관리 (WorkforceScreen)
-├── 근무 캘린더       GET /api/workforce/calendar?year=&month=
-│   └── 날짜 탭      POST /api/workforce/shifts (시프트 등록)
-├── 직원 목록         GET /api/workforce/employees
-│   ├── 직원 추가     POST /api/workforce/employees
-│   ├── 직원 수정     PATCH /api/workforce/employees/{id}
-│   └── 급여 미리보기  POST /api/workforce/employees/{id}/pay-preview
-├── 근무지 관리        GET/POST/PATCH/DELETE /api/workforce/workplaces
-├── 시프트 프리셋      GET/POST/PATCH/DELETE /api/workforce/presets
-├── 급여 명세         GET /api/workforce/payslips?year=&month=
-│   └── 급여 계산     POST /api/workforce/payslips/calculate
-└── 대시보드 요약     GET /api/workforce/dashboard
-```
-
-### 작업 목록
-
-1. `lib/models/workforce_models.dart` — `Employee`, `Shift`, `Workplace`, `ShiftPreset`, `Payslip`, `WorkforceDashboard` 모델
-2. `lib/screens/workforce.dart` — BottomNavigationBar 내부 탭 또는 Drawer 방식
-3. 캘린더: `table_calendar` 패키지 도입 또는 커스텀 월간 그리드
-4. 급여 계산: 기간 선택 → 미리보기 시트 → 확정 저장
-5. **보안**: 급여 관련 모든 응답은 인메모리만 유지, SharedPreferences 캐시 금지
-6. `pubspec.yaml` — `table_calendar` 패키지 추가
-
-### 예상 공수: 10~14일
-
----
-
-## Phase 5 — 관리자 기능 (설정 화면 확장)
-
-> **우선순위: 낮음** — admin 전용. 기존 SettingsScreen에 섹션 추가.
-
-### 추가 섹션 (SettingsScreen 내 조건부 렌더)
-
-| 섹션 | 엔드포인트 | 역할 |
-|------|-----------|------|
-| 사용자 목록 및 역할 편집 | `GET /api/auth/users`, `POST`, `PATCH` | admin |
-| 감사 로그 | `GET /api/auth/audit-logs` | admin |
-
-### 작업 목록
-
-1. `lib/screens/settings.dart` — `appState.isAdmin` 조건부 "관리자" 섹션 삽입
-2. 사용자 관리: 리스트 + 역할 드롭다운 인라인 편집 + 비밀번호 초기화
-3. 감사 로그: 타임스탬프·액션·사용자 컬럼의 스크롤 리스트 (페이지네이션)
-
-### 예상 공수: 3~4일
-
----
-
-## 전체 로드맵 요약
-
-```
-Phase 1  심화 분석 탭 확장        ████░░░░░░░░   3~4일    viewer
-Phase 2  원가 관리 화면            ████████░░░░   5~7일    viewer+
-Phase 3  메뉴 워크스페이스          ████████████   7~10일   viewer / operator / admin
-Phase 4  인력·근태 관리             ████████████   10~14일  operator+
-Phase 5  관리자 설정 확장           ████░░░░░░░░   3~4일    admin
-```
-
-**총 예상 공수: 28~39일 (1인 기준)**
-
----
-
-## 공통 사전 작업 (Phase 1 착수 전 완료 권장)
-
-| 항목 | 내용 |
-|------|------|
-| Sync 상태값 정합 | Flutter sync UI의 `done/error` → 백엔드 `succeeded/failed` 로 수정 (현재 불일치) |
-| 캐시 보안 분리 | 민감 API 응답을 캐시에서 제외하는 `noCacheRoutes` 목록 `api.dart`에 추가 |
-| 역할 enum 추가 | `UserRole.isAdmin` getter를 `app_state.dart`에 추가 (Phase 3, 5 필요) |
-| 네비게이션 오버플로우 | 하단 탭이 5개 초과 시 NavigationDrawer 또는 NavigationRail로 전환 설계 필요 |
+- `flutter analyze`, `flutter test`, Debug APK build, signing 환경이 없을 때도 가능한 Release APK compile을 실행합니다.
+- Android SDK/에뮬레이터 연결 여부를 확인하되 연결 장치가 없으면 실기기 검증을 가장하지 않고 정적·빌드·테스트 결과만 기록합니다.
+- 변경 diff에서 미사용 import/리소스, debug 출력, 임시 파일, 중복 shell을 확인하고 기존 사용자 변경은 되돌리지 않습니다.
+- 검증 완료 후 의도한 파일만 stage하여 명확한 커밋 메시지로 현재 원격 추적 브랜치에 push합니다.

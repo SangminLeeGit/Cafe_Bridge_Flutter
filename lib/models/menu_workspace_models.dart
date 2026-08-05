@@ -60,8 +60,10 @@ class MenuEntry {
       status: asString(json['status']),
       itemCode: asString(json['item_code']),
       itemName: asString(json['item_name']),
-      currentPrice: json['current_price'] == null ? null : asInt(json['current_price']),
-      targetPrice: json['target_price'] == null ? null : asInt(json['target_price']),
+      currentPrice:
+          json['current_price'] == null ? null : asInt(json['current_price']),
+      targetPrice:
+          json['target_price'] == null ? null : asInt(json['target_price']),
       categoryHint: asString(json['category_hint']),
       majorCategory: asString(json['major_category']),
       middleCategory: asString(json['middle_category']),
@@ -73,7 +75,8 @@ class MenuEntry {
       barcode: asString(json['barcode']),
       description: asString(json['description']),
       costPrice: json['cost_price'] == null ? null : asInt(json['cost_price']),
-      supplyPrice: json['supply_price'] == null ? null : asInt(json['supply_price']),
+      supplyPrice:
+          json['supply_price'] == null ? null : asInt(json['supply_price']),
       notes: asString(json['notes']),
       source: asString(json['source']),
       createdAt: asString(json['created_at']),
@@ -189,7 +192,9 @@ class NewItemValidationIssue {
       entryId: asInt(json['entry_id']),
       itemName: asString(json['item_name']),
       itemCode: asString(json['item_code']),
-      messages: rawMessages is List ? rawMessages.map((v) => v.toString()).toList(growable: false) : const [],
+      messages: rawMessages is List
+          ? rawMessages.map((v) => v.toString()).toList(growable: false)
+          : const [],
     );
   }
 }
@@ -210,7 +215,8 @@ class NewItemValidationDuplicateIssue {
     return NewItemValidationDuplicateIssue(
       field: asString(json['field']),
       value: asString(json['value']),
-      entryIds: rawIds is List ? rawIds.map(asInt).toList(growable: false) : const [],
+      entryIds:
+          rawIds is List ? rawIds.map(asInt).toList(growable: false) : const [],
     );
   }
 }
@@ -243,14 +249,21 @@ class NewItemValidationResponse {
       entryCount: asInt(json['entry_count']),
       issueCount: asInt(json['issue_count']),
       validCount: asInt(json['valid_count']),
-      validEntryIds: rawValidIds is List ? rawValidIds.map(asInt).toList(growable: false) : const [],
+      validEntryIds: rawValidIds is List
+          ? rawValidIds.map(asInt).toList(growable: false)
+          : const [],
       issues: rawIssues is List
-          ? rawIssues.whereType<Map>().map((item) => NewItemValidationIssue.fromJson(Map<String, dynamic>.from(item))).toList(growable: false)
+          ? rawIssues
+              .whereType<Map>()
+              .map((item) => NewItemValidationIssue.fromJson(
+                  Map<String, dynamic>.from(item)))
+              .toList(growable: false)
           : const [],
       duplicateIssues: rawDuplicates is List
           ? rawDuplicates
               .whereType<Map>()
-              .map((item) => NewItemValidationDuplicateIssue.fromJson(Map<String, dynamic>.from(item)))
+              .map((item) => NewItemValidationDuplicateIssue.fromJson(
+                  Map<String, dynamic>.from(item)))
               .toList(growable: false)
           : const [],
     );
@@ -283,6 +296,7 @@ class WorkspaceTaskHistoryEntry {
     if (value == null) return null;
     return asInt(value);
   }
+
   String get resultStatus => asString(result['status']);
   String get resultMessage => asString(result['message']);
   String get savedItemCode {
@@ -290,14 +304,19 @@ class WorkspaceTaskHistoryEntry {
     if (direct.isNotEmpty) return direct;
     return asString(asMap(result['saved_item'])['item_code']).trim();
   }
-  Map<String, dynamic> get resolvedCategories => asMap(result['resolved_categories']);
-  String get displayTitle =>
-      itemName.isNotEmpty ? itemName : (productCode.isNotEmpty ? productCode : taskId);
+
+  Map<String, dynamic> get resolvedCategories =>
+      asMap(result['resolved_categories']);
+  String get displayTitle => itemName.isNotEmpty
+      ? itemName
+      : (productCode.isNotEmpty ? productCode : taskId);
   String get displaySubtitle {
     final pieces = <String>[
       if (itemCode.isNotEmpty) '코드 $itemCode',
-      if (savedItemCode.isNotEmpty && savedItemCode != itemCode) '저장코드 $savedItemCode',
-      if (productCode.isNotEmpty && productCode != itemCode) '상품코드 $productCode',
+      if (savedItemCode.isNotEmpty && savedItemCode != itemCode)
+        '저장코드 $savedItemCode',
+      if (productCode.isNotEmpty && productCode != itemCode)
+        '상품코드 $productCode',
       if (reason.isNotEmpty) reason,
     ];
     return pieces.join(' · ');

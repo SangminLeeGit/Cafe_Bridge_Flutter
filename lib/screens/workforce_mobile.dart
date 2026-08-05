@@ -1,13 +1,16 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../core/async_request_guard.dart';
 import '../models/workforce_models.dart';
+import '../services/api.dart';
 import '../state/app_state.dart';
 import '../widgets/cache_notice.dart';
 import '../widgets/empty_state.dart';
 import '../widgets/panel.dart';
 import '../widgets/responsive_wrap_grid.dart';
 import '../widgets/stat_card.dart';
+import '../widgets/workforce_shift_forms.dart';
 
 class WorkforceScreen extends StatelessWidget {
   const WorkforceScreen({super.key});
@@ -80,7 +83,8 @@ class _DashboardTab extends StatefulWidget {
   State<_DashboardTab> createState() => _DashboardTabState();
 }
 
-class _DashboardTabState extends State<_DashboardTab> {
+class _DashboardTabState extends State<_DashboardTab>
+    with AsyncRequestGuard<_DashboardTab> {
   WorkforceDashboardData? _dashboard;
   List<Workplace> _workplaces = const [];
   bool _loading = true;
@@ -95,6 +99,8 @@ class _DashboardTabState extends State<_DashboardTab> {
   }
 
   Future<void> _load() async {
+    if (!mounted) return;
+    final request = beginAsyncRequest();
     final appState = context.read<AppState>();
     setState(() {
       _loading = true;
@@ -105,7 +111,8 @@ class _DashboardTabState extends State<_DashboardTab> {
           await appState.fetchMapParsed<WorkforceDashboardData>(
         '/api/workforce/dashboard',
         parser: WorkforceDashboardData.fromJson,
-        cacheTtl: const Duration(minutes: 10),
+        cacheTtl: Duration.zero,
+        allowStaleOnError: false,
       );
       final workplacesResponse = await appState.fetchMapParsed<List<Workplace>>(
         '/api/workforce/workplaces',
@@ -118,9 +125,10 @@ class _DashboardTabState extends State<_DashboardTab> {
                   (item) => Workplace.fromJson(Map<String, dynamic>.from(item)))
               .toList(growable: false);
         },
-        cacheTtl: const Duration(minutes: 10),
+        cacheTtl: Duration.zero,
+        allowStaleOnError: false,
       );
-      if (!mounted) return;
+      if (!isCurrentAsyncRequest(request)) return;
       setState(() {
         _dashboard = dashboardResponse.data;
         _workplaces = workplacesResponse.data;
@@ -130,7 +138,7 @@ class _DashboardTabState extends State<_DashboardTab> {
         _loading = false;
       });
     } catch (error) {
-      if (!mounted) return;
+      if (!isCurrentAsyncRequest(request)) return;
       setState(() {
         _error = error.toString();
         _loading = false;
@@ -461,7 +469,8 @@ class _CalendarTab extends StatefulWidget {
   State<_CalendarTab> createState() => _CalendarTabState();
 }
 
-class _CalendarTabState extends State<_CalendarTab> {
+class _CalendarTabState extends State<_CalendarTab>
+    with AsyncRequestGuard<_CalendarTab> {
   late DateTime _selectedMonth;
   int? _workplaceId;
   List<Workplace> _workplaces = const [];
@@ -474,7 +483,7 @@ class _CalendarTabState extends State<_CalendarTab> {
   @override
   void initState() {
     super.initState();
-    final now = DateTime.now();
+    final now = ApiService.kstNow();
     _selectedMonth = DateTime(now.year, now.month);
     _load();
   }
@@ -484,15 +493,17 @@ class _CalendarTabState extends State<_CalendarTab> {
       context: context,
       initialDate: _selectedMonth,
       firstDate: DateTime(2024),
-      lastDate: DateTime.now().add(const Duration(days: 60)),
+      lastDate: ApiService.kstNow().add(const Duration(days: 60)),
       initialDatePickerMode: DatePickerMode.year,
     );
-    if (picked == null) return;
+    if (picked == null || !mounted) return;
     setState(() => _selectedMonth = DateTime(picked.year, picked.month));
     await _load();
   }
 
   Future<void> _load() async {
+    if (!mounted) return;
+    final request = beginAsyncRequest();
     final appState = context.read<AppState>();
     setState(() {
       _loading = true;
@@ -502,6 +513,8 @@ class _CalendarTabState extends State<_CalendarTab> {
       final workplacesResponse = await appState.fetchMapParsed<List<Workplace>>(
         '/api/workforce/workplaces',
         parser: _parseWorkplaces,
+        cacheTtl: Duration.zero,
+        allowStaleOnError: false,
       );
       final calendarResponse =
           await appState.fetchMapParsed<WorkloadCalendarData>(
@@ -512,8 +525,10 @@ class _CalendarTabState extends State<_CalendarTab> {
           if (_workplaceId != null) 'workplace_id': _workplaceId
         },
         parser: WorkloadCalendarData.fromJson,
+        cacheTtl: Duration.zero,
+        allowStaleOnError: false,
       );
-      if (!mounted) return;
+      if (!isCurrentAsyncRequest(request)) return;
       setState(() {
         _workplaces = workplacesResponse.data;
         _data = calendarResponse.data;
@@ -522,7 +537,7 @@ class _CalendarTabState extends State<_CalendarTab> {
         _loading = false;
       });
     } catch (error) {
-      if (!mounted) return;
+      if (!isCurrentAsyncRequest(request)) return;
       setState(() {
         _error = error.toString();
         _loading = false;
@@ -636,7 +651,8 @@ class _ShiftsTab extends StatefulWidget {
   State<_ShiftsTab> createState() => _ShiftsTabState();
 }
 
-class _ShiftsTabState extends State<_ShiftsTab> {
+class _ShiftsTabState extends State<_ShiftsTab>
+    with AsyncRequestGuard<_ShiftsTab> {
   late DateTime _fromDate;
   late DateTime _toDate;
   int? _workplaceId;
@@ -658,6 +674,8 @@ class _ShiftsTabState extends State<_ShiftsTab> {
   }
 
   Future<void> _load() async {
+    if (!mounted) return;
+    final request = beginAsyncRequest();
     final appState = context.read<AppState>();
     setState(() {
       _loading = true;
@@ -667,11 +685,15 @@ class _ShiftsTabState extends State<_ShiftsTab> {
       final workplacesResponse = await appState.fetchMapParsed<List<Workplace>>(
         '/api/workforce/workplaces',
         parser: _parseWorkplaces,
+        cacheTtl: Duration.zero,
+        allowStaleOnError: false,
       );
       final employeesResponse = await appState.fetchMapParsed<List<Employee>>(
         '/api/workforce/employees',
         params: const {'is_active': true},
         parser: _parseEmployees,
+        cacheTtl: Duration.zero,
+        allowStaleOnError: false,
       );
       final shiftsResponse = await appState.fetchMapParsed<List<ShiftRecord>>(
         '/api/workforce/shifts',
@@ -682,13 +704,17 @@ class _ShiftsTabState extends State<_ShiftsTab> {
           if (_employeeId != null) 'employee_id': _employeeId
         },
         parser: _parseShifts,
+        cacheTtl: Duration.zero,
+        allowStaleOnError: false,
       );
       final presetsResponse = await appState.fetchMapParsed<List<ShiftPreset>>(
         '/api/workforce/presets',
         params: {if (_workplaceId != null) 'workplace_id': _workplaceId},
         parser: _parsePresets,
+        cacheTtl: Duration.zero,
+        allowStaleOnError: false,
       );
-      if (!mounted) return;
+      if (!isCurrentAsyncRequest(request)) return;
       setState(() {
         _workplaces = workplacesResponse.data;
         _employees = employeesResponse.data;
@@ -697,12 +723,195 @@ class _ShiftsTabState extends State<_ShiftsTab> {
         _loading = false;
       });
     } catch (error) {
-      if (!mounted) return;
+      if (!isCurrentAsyncRequest(request)) return;
       setState(() {
         _error = error.toString();
         _loading = false;
       });
     }
+  }
+
+  Future<EmployeePayPreview> _previewShift(WorkforceShiftDraft draft) async {
+    final payload = await context.read<AppState>().postJson(
+          '/api/workforce/calculate-preview',
+          body: draft.toPayload(),
+        );
+    final raw = payload['preview'];
+    return EmployeePayPreview.fromJson(
+        raw is Map ? Map<String, dynamic>.from(raw) : const {});
+  }
+
+  Future<void> _editShift({ShiftRecord? shift, ShiftPreset? preset}) async {
+    if (_workplaces.isEmpty || _employees.isEmpty) {
+      ScaffoldMessenger.of(context)
+          .showSnackBar(const SnackBar(content: Text('근무지와 활성 직원을 먼저 등록하세요.')));
+      return;
+    }
+    final workplaceId = shift?.workplaceId ??
+        preset?.workplaceId ??
+        _workplaceId ??
+        _workplaces.first.id;
+    final matchingEmployees = _employees
+        .where((employee) => employee.workplaceId == workplaceId)
+        .toList(growable: false);
+    final employeeId = shift?.employeeId ??
+        (_employeeId != null &&
+                matchingEmployees.any((item) => item.id == _employeeId)
+            ? _employeeId
+            : matchingEmployees.isEmpty
+                ? null
+                : matchingEmployees.first.id);
+    final initial = shift != null
+        ? WorkforceShiftDraft.fromShift(shift)
+        : preset != null
+            ? WorkforceShiftDraft.fromPreset(
+                preset, _formatDate(ApiService.kstNow()),
+                employeeId: employeeId)
+            : WorkforceShiftDraft(
+                workplaceId: workplaceId,
+                employeeId: employeeId,
+                date: _formatDate(ApiService.kstNow()),
+                startTime: '09:00',
+                endTime: '18:00',
+                breakMinutes: 60,
+              );
+    final draft = await showDialog<WorkforceShiftDraft>(
+      context: context,
+      builder: (_) => WorkforceShiftFormDialog(
+        workplaces: _workplaces,
+        employees: _employees,
+        initialValue: initial,
+        editing: shift != null,
+        onPreview: _previewShift,
+      ),
+    );
+    if (draft == null || !mounted) return;
+    try {
+      await context.read<AppState>().postJson(
+            shift == null
+                ? '/api/workforce/shifts'
+                : '/api/workforce/shifts/${shift.id}',
+            method: shift == null ? 'POST' : 'PATCH',
+            body: draft.toPayload(),
+          );
+      await _load();
+    } catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text(error.toString())));
+      }
+    }
+  }
+
+  Future<void> _deleteShift(ShiftRecord shift) async {
+    final confirmed = await _confirmDelete(
+        title: '근무 삭제',
+        message: '${_formatWeekday(shift.shiftDate)} 근무를 삭제할까요?');
+    if (!confirmed || !mounted) return;
+    try {
+      await context
+          .read<AppState>()
+          .postJson('/api/workforce/shifts/${shift.id}', method: 'DELETE');
+      await _load();
+    } catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text(error.toString())));
+      }
+    }
+  }
+
+  Future<void> _editPreset({ShiftPreset? preset}) async {
+    if (_workplaces.isEmpty) {
+      ScaffoldMessenger.of(context)
+          .showSnackBar(const SnackBar(content: Text('근무지를 먼저 등록하세요.')));
+      return;
+    }
+    final initial = preset == null
+        ? WorkforcePresetDraft(
+            workplaceId: _workplaceId ?? _workplaces.first.id,
+            name: '',
+            startTime: '09:00',
+            endTime: '18:00',
+            breakMinutes: 60,
+          )
+        : WorkforcePresetDraft.fromPreset(preset);
+    final draft = await showDialog<WorkforcePresetDraft>(
+      context: context,
+      builder: (_) => WorkforcePresetFormDialog(
+          workplaces: _workplaces,
+          initialValue: initial,
+          editing: preset != null),
+    );
+    if (draft == null || !mounted) return;
+    try {
+      await context.read<AppState>().postJson(
+            preset == null
+                ? '/api/workforce/presets'
+                : '/api/workforce/presets/${preset.id}',
+            method: preset == null ? 'POST' : 'PATCH',
+            body: draft.toPayload(),
+          );
+      await _load();
+    } catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text(error.toString())));
+      }
+    }
+  }
+
+  Future<void> _toggleFavorite(ShiftPreset preset) async {
+    try {
+      await context.read<AppState>().postJson(
+        '/api/workforce/presets/${preset.id}',
+        method: 'PATCH',
+        body: {'is_favorite': !preset.isFavorite},
+      );
+      await _load();
+    } catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text(error.toString())));
+      }
+    }
+  }
+
+  Future<void> _deletePreset(ShiftPreset preset) async {
+    final confirmed = await _confirmDelete(
+        title: '프리셋 삭제', message: '"${preset.name}" 프리셋을 삭제할까요?');
+    if (!confirmed || !mounted) return;
+    try {
+      await context
+          .read<AppState>()
+          .postJson('/api/workforce/presets/${preset.id}', method: 'DELETE');
+      await _load();
+    } catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text(error.toString())));
+      }
+    }
+  }
+
+  Future<bool> _confirmDelete(
+      {required String title, required String message}) async {
+    return await showDialog<bool>(
+          context: context,
+          builder: (dialogContext) => AlertDialog(
+            title: Text(title),
+            content: Text(message),
+            actions: [
+              TextButton(
+                  onPressed: () => Navigator.pop(dialogContext, false),
+                  child: const Text('취소')),
+              FilledButton(
+                  onPressed: () => Navigator.pop(dialogContext, true),
+                  child: const Text('삭제')),
+            ],
+          ),
+        ) ??
+        false;
   }
 
   @override
@@ -722,22 +931,24 @@ class _ShiftsTabState extends State<_ShiftsTab> {
         physics: const AlwaysScrollableScrollPhysics(),
         padding: const EdgeInsets.all(16),
         children: [
-          Row(
+          Text('근무 기록 (${_formatDate(_fromDate)} ~ ${_formatDate(_toDate)})',
+              style:
+                  const TextStyle(fontWeight: FontWeight.w700, fontSize: 16)),
+          const SizedBox(height: 8),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
             children: [
-              Expanded(
-                  child: Text(
-                      '근무 기록 (${_formatDate(_fromDate)} ~ ${_formatDate(_toDate)})',
-                      style: const TextStyle(
-                          fontWeight: FontWeight.w700, fontSize: 16))),
               OutlinedButton.icon(
                 onPressed: () async {
                   final picked = await showDateRangePicker(
                       context: context,
                       firstDate: DateTime(2024, 1, 1),
-                      lastDate: DateTime.now().add(const Duration(days: 365)),
+                      lastDate:
+                          ApiService.kstNow().add(const Duration(days: 365)),
                       initialDateRange:
                           DateTimeRange(start: _fromDate, end: _toDate));
-                  if (picked == null) return;
+                  if (picked == null || !mounted) return;
                   setState(() {
                     _fromDate = picked.start;
                     _toDate = picked.end;
@@ -746,6 +957,11 @@ class _ShiftsTabState extends State<_ShiftsTab> {
                 },
                 icon: const Icon(Icons.date_range_outlined, size: 16),
                 label: const Text('기간'),
+              ),
+              FilledButton.icon(
+                onPressed: () => _editShift(),
+                icon: const Icon(Icons.add, size: 16),
+                label: const Text('빠른 등록'),
               ),
             ],
           ),
@@ -811,16 +1027,25 @@ class _ShiftsTabState extends State<_ShiftsTab> {
                 : Column(
                     children: _shifts
                         .map((shift) => ListTile(
+                              onTap: () => _editShift(shift: shift),
                               dense: true,
                               contentPadding: EdgeInsets.zero,
                               title: Text(
                                   '${_formatWeekday(shift.shiftDate)} · ${timePart(shift.startAt)}-${timePart(shift.endAt)}'),
                               subtitle: Text(
                                   '${shift.workplaceName}${shift.employeeName?.isNotEmpty == true ? ' · ${shift.employeeName}' : ''}'),
-                              trailing: Text(
-                                  _won(_adjustmentTotal(shift.adjustments)),
-                                  style: const TextStyle(
-                                      fontWeight: FontWeight.w700)),
+                              trailing: PopupMenuButton<String>(
+                                onSelected: (value) {
+                                  if (value == 'edit') _editShift(shift: shift);
+                                  if (value == 'delete') _deleteShift(shift);
+                                },
+                                itemBuilder: (_) => const [
+                                  PopupMenuItem(
+                                      value: 'edit', child: Text('수정')),
+                                  PopupMenuItem(
+                                      value: 'delete', child: Text('삭제')),
+                                ],
+                              ),
                             ))
                         .toList(growable: false)),
           ),
@@ -828,10 +1053,21 @@ class _ShiftsTabState extends State<_ShiftsTab> {
           Panel(
             title: '근무 템플릿',
             subtitle: '적용 가능한 템플릿',
-            child: _presets.isEmpty
-                ? const Text('등록된 템플릿이 없습니다.',
+            child: Column(children: [
+              Align(
+                alignment: Alignment.centerRight,
+                child: OutlinedButton.icon(
+                  onPressed: () => _editPreset(),
+                  icon: const Icon(Icons.add, size: 16),
+                  label: const Text('프리셋 추가'),
+                ),
+              ),
+              const SizedBox(height: 8),
+              if (_presets.isEmpty)
+                const Text('등록된 템플릿이 없습니다.',
                     style: TextStyle(color: Color(0xFF64748B)))
-                : Column(
+              else
+                Column(
                     children: _presets
                         .map((preset) => ListTile(
                               dense: true,
@@ -839,10 +1075,35 @@ class _ShiftsTabState extends State<_ShiftsTab> {
                               title: Text(preset.name),
                               subtitle: Text(
                                   '${preset.workplaceName} · ${preset.startTime}~${preset.endTime}'),
-                              trailing: const Icon(Icons.chevron_right_outlined,
-                                  color: Color(0xFF94A3B8)),
+                              leading: IconButton(
+                                tooltip: '즐겨찾기',
+                                onPressed: () => _toggleFavorite(preset),
+                                icon: Icon(preset.isFavorite
+                                    ? Icons.star
+                                    : Icons.star_border),
+                              ),
+                              trailing: PopupMenuButton<String>(
+                                onSelected: (value) {
+                                  if (value == 'use') {
+                                    _editShift(preset: preset);
+                                  }
+                                  if (value == 'edit') {
+                                    _editPreset(preset: preset);
+                                  }
+                                  if (value == 'delete') _deletePreset(preset);
+                                },
+                                itemBuilder: (_) => const [
+                                  PopupMenuItem(
+                                      value: 'use', child: Text('근무 생성')),
+                                  PopupMenuItem(
+                                      value: 'edit', child: Text('수정')),
+                                  PopupMenuItem(
+                                      value: 'delete', child: Text('삭제')),
+                                ],
+                              ),
                             ))
                         .toList(growable: false)),
+            ]),
           ),
         ],
       ),
@@ -857,7 +1118,8 @@ class _PayslipsTab extends StatefulWidget {
   State<_PayslipsTab> createState() => _PayslipsTabState();
 }
 
-class _PayslipsTabState extends State<_PayslipsTab> {
+class _PayslipsTabState extends State<_PayslipsTab>
+    with AsyncRequestGuard<_PayslipsTab> {
   late DateTime _fromDate;
   late DateTime _toDate;
   int? _workplaceId;
@@ -878,6 +1140,8 @@ class _PayslipsTabState extends State<_PayslipsTab> {
   }
 
   Future<void> _load() async {
+    if (!mounted) return;
+    final request = beginAsyncRequest();
     final appState = context.read<AppState>();
     setState(() {
       _loading = true;
@@ -887,32 +1151,34 @@ class _PayslipsTabState extends State<_PayslipsTab> {
       final workplacesResponse = await appState.fetchMapParsed<List<Workplace>>(
         '/api/workforce/workplaces',
         parser: _parseWorkplaces,
+        cacheTtl: Duration.zero,
+        allowStaleOnError: false,
       );
       final employeesResponse = await appState.fetchMapParsed<List<Employee>>(
         '/api/workforce/employees',
         params: const {'is_active': true},
         parser: _parseEmployees,
+        cacheTtl: Duration.zero,
+        allowStaleOnError: false,
       );
-      final payslipsResponse =
-          await appState.fetchMapParsed<WorkforcePeriodData>(
-        '/api/workforce/payslips',
-        params: {
+      final payslipsPayload = await appState.postJson(
+        '/api/workforce/payslips/calculate',
+        body: {
           'from_date': _formatDate(_fromDate),
           'to_date': _formatDate(_toDate),
           if (_workplaceId != null) 'workplace_id': _workplaceId,
           if (_employeeId != null) 'employee_id': _employeeId
         },
-        parser: WorkforcePeriodData.fromJson,
       );
-      if (!mounted) return;
+      if (!isCurrentAsyncRequest(request)) return;
       setState(() {
         _workplaces = workplacesResponse.data;
         _employees = employeesResponse.data;
-        _data = payslipsResponse.data;
+        _data = WorkforcePeriodData.fromJson(payslipsPayload);
         _loading = false;
       });
     } catch (error) {
-      if (!mounted) return;
+      if (!isCurrentAsyncRequest(request)) return;
       setState(() {
         _error = error.toString();
         _loading = false;
@@ -949,6 +1215,27 @@ class _PayslipsTabState extends State<_PayslipsTab> {
             spacing: 8,
             runSpacing: 8,
             children: [
+              OutlinedButton.icon(
+                onPressed: () async {
+                  final picked = await showDateRangePicker(
+                    context: context,
+                    firstDate: DateTime(2024),
+                    lastDate:
+                        ApiService.kstNow().add(const Duration(days: 365)),
+                    initialDateRange:
+                        DateTimeRange(start: _fromDate, end: _toDate),
+                  );
+                  if (picked == null || !mounted) return;
+                  setState(() {
+                    _fromDate = picked.start;
+                    _toDate = picked.end;
+                  });
+                  await _load();
+                },
+                icon: const Icon(Icons.date_range_outlined, size: 16),
+                label:
+                    Text('${_formatDate(_fromDate)} ~ ${_formatDate(_toDate)}'),
+              ),
               DropdownButtonHideUnderline(
                 child: DropdownButton<int?>(
                   value: _workplaceId,
@@ -1053,7 +1340,8 @@ class _EmployeesTab extends StatefulWidget {
   State<_EmployeesTab> createState() => _EmployeesTabState();
 }
 
-class _EmployeesTabState extends State<_EmployeesTab> {
+class _EmployeesTabState extends State<_EmployeesTab>
+    with AsyncRequestGuard<_EmployeesTab> {
   List<Employee>? _list;
   bool _loading = true;
   String _error = '';
@@ -1068,6 +1356,8 @@ class _EmployeesTabState extends State<_EmployeesTab> {
   }
 
   Future<void> _load() async {
+    if (!mounted) return;
+    final request = beginAsyncRequest();
     final appState = context.read<AppState>();
     setState(() {
       _loading = true;
@@ -1082,15 +1372,16 @@ class _EmployeesTabState extends State<_EmployeesTab> {
           if (_activeFilter != 'all') 'is_active': _activeFilter == 'active',
         },
         parser: _parseEmployees,
-        cacheTtl: const Duration(minutes: 10),
+        cacheTtl: Duration.zero,
+        allowStaleOnError: false,
       );
-      if (!mounted) return;
+      if (!isCurrentAsyncRequest(request)) return;
       setState(() {
         _list = response.data;
         _loading = false;
       });
     } catch (error) {
-      if (!mounted) return;
+      if (!isCurrentAsyncRequest(request)) return;
       setState(() {
         _error = error.toString();
         _loading = false;
@@ -1102,7 +1393,9 @@ class _EmployeesTabState extends State<_EmployeesTab> {
     final response = await context
         .read<AppState>()
         .fetchMapParsed<List<Workplace>>('/api/workforce/workplaces',
-            parser: _parseWorkplaces);
+            parser: _parseWorkplaces,
+            cacheTtl: Duration.zero,
+            allowStaleOnError: false);
     return response.data;
   }
 
@@ -1281,32 +1574,52 @@ class _EmployeesTabState extends State<_EmployeesTab> {
             FilledButton(
               onPressed: () async {
                 try {
-                  await context.read<AppState>().postJson(
-                    employee == null
-                        ? '/api/workforce/employees'
-                        : '/api/workforce/employees/${employee.id}',
-                    method: employee == null ? 'POST' : 'PATCH',
-                    body: {
-                      'workplace_id': workplaceId,
-                      'name': name.trim(),
-                      'employee_no': employeeNo.trim(),
-                      'role': role.trim(),
-                      'employment_type': employmentType,
-                      'joined_on': joinedOn.trim(),
-                      'resigned_on': resignedOn.trim(),
-                      'phone': phone.trim(),
-                      'hourly_wage': hourlyWage.trim().isEmpty
-                          ? null
-                          : int.tryParse(hourlyWage.trim()),
-                      'tax_preset': taxPreset,
-                      'tax_custom_rate': double.tryParse(taxRate.trim()) ?? 0,
-                      'memo': memo.trim(),
-                      'linked_auth_user_id': linkedAuthUserId.trim().isEmpty
-                          ? null
-                          : int.tryParse(linkedAuthUserId.trim()),
-                      'is_active': isActive,
-                    },
+                  final validationError = validateEmployeeForm(
+                    workplaceId: workplaceId,
+                    name: name,
+                    joinedOn: joinedOn,
+                    resignedOn: resignedOn,
+                    hourlyWage: hourlyWage,
+                    taxRate: taxRate,
                   );
+                  if (validationError != null) {
+                    ScaffoldMessenger.of(dialogContext)
+                        .showSnackBar(SnackBar(content: Text(validationError)));
+                    return;
+                  }
+                  final body = <String, dynamic>{
+                    'workplace_id': workplaceId,
+                    'name': name.trim(),
+                    'employee_no': employeeNo.trim(),
+                    'role': role.trim(),
+                    'employment_type': employmentType,
+                    'joined_on': joinedOn.trim(),
+                    'resigned_on': resignedOn.trim(),
+                    'phone': phone.trim(),
+                    'hourly_wage': hourlyWage.trim().isEmpty
+                        ? null
+                        : int.parse(hourlyWage.trim()),
+                    'monthly_salary': employee?.monthlySalary,
+                    'monthly_salary_calculation_mode':
+                        employee?.monthlySalaryCalculationMode.isNotEmpty ==
+                                true
+                            ? employee!.monthlySalaryCalculationMode
+                            : 'prorated_hours',
+                    'tax_preset': taxPreset,
+                    'tax_custom_rate': double.parse(taxRate.trim()),
+                    'memo': memo.trim(),
+                    'linked_auth_user_id': linkedAuthUserId.trim().isEmpty
+                        ? null
+                        : int.tryParse(linkedAuthUserId.trim()),
+                    'is_active': isActive,
+                  };
+                  await context.read<AppState>().postJson(
+                        employee == null
+                            ? '/api/workforce/employees'
+                            : '/api/workforce/employees/${employee.id}',
+                        method: employee == null ? 'POST' : 'PATCH',
+                        body: body,
+                      );
                   if (dialogContext.mounted) Navigator.pop(dialogContext, true);
                 } catch (error) {
                   if (dialogContext.mounted) {
@@ -1330,6 +1643,8 @@ class _EmployeesTabState extends State<_EmployeesTab> {
       final detailResponse = await appState.fetchMapParsed<EmployeeDetailData>(
         '/api/workforce/employees/${employee.id}',
         parser: EmployeeDetailData.fromJson,
+        cacheTtl: Duration.zero,
+        allowStaleOnError: false,
       );
       final auditLogsResponse =
           await appState.fetchMapParsed<List<EmployeeAuditLog>>(
@@ -1343,12 +1658,16 @@ class _EmployeesTabState extends State<_EmployeesTab> {
                   EmployeeAuditLog.fromJson(Map<String, dynamic>.from(item)))
               .toList(growable: false);
         },
+        cacheTtl: Duration.zero,
+        allowStaleOnError: false,
       );
       final payslipResponse =
           await appState.fetchMapParsed<EmployeePayslipData>(
         '/api/workforce/employees/${employee.id}/payslips',
         params: _currentMonthRangeAsParams(),
         parser: EmployeePayslipData.fromJson,
+        cacheTtl: Duration.zero,
+        allowStaleOnError: false,
       );
       if (!mounted) return;
       final detail = detailResponse.data;
@@ -1610,11 +1929,29 @@ class _EmployeesTabState extends State<_EmployeesTab> {
             FilledButton(
               onPressed: () async {
                 try {
+                  final draft = WorkforceShiftDraft(
+                    workplaceId: employee.workplaceId,
+                    employeeId: employee.id,
+                    date: _formatDate(ApiService.kstNow()),
+                    startTime: startAt,
+                    endTime: endAt,
+                    breakMinutes: breakMinutes,
+                    leaveType: leaveType,
+                    holidayType: holidayType,
+                    extraAmount: extraAmount,
+                    deductionAmount: deductionAmount,
+                  );
+                  final validationError = draft.validate();
+                  if (validationError != null) {
+                    setModalState(() => error = validationError);
+                    return;
+                  }
                   final payload = await context.read<AppState>().postJson(
                     '/api/workforce/employees/${employee.id}/pay-preview',
                     body: {
-                      'start_at': '${_formatDate(DateTime.now())}T$startAt',
-                      'end_at': '${_formatDate(DateTime.now())}T$endAt',
+                      'start_at':
+                          '${_formatDate(ApiService.kstNow())}T$startAt',
+                      'end_at': '${_formatDate(ApiService.kstNow())}T$endAt',
                       'break_minutes': breakMinutes,
                       'leave_type': leaveType,
                       'holiday_type': holidayType,
@@ -1685,7 +2022,7 @@ class _EmployeesTabState extends State<_EmployeesTab> {
       await context.read<AppState>().postJson(
           '/api/workforce/employees/${employee.id}',
           method: 'PATCH',
-          body: {'is_active': !employee.isActive});
+          body: employee.toPatchPayload(active: !employee.isActive));
       await _load();
     } catch (error) {
       if (!mounted) return;
@@ -1909,16 +2246,7 @@ String _formatWeekday(String date) {
 }
 
 String timePart(String isoText) {
-  final idx = isoText.indexOf('T');
-  if (idx < 0) return isoText.length >= 5 ? isoText.substring(0, 5) : isoText;
-  return isoText.substring(idx + 1, idx + 6);
-}
-
-int _adjustmentTotal(List<ShiftAdjustment> adjustments) {
-  return adjustments.fold<int>(
-      0,
-      (sum, item) =>
-          item.kind == 'deduction' ? sum - item.amount : sum + item.amount);
+  return workforceTimePart(isoText);
 }
 
 int _workedMinutes(ShiftRecord shift) {
@@ -1939,7 +2267,7 @@ class _MonthRange {
 }
 
 _MonthRange _currentMonthRange() {
-  final now = DateTime.now();
+  final now = ApiService.kstNow();
   return _MonthRange(
       from: DateTime(now.year, now.month, 1),
       to: DateTime(now.year, now.month, now.day));

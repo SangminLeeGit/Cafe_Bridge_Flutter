@@ -3,15 +3,16 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../core/async_request_guard.dart';
 import '../models/api_contracts.dart';
 import '../models/dashboard_model.dart';
 import '../services/api.dart';
+import '../services/task_poller.dart';
 import '../state/app_state.dart';
 import '../widgets/empty_state.dart';
 import '../widgets/panel.dart';
 import '../widgets/responsive_wrap_grid.dart';
 import '../widgets/stat_card.dart';
-import 'menu_workspace.dart';
 
 const List<String> _priceColumns = <String>[
   '판매가',
@@ -47,7 +48,9 @@ class PriceApplyScreen extends StatefulWidget {
   State<PriceApplyScreen> createState() => _PriceApplyScreenState();
 }
 
-class _PriceApplyScreenState extends State<PriceApplyScreen> {
+class _PriceApplyScreenState extends State<PriceApplyScreen>
+    with AsyncRequestGuard<PriceApplyScreen> {
+  static const String _activeTaskPrefix = 'active_price_task';
   late final TextEditingController _productCodeController;
   late final TextEditingController _targetPriceController;
   late final TextEditingController _reasonController;
@@ -58,6 +61,9 @@ class _PriceApplyScreenState extends State<PriceApplyScreen> {
   String _historyError = '';
   BrowserPriceApplyTask? _task;
   List<BrowserPriceApplyTask> _history = const [];
+  TaskPoller<BrowserPriceApplyTask>? _poller;
+  int _pollGeneration = 0;
+  String? _lastPreviewSignature;
 
   bool get _requiresMenuSelection => widget.initialProductCode.trim().isEmpty;
 
@@ -74,11 +80,14 @@ class _PriceApplyScreenState extends State<PriceApplyScreen> {
       _isLoadingHistory = false;
     } else {
       unawaited(_loadHistory());
+      unawaited(_restoreActiveTask());
     }
   }
 
   @override
   void dispose() {
+    _pollGeneration += 1;
+    _poller?.cancel();
     _productCodeController.dispose();
     _targetPriceController.dispose();
     _reasonController.dispose();
@@ -86,6 +95,8 @@ class _PriceApplyScreenState extends State<PriceApplyScreen> {
   }
 
   Future<void> _loadHistory() async {
+    if (!mounted) return;
+    final request = beginAsyncRequest();
     final appState = context.read<AppState>();
     setState(() {
       _isLoadingHistory = true;
@@ -101,7 +112,7 @@ class _PriceApplyScreenState extends State<PriceApplyScreen> {
         cacheTtl: Duration.zero,
         allowStaleOnError: false,
       );
-      if (!mounted) {
+      if (!isCurrentAsyncRequest(request)) {
         return;
       }
       setState(() {
@@ -109,7 +120,7 @@ class _PriceApplyScreenState extends State<PriceApplyScreen> {
         _isLoadingHistory = false;
       });
     } catch (error) {
-      if (!mounted) {
+      if (!isCurrentAsyncRequest(request)) {
         return;
       }
       setState(() {
@@ -119,30 +130,75 @@ class _PriceApplyScreenState extends State<PriceApplyScreen> {
     }
   }
 
-  Future<BrowserPriceApplyTask> _pollTask(String taskId) async {
+  Future<void> _restoreActiveTask() async {
     final appState = context.read<AppState>();
-    for (var attempt = 0; attempt < 80; attempt++) {
-      final response = await appState.fetchMapParsed<BrowserPriceApplyTask>(
-        '/api/price/browser-apply/$taskId',
-        parser: BrowserPriceApplyTask.fromJson,
-        cacheTtl: Duration.zero,
-        allowStaleOnError: false,
-      );
-      final task = response.data;
-      if (mounted) {
-        setState(() {
-          _task = task;
-        });
-      }
+    final taskId =
+        (await appState.readActiveTask(_activeTaskPrefix))?.trim() ?? '';
+    if (taskId.isEmpty || !mounted) return;
+    setState(() => _isSubmitting = true);
+    try {
+      final task = await _pollTask(taskId);
       if (task.isFinished) {
-        return task;
+        await appState.clearActiveTask(_activeTaskPrefix);
       }
-      await Future.delayed(const Duration(seconds: 3));
+      if (mounted) await _loadHistory();
+    } catch (error) {
+      if (mounted && error is! TaskPollingCancelledException) {
+        setState(() => _error = _formatError(error));
+      }
+    } finally {
+      if (mounted) setState(() => _isSubmitting = false);
     }
-    throw const ApiException('가격 변경 작업 응답이 지연되고 있습니다. 잠시 후 다시 확인해 주세요.');
   }
 
-  Future<void> _submit() async {
+  Future<BrowserPriceApplyTask> _pollTask(String taskId) async {
+    final appState = context.read<AppState>();
+    final pollGeneration = ++_pollGeneration;
+    final poller = TaskPoller<BrowserPriceApplyTask>(
+      interval: const Duration(seconds: 3),
+      timeout: const Duration(minutes: 6),
+      adapter: TaskStatusAdapter<BrowserPriceApplyTask>(
+        statusOf: (task) => task.status,
+      ),
+      fetch: () async {
+        final response = await appState.fetchMapParsed<BrowserPriceApplyTask>(
+          '/api/price/browser-apply/$taskId',
+          parser: BrowserPriceApplyTask.fromJson,
+          cacheTtl: Duration.zero,
+          allowStaleOnError: false,
+        );
+        if (mounted && pollGeneration == _pollGeneration) {
+          setState(() => _task = response.data);
+        }
+        return response.data;
+      },
+    );
+    _poller?.cancel();
+    _poller = poller;
+    try {
+      return await poller.poll();
+    } on TimeoutException {
+      throw const ApiException(
+        '가격 변경 작업 응답이 지연되고 있습니다. 잠시 후 다시 확인해 주세요.',
+      );
+    } on TaskPollingFailedException<BrowserPriceApplyTask> catch (error) {
+      return error.value;
+    } finally {
+      if (identical(_poller, poller)) {
+        _poller = null;
+      }
+    }
+  }
+
+  String _requestSignature(String productCode, int targetPrice) =>
+      '$productCode|$targetPrice|$_targetColumn';
+
+  void _invalidatePreview() {
+    _lastPreviewSignature = null;
+  }
+
+  Future<void> _submit({required bool execute}) async {
+    final appState = context.read<AppState>();
     final productCode = _normalizedProductCode();
     if (productCode.isEmpty) {
       setState(() {
@@ -159,6 +215,13 @@ class _PriceApplyScreenState extends State<PriceApplyScreen> {
       });
       return;
     }
+    final signature = _requestSignature(productCode, targetPrice);
+    if (execute && _lastPreviewSignature != signature) {
+      setState(() {
+        _error = '현재 입력값으로 미리보기를 먼저 완료해 주세요.';
+      });
+      return;
+    }
 
     setState(() {
       _error = '';
@@ -167,23 +230,32 @@ class _PriceApplyScreenState extends State<PriceApplyScreen> {
     });
 
     try {
-      final response = await context.read<AppState>().postJson(
+      final response = await appState.postJson(
         '/api/price/browser-apply',
         body: {
           'product_code': productCode,
           'target_price': targetPrice,
           'target_column': _targetColumn,
-          'execute': true,
+          'execute': execute,
           'reason': _reasonController.text.trim().isNotEmpty
               ? _reasonController.text.trim()
-              : 'mobile-browser-apply',
+              : (execute ? 'mobile-browser-apply' : 'mobile-browser-preview'),
         },
       );
       final started = AsyncTaskStartResponse.fromJson(response);
       if (started.taskId.trim().isEmpty) {
         throw const ApiException('가격 변경 작업 ID를 받지 못했습니다.');
       }
-      await _pollTask(started.taskId);
+      await appState.saveActiveTask(_activeTaskPrefix, started.taskId);
+      final completed = await _pollTask(started.taskId);
+      if (completed.isFinished) {
+        await appState.clearActiveTask(_activeTaskPrefix);
+      }
+      if (!execute &&
+          completed.status == 'succeeded' &&
+          completed.result?.status == 'preview') {
+        _lastPreviewSignature = signature;
+      }
       if (!mounted) {
         return;
       }
@@ -258,15 +330,9 @@ class _PriceApplyScreenState extends State<PriceApplyScreen> {
                   ),
                   const SizedBox(height: 16),
                   FilledButton.icon(
-                    onPressed: () {
-                      Navigator.of(context).pushReplacement(
-                        MaterialPageRoute(
-                          builder: (_) => const _PriceApplyEntryPage(),
-                        ),
-                      );
-                    },
-                    icon: const Icon(Icons.menu_book_outlined),
-                    label: const Text('상품 선택으로 이동'),
+                    onPressed: () => Navigator.of(context).maybePop(),
+                    icon: const Icon(Icons.arrow_back),
+                    label: const Text('상품 조회로 돌아가기'),
                     style: FilledButton.styleFrom(
                       minimumSize: const Size(double.infinity, 48),
                     ),
@@ -359,6 +425,7 @@ class _PriceApplyScreenState extends State<PriceApplyScreen> {
                     TextField(
                       controller: _productCodeController,
                       readOnly: widget.lockProductCode,
+                      onChanged: (_) => _invalidatePreview(),
                       decoration: const InputDecoration(
                         labelText: '상품코드 *',
                         hintText: '000144',
@@ -388,6 +455,7 @@ class _PriceApplyScreenState extends State<PriceApplyScreen> {
                               }
                               setState(() {
                                 _targetColumn = value;
+                                _invalidatePreview();
                               });
                             },
                     ),
@@ -395,7 +463,7 @@ class _PriceApplyScreenState extends State<PriceApplyScreen> {
                     TextField(
                       controller: _targetPriceController,
                       keyboardType: TextInputType.number,
-                      onChanged: (_) => setState(() {}),
+                      onChanged: (_) => setState(_invalidatePreview),
                       decoration: InputDecoration(
                         labelText: '변경 가격 *',
                         suffixText: '원',
@@ -451,13 +519,70 @@ class _PriceApplyScreenState extends State<PriceApplyScreen> {
                       ),
                     ],
                     const SizedBox(height: 16),
-                    FilledButton.icon(
-                      onPressed: _isSubmitting ? null : _submit,
-                      icon: const Icon(Icons.rocket_launch_outlined),
-                      label: Text(_isSubmitting ? '적용 중...' : '가격 변경 실행'),
-                      style: FilledButton.styleFrom(
-                        minimumSize: const Size(double.infinity, 50),
-                      ),
+                    LayoutBuilder(
+                      builder: (context, constraints) {
+                        final preview = OutlinedButton.icon(
+                          onPressed: _isSubmitting
+                              ? null
+                              : () => _submit(execute: false),
+                          icon: const Icon(Icons.preview_outlined),
+                          label: const Text('미리보기'),
+                        );
+                        final apply = FilledButton.icon(
+                          onPressed:
+                              _isSubmitting || _lastPreviewSignature == null
+                                  ? null
+                                  : () async {
+                                      final confirmed = await showDialog<bool>(
+                                        context: context,
+                                        builder: (dialogContext) => AlertDialog(
+                                          title: const Text('가격 변경 실행'),
+                                          content: Text(
+                                            '${widget.initialItemName.isEmpty ? productCodeLabel(_productCodeController.text) : widget.initialItemName}의 가격을 실제 POS에 반영할까요?',
+                                          ),
+                                          actions: [
+                                            TextButton(
+                                              onPressed: () => Navigator.pop(
+                                                dialogContext,
+                                                false,
+                                              ),
+                                              child: const Text('취소'),
+                                            ),
+                                            FilledButton(
+                                              onPressed: () => Navigator.pop(
+                                                dialogContext,
+                                                true,
+                                              ),
+                                              child: const Text('실제 반영'),
+                                            ),
+                                          ],
+                                        ),
+                                      );
+                                      if (confirmed == true && mounted) {
+                                        await _submit(execute: true);
+                                      }
+                                    },
+                          icon: const Icon(Icons.rocket_launch_outlined),
+                          label: const Text('실제 반영'),
+                        );
+                        if (constraints.maxWidth < 420) {
+                          return Column(
+                            crossAxisAlignment: CrossAxisAlignment.stretch,
+                            children: [
+                              preview,
+                              const SizedBox(height: 8),
+                              apply,
+                            ],
+                          );
+                        }
+                        return Row(
+                          children: [
+                            Expanded(child: preview),
+                            const SizedBox(width: 8),
+                            Expanded(child: apply),
+                          ],
+                        );
+                      },
                     ),
                   ],
                 ),
@@ -505,22 +630,9 @@ class _PriceApplyScreenState extends State<PriceApplyScreen> {
   }
 }
 
-class _PriceApplyEntryPage extends StatelessWidget {
-  const _PriceApplyEntryPage();
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('상품', style: TextStyle(fontWeight: FontWeight.w700)),
-        bottom: PreferredSize(
-          preferredSize: const Size.fromHeight(1),
-          child: Container(height: 1, color: const Color(0xFFE2E8F0)),
-        ),
-      ),
-      body: const SafeArea(child: MenuWorkspaceScreen()),
-    );
-  }
+String productCodeLabel(String value) {
+  final normalized = value.trim();
+  return normalized.isEmpty ? '선택한 상품' : '상품 $normalized';
 }
 
 class _TaskResultCard extends StatelessWidget {
@@ -531,7 +643,9 @@ class _TaskResultCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final result = task.result;
-    final ok = task.status == 'succeeded' && result?.status == 'applied';
+    final ok = task.status == 'succeeded' &&
+        (result?.status == 'applied' || result?.status == 'preview');
+    final preview = result?.status == 'preview';
     final message = (result?.message.isNotEmpty == true
             ? result!.message
             : task.errorMessage)
@@ -559,7 +673,9 @@ class _TaskResultCard extends StatelessWidget {
               Expanded(
                 child: Text(
                   message.isEmpty
-                      ? (ok ? '가격 변경이 완료되었습니다.' : '가격 변경에 실패했습니다.')
+                      ? (preview
+                          ? '미리보기가 완료되었습니다. 입력값을 확인한 뒤 실제 반영하세요.'
+                          : (ok ? '가격 변경이 완료되었습니다.' : '가격 변경에 실패했습니다.'))
                       : message,
                   style: const TextStyle(
                     fontWeight: FontWeight.w700,

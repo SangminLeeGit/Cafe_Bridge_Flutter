@@ -1,9 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../core/async_request_guard.dart';
 import '../models/dashboard_model.dart';
+import '../navigation/app_navigation.dart';
+import '../services/api.dart';
 import '../widgets/cache_notice.dart';
 import '../state/app_state.dart';
+import '../widgets/app_screen.dart';
 import '../widgets/empty_state.dart';
 import '../widgets/responsive_wrap_grid.dart';
 import '../widgets/stat_card.dart';
@@ -16,10 +20,12 @@ class DashboardScreen extends StatefulWidget {
   State<DashboardScreen> createState() => _DashboardScreenState();
 }
 
-class _DashboardScreenState extends State<DashboardScreen> {
+class _DashboardScreenState extends State<DashboardScreen>
+    with AsyncRequestGuard<DashboardScreen> {
   DashboardSnapshot? _data;
   bool _isLoading = true;
   String _error = '';
+  bool _isNetworkError = false;
   bool _fromCache = false;
   DateTime? _cachedAt;
 
@@ -30,10 +36,13 @@ class _DashboardScreenState extends State<DashboardScreen> {
   }
 
   Future<void> _fetchData() async {
+    if (!mounted) return;
+    final request = beginAsyncRequest();
     final appState = context.read<AppState>();
     setState(() {
       _isLoading = true;
       _error = '';
+      _isNetworkError = false;
     });
 
     try {
@@ -41,7 +50,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
         '/api/dashboard',
         parser: DashboardSnapshot.fromJson,
       );
-      if (!mounted) {
+      if (!isCurrentAsyncRequest(request)) {
         return;
       }
       setState(() {
@@ -51,11 +60,12 @@ class _DashboardScreenState extends State<DashboardScreen> {
         _isLoading = false;
       });
     } catch (error) {
-      if (!mounted) {
+      if (!isCurrentAsyncRequest(request)) {
         return;
       }
       setState(() {
         _error = error.toString();
+        _isNetworkError = error is ApiException && error.isTransportError;
         _isLoading = false;
       });
     }
@@ -64,12 +74,13 @@ class _DashboardScreenState extends State<DashboardScreen> {
   @override
   Widget build(BuildContext context) {
     if (_isLoading) {
-      return const Center(
-        child: CircularProgressIndicator(color: Color(0xFF0D9488)),
-      );
+      return const LoadingState(message: '대시보드를 불러오는 중입니다.');
     }
 
     if (_error.isNotEmpty) {
+      if (_isNetworkError) {
+        return NetworkState(message: _error, onRetry: _fetchData);
+      }
       return EmptyState(
         title: '대시보드를 불러오지 못했습니다.',
         message: _error,
@@ -111,6 +122,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
           ],
           _DashboardSection(
             title: '실시간 요약',
+            initiallyExpanded: true,
             subtitle: data.latestDay != null
                 ? '기준일 ${UiFormat.weekday(data.latestDay!)}'
                 : '기준일 정보 없음',
@@ -193,10 +205,10 @@ class _DashboardScreenState extends State<DashboardScreen> {
       children: rows.map((day) {
         final date = day.businessDate;
         return ListTile(
-          onTap: () => Navigator.of(context).push(
-            MaterialPageRoute(
-              builder: (_) => DayDetailScreen(date: date),
-            ),
+          onTap: () => AppNavigation.pushGuarded(
+            context,
+            minimumRole: UserRole.viewer,
+            child: DayDetailScreen(date: date),
           ),
           contentPadding: EdgeInsets.zero,
           leading: const Icon(Icons.calendar_today_outlined, size: 20),
@@ -396,11 +408,13 @@ class _DashboardSection extends StatelessWidget {
   final String title;
   final String subtitle;
   final Widget child;
+  final bool initiallyExpanded;
 
   const _DashboardSection({
     required this.title,
     required this.subtitle,
     required this.child,
+    this.initiallyExpanded = false,
   });
 
   @override
@@ -415,7 +429,7 @@ class _DashboardSection extends StatelessWidget {
       child: Theme(
         data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
         child: ExpansionTile(
-          initiallyExpanded: false,
+          initiallyExpanded: initiallyExpanded,
           tilePadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
           childrenPadding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
           title: Text(

@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import '../theme/app_theme.dart';
+
 class StatCard extends StatelessWidget {
   final String label;
   final String value;
@@ -17,15 +19,14 @@ class StatCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final bgColor =
-        accent ? const Color.fromRGBO(13, 148, 136, 0.1) : Colors.white;
-    final borderColor =
-        accent ? const Color(0xFF0D9488) : const Color(0xFFE2E8F0);
+        accent ? AppColors.primary.withValues(alpha: 0.1) : AppColors.surface;
+    final borderColor = accent ? AppColors.primary : AppColors.border;
 
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
         color: bgColor,
-        borderRadius: BorderRadius.circular(12),
+        borderRadius: BorderRadius.circular(AppRadii.card),
         border: Border.all(color: borderColor),
       ),
       child: Column(
@@ -35,16 +36,18 @@ class StatCard extends StatelessWidget {
             label.toUpperCase(),
             style: const TextStyle(
               fontSize: 12,
-              color: Color(0xFF94A3B8),
+              color: AppColors.subtle,
               fontWeight: FontWeight.bold,
             ),
           ),
           const SizedBox(height: 4),
           Text(
             value,
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
             style: const TextStyle(
               fontSize: 24,
-              color: Color(0xFF0F172A),
+              color: AppColors.ink,
               fontWeight: FontWeight.bold,
             ),
           ),
@@ -52,9 +55,11 @@ class StatCard extends StatelessWidget {
             const SizedBox(height: 4),
             Text(
               sub!,
+              maxLines: 3,
+              overflow: TextOverflow.ellipsis,
               style: const TextStyle(
                 fontSize: 12,
-                color: Color(0xFF64748B),
+                color: AppColors.muted,
               ),
             ),
           ],

@@ -15,6 +15,12 @@ def releaseSigningConfigured = [
     releaseStorePassword,
     releaseKeyPassword,
 ].every { !it.trim().isEmpty() }
+def releaseSigningPartiallyConfigured = [
+    releaseKeystorePath,
+    releaseKeyAlias,
+    releaseStorePassword,
+    releaseKeyPassword,
+].any { !it.trim().isEmpty() } && !releaseSigningConfigured
 def releaseTaskRequested = gradle.startParameter.taskNames.any {
     it.toLowerCase().contains("release")
 }
@@ -34,10 +40,7 @@ android {
     }
 
     defaultConfig {
-        // TODO: Specify your own unique Application ID (https://developer.android.com/studio/build/application-id.html).
         applicationId = "org.cafe.bridge.mobile"
-        // You can update the following values to match your application needs.
-        // For more information, see: https://flutter.dev/to/review-gradle-config.
         minSdk = flutter.minSdkVersion
         targetSdk = flutter.targetSdkVersion
         versionCode = flutter.versionCode
@@ -57,8 +60,12 @@ android {
 
     buildTypes {
         release {
-            if (!releaseSigningConfigured && releaseTaskRequested) {
-                throw new GradleException("Cafe Bridge Android release signing variables are required")
+            if (releaseTaskRequested && !releaseSigningConfigured) {
+                def detail = releaseSigningPartiallyConfigured ? "all four must be set" : "none are set"
+                throw new GradleException("Cafe Bridge Android release signing variables are required (${detail})")
+            }
+            if (releaseTaskRequested && !file(releaseKeystorePath).isFile()) {
+                throw new GradleException("Cafe Bridge Android release keystore does not exist: ${releaseKeystorePath}")
             }
             signingConfig = signingConfigs.release
         }
@@ -67,4 +74,17 @@ android {
 
 flutter {
     source = "../.."
+}
+
+gradle.taskGraph.whenReady { graph ->
+    def includesReleaseVariant = graph.allTasks.any {
+        it.project == project && it.name.toLowerCase().contains("release")
+    }
+    if (includesReleaseVariant && !releaseSigningConfigured) {
+        def detail = releaseSigningPartiallyConfigured ? "all four must be set" : "none are set"
+        throw new GradleException("Cafe Bridge Android release signing variables are required (${detail})")
+    }
+    if (includesReleaseVariant && !file(releaseKeystorePath).isFile()) {
+        throw new GradleException("Cafe Bridge Android release keystore does not exist: ${releaseKeystorePath}")
+    }
 }

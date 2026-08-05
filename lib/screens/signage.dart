@@ -1,15 +1,20 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../core/async_request_guard.dart';
+import '../navigation/app_navigation.dart';
 import '../state/app_state.dart';
 import '../widgets/empty_state.dart';
+
+const bool _allowStructuralEditing = false;
 
 // ─── 모델 ─────────────────────────────────────────────────────────────────────
 
 dynamic _cloneJsonValue(dynamic value) {
   if (value is Map) {
     return value.map<String, dynamic>(
-      (key, nestedValue) => MapEntry(key.toString(), _cloneJsonValue(nestedValue)),
+      (key, nestedValue) =>
+          MapEntry(key.toString(), _cloneJsonValue(nestedValue)),
     );
   }
   if (value is List) {
@@ -64,11 +69,10 @@ class _SignageItem {
   factory _SignageItem.fromJson(Map<String, dynamic> j) => _SignageItem(
         korean: (j['korean'] ?? '').toString(),
         english: (j['english'] ?? '').toString(),
-        price: (j['price'] is int)
-            ? (j['price'] as int)
-            : int.tryParse(j['price'].toString()) ?? 0,
+        price: parseSignagePrice(j['price']) ?? 0,
         note: (j['note'] ?? '').toString(),
-        extraFields: _extractExtraFields(j, {'korean', 'english', 'price', 'note'}),
+        extraFields:
+            _extractExtraFields(j, {'korean', 'english', 'price', 'note'}),
       );
 
   Map<String, dynamic> toJson() => {
@@ -107,10 +111,12 @@ class _SignageCategory {
         id: (j['id'] ?? '').toString(),
         title: (j['title'] ?? '').toString(),
         description: (j['description'] ?? '').toString(),
-        items: (j['items'] as List? ?? [])
-            .map((e) => _SignageItem.fromJson(e as Map<String, dynamic>))
+        items: (j['items'] is List ? j['items'] as List : const [])
+            .whereType<Map>()
+            .map((e) => _SignageItem.fromJson(Map<String, dynamic>.from(e)))
             .toList(),
-        extraFields: _extractExtraFields(j, {'id', 'title', 'description', 'items'}),
+        extraFields:
+            _extractExtraFields(j, {'id', 'title', 'description', 'items'}),
       );
 
   Map<String, dynamic> toJson() => {
@@ -148,7 +154,8 @@ class _SignageMenu {
     Map<String, dynamic>? extraFields,
     Map<String, dynamic>? announcementExtraFields,
   })  : extraFields = extraFields ?? <String, dynamic>{},
-        announcementExtraFields = announcementExtraFields ?? <String, dynamic>{};
+        announcementExtraFields =
+            announcementExtraFields ?? <String, dynamic>{};
 
   factory _SignageMenu.fromJson(Map<String, dynamic> j) {
     final announcement = _stringKeyedMap(j['announcement']);
@@ -158,12 +165,19 @@ class _SignageMenu {
       shopNameLine1: (j['shopNameLine1'] ?? '').toString(),
       shopNameLine2: (j['shopNameLine2'] ?? '').toString(),
       announcementText: text,
-      categories: (j['categories'] as List? ?? [])
-          .map((e) => _SignageCategory.fromJson(e as Map<String, dynamic>))
+      categories: (j['categories'] is List ? j['categories'] as List : const [])
+          .whereType<Map>()
+          .map((e) => _SignageCategory.fromJson(Map<String, dynamic>.from(e)))
           .toList(),
       extraFields: _extractExtraFields(
         j,
-        {'shopName', 'shopNameLine1', 'shopNameLine2', 'announcement', 'categories'},
+        {
+          'shopName',
+          'shopNameLine1',
+          'shopNameLine2',
+          'announcement',
+          'categories'
+        },
       ),
       announcementExtraFields: _extractExtraFields(announcement, {'text'}),
     );
@@ -201,7 +215,8 @@ class SignageScreen extends StatefulWidget {
   State<SignageScreen> createState() => _SignageScreenState();
 }
 
-class _SignageScreenState extends State<SignageScreen> {
+class _SignageScreenState extends State<SignageScreen>
+    with AsyncRequestGuard<SignageScreen> {
   _SignageMenu? _saved;
   _SignageMenu? _draft;
   bool _loading = true;
@@ -217,6 +232,8 @@ class _SignageScreenState extends State<SignageScreen> {
   }
 
   Future<void> _load() async {
+    if (!mounted) return;
+    final request = beginAsyncRequest();
     final appState = context.read<AppState>();
     setState(() {
       _loading = true;
@@ -229,7 +246,7 @@ class _SignageScreenState extends State<SignageScreen> {
         parser: _SignageMenu.fromJson,
         cacheTtl: Duration.zero,
       );
-      if (!mounted) return;
+      if (!isCurrentAsyncRequest(request)) return;
       setState(() {
         _saved = result.data;
         _draft = result.data.clone();
@@ -237,7 +254,7 @@ class _SignageScreenState extends State<SignageScreen> {
         _loading = false;
       });
     } catch (e) {
-      if (!mounted) return;
+      if (!isCurrentAsyncRequest(request)) return;
       setState(() {
         _error = e.toString();
         _loading = false;
@@ -257,6 +274,29 @@ class _SignageScreenState extends State<SignageScreen> {
       _dirty = false;
       _successMessage = '';
     });
+  }
+
+  Future<void> _handleBlockedPop() async {
+    final discard = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('변경사항 폐기'),
+        content: const Text('저장되지 않은 변경사항이 있습니다. 이 화면을 나가시겠습니까?'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('계속 편집'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('나가기'),
+          ),
+        ],
+      ),
+    );
+    if (discard != true || !mounted) return;
+    setState(() => _dirty = false);
+    Navigator.of(context).pop();
   }
 
   Future<void> _push() async {
@@ -295,7 +335,10 @@ class _SignageScreenState extends State<SignageScreen> {
         body: draft.toJson(),
       );
       if (!mounted) return;
-      final backup = result['backup'] as String?;
+      final rawBackup = result['backup'];
+      final backup = rawBackup is String && rawBackup.trim().isNotEmpty
+          ? rawBackup.trim()
+          : null;
       setState(() {
         _saved = draft.clone();
         _dirty = false;
@@ -316,7 +359,8 @@ class _SignageScreenState extends State<SignageScreen> {
   @override
   Widget build(BuildContext context) {
     if (_loading) {
-      return const Center(child: CircularProgressIndicator(color: Color(0xFF0D9488)));
+      return const Center(
+          child: CircularProgressIndicator(color: Color(0xFF0D9488)));
     }
 
     if (_error.isNotEmpty && _draft == null) {
@@ -335,115 +379,125 @@ class _SignageScreenState extends State<SignageScreen> {
       );
     }
 
-    return Stack(
-      children: [
-        ListView(
-          padding: const EdgeInsets.fromLTRB(16, 16, 16, 140),
-          children: [
-            // 오류/성공 배너
-            if (_error.isNotEmpty) _Banner(text: _error, isError: true),
-            if (_successMessage.isNotEmpty) _Banner(text: _successMessage, isError: false),
+    return PopScope(
+      canPop: !_dirty,
+      onPopInvokedWithResult: (didPop, result) {
+        if (!didPop) _handleBlockedPop();
+      },
+      child: Stack(
+        children: [
+          ListView(
+            padding: const EdgeInsets.fromLTRB(16, 16, 16, 140),
+            children: [
+              // 오류/성공 배너
+              if (_error.isNotEmpty) _Banner(text: _error, isError: true),
+              if (_successMessage.isNotEmpty)
+                _Banner(text: _successMessage, isError: false),
 
-            // 가게 정보
-            _SectionCard(
-              title: '가게 정보',
-              child: Column(
-                children: [
-                  _LabeledField(
-                    label: '가게명',
-                    value: draft.shopName,
-                    onChanged: (v) {
-                      draft.shopName = v;
-                      _markDirty();
-                    },
-                  ),
-                  const SizedBox(height: 8),
-                  _LabeledField(
-                    label: '가게명 1줄',
-                    value: draft.shopNameLine1,
-                    onChanged: (v) {
-                      draft.shopNameLine1 = v;
-                      _markDirty();
-                    },
-                  ),
-                  const SizedBox(height: 8),
-                  _LabeledField(
-                    label: '가게명 2줄',
-                    value: draft.shopNameLine2,
-                    onChanged: (v) {
-                      draft.shopNameLine2 = v;
-                      _markDirty();
-                    },
-                  ),
-                ],
+              const _EditingNotice(),
+
+              // 가게 정보
+              _SectionCard(
+                title: '가게 정보',
+                child: Column(
+                  children: [
+                    _LabeledField(
+                      label: '가게명',
+                      value: draft.shopName,
+                      onChanged: (v) {
+                        draft.shopName = v;
+                        _markDirty();
+                      },
+                    ),
+                    const SizedBox(height: 8),
+                    _LabeledField(
+                      label: '가게명 1줄',
+                      value: draft.shopNameLine1,
+                      onChanged: (v) {
+                        draft.shopNameLine1 = v;
+                        _markDirty();
+                      },
+                    ),
+                    const SizedBox(height: 8),
+                    _LabeledField(
+                      label: '가게명 2줄',
+                      value: draft.shopNameLine2,
+                      onChanged: (v) {
+                        draft.shopNameLine2 = v;
+                        _markDirty();
+                      },
+                    ),
+                  ],
+                ),
               ),
-            ),
-            const SizedBox(height: 12),
+              const SizedBox(height: 12),
 
-            // 공지 사항
-            _SectionCard(
-              title: '공지 사항',
-              child: _LabeledField(
-                label: '공지 내용',
-                value: draft.announcementText,
-                maxLines: 3,
-                onChanged: (v) {
-                  draft.announcementText = v;
-                  _markDirty();
-                },
+              // 공지 사항
+              _SectionCard(
+                title: '공지 사항',
+                child: _LabeledField(
+                  label: '공지 내용',
+                  value: draft.announcementText,
+                  maxLines: 3,
+                  onChanged: (v) {
+                    draft.announcementText = v;
+                    _markDirty();
+                  },
+                ),
               ),
-            ),
-            const SizedBox(height: 12),
+              const SizedBox(height: 12),
 
-            // 카테고리 목록
-            ...draft.categories.asMap().entries.map((entry) {
-              final catIdx = entry.key;
-              final cat = entry.value;
-              return Padding(
-                padding: const EdgeInsets.only(bottom: 12),
-                child: _CategoryCard(
-                  category: cat,
-                  onChanged: _markDirty,
-                  onDelete: () => setState(() {
-                    draft.categories.removeAt(catIdx);
+              // 카테고리 목록
+              ...draft.categories.asMap().entries.map((entry) {
+                final catIdx = entry.key;
+                final cat = entry.value;
+                return Padding(
+                  padding: const EdgeInsets.only(bottom: 12),
+                  child: _CategoryCard(
+                    category: cat,
+                    onChanged: _markDirty,
+                    onDelete: () => setState(() {
+                      draft.categories.removeAt(catIdx);
+                      _markDirty();
+                    }),
+                  ),
+                );
+              }),
+
+              // 카테고리 추가
+              if (_allowStructuralEditing)
+                OutlinedButton.icon(
+                  onPressed: () => setState(() {
+                    draft.categories.add(
+                      _SignageCategory(id: '', title: '', items: []),
+                    );
                     _markDirty();
                   }),
+                  icon: const Icon(Icons.add),
+                  label: const Text('카테고리 추가'),
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: const Color(0xFF0D9488),
+                    side: const BorderSide(color: Color(0xFF0D9488)),
+                  ),
                 ),
-              );
-            }),
-
-            // 카테고리 추가
-            OutlinedButton.icon(
-              onPressed: () => setState(() {
-                draft.categories.add(
-                  _SignageCategory(id: '', title: '', items: []),
-                );
-                _markDirty();
-              }),
-              icon: const Icon(Icons.add),
-              label: const Text('카테고리 추가'),
-              style: OutlinedButton.styleFrom(
-                foregroundColor: const Color(0xFF0D9488),
-                side: const BorderSide(color: Color(0xFF0D9488)),
-              ),
-            ),
-          ],
-        ),
-
-        // 하단 스티키 액션 바
-        Positioned(
-          left: 0,
-          right: 0,
-          bottom: 0,
-          child: _ActionBar(
-            dirty: _dirty,
-            pushing: _pushing,
-            onRefresh: _loading || _pushing ? null : _load,
-            onReset: _dirty && !_pushing ? _resetDraft : null,
-            onPush: _dirty && !_pushing ? _push : null,
+            ],
           ),
-        ),
-      ],
+
+          // 하단 스티키 액션 바
+          Positioned(
+            left: 0,
+            right: 0,
+            bottom: 0,
+            child: _ActionBar(
+              dirty: _dirty,
+              pushing: _pushing,
+              onRefresh: _loading || _pushing ? null : _load,
+              onReset: _dirty && !_pushing ? _resetDraft : null,
+              onPush: _dirty && !_pushing ? _push : null,
+            ),
+          ),
+        ],
+      ),
     );
   }
 }
@@ -471,6 +525,27 @@ class _Banner extends StatelessWidget {
         borderRadius: BorderRadius.circular(8),
       ),
       child: Text(text, style: TextStyle(color: fg, fontSize: 13)),
+    );
+  }
+}
+
+class _EditingNotice extends StatelessWidget {
+  const _EditingNotice();
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 12),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF0FDFA),
+        border: Border.all(color: const Color(0xFF99F6E4)),
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: const Text(
+        '이 화면에서는 가게명, 공지, 카테고리와 메뉴 기본 정보만 편집할 수 있습니다. 표시되지 않은 설정은 변경하지 않고 그대로 보존합니다.',
+        style: TextStyle(fontSize: 12, color: Color(0xFF0F766E)),
+      ),
     );
   }
 }
@@ -617,7 +692,9 @@ class _CategoryCard extends StatelessWidget {
                           const SizedBox(width: 6),
                           Expanded(
                             child: Text(
-                              category.title.isEmpty ? '(제목 없음)' : category.title,
+                              category.title.isEmpty
+                                  ? '(제목 없음)'
+                                  : category.title,
                               style: const TextStyle(
                                 fontWeight: FontWeight.w800,
                                 fontSize: 15,
@@ -643,7 +720,8 @@ class _CategoryCard extends StatelessWidget {
                           ),
                         ],
                       ),
-                      if (category.id.isNotEmpty || category.description.isNotEmpty)
+                      if (category.id.isNotEmpty ||
+                          category.description.isNotEmpty)
                         Padding(
                           padding: const EdgeInsets.only(top: 4),
                           child: Text(
@@ -659,51 +737,53 @@ class _CategoryCard extends StatelessWidget {
                     ],
                   ),
                 ),
-                IconButton(
-                  icon: const Icon(Icons.delete_outline, size: 20),
-                  tooltip: '카테고리 삭제',
-                  color: Colors.white70,
-                  onPressed: onDelete,
-                ),
+                if (_allowStructuralEditing)
+                  IconButton(
+                    icon: const Icon(Icons.delete_outline, size: 20),
+                    tooltip: '카테고리 삭제',
+                    color: Colors.white70,
+                    onPressed: onDelete,
+                  ),
               ],
             ),
           ),
 
           // 카테고리 필드 편집
-          Padding(
-            padding: const EdgeInsets.fromLTRB(14, 12, 14, 0),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                _LabeledField(
-                  label: '카테고리 제목',
-                  value: category.title,
-                  onChanged: (v) {
-                    category.title = v;
-                    onChanged();
-                  },
-                ),
-                const SizedBox(height: 8),
-                _LabeledField(
-                  label: 'ID (영문)',
-                  value: category.id,
-                  onChanged: (v) {
-                    category.id = v;
-                    onChanged();
-                  },
-                ),
-                const SizedBox(height: 8),
-                _LabeledField(
-                  label: '설명 (선택)',
-                  value: category.description,
-                  onChanged: (v) {
-                    category.description = v;
-                    onChanged();
-                  },
-                ),
-              ],
+          if (_allowStructuralEditing)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(14, 12, 14, 0),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  _LabeledField(
+                    label: '카테고리 제목',
+                    value: category.title,
+                    onChanged: (v) {
+                      category.title = v;
+                      onChanged();
+                    },
+                  ),
+                  const SizedBox(height: 8),
+                  _LabeledField(
+                    label: 'ID (영문)',
+                    value: category.id,
+                    onChanged: (v) {
+                      category.id = v;
+                      onChanged();
+                    },
+                  ),
+                  const SizedBox(height: 8),
+                  _LabeledField(
+                    label: '설명 (선택)',
+                    value: category.description,
+                    onChanged: (v) {
+                      category.description = v;
+                      onChanged();
+                    },
+                  ),
+                ],
+              ),
             ),
-          ),
 
           const SizedBox(height: 12),
           const Divider(height: 1, indent: 14, endIndent: 14),
@@ -737,24 +817,25 @@ class _CategoryCard extends StatelessWidget {
             ),
 
           // 품목 추가 버튼
-          Padding(
-            padding: const EdgeInsets.fromLTRB(14, 8, 14, 12),
-            child: OutlinedButton.icon(
-              onPressed: () {
-                category.items.add(
-                    _SignageItem(korean: '', english: '', price: 0));
-                onChanged();
-              },
-              icon: const Icon(Icons.add, size: 16),
-              label: const Text('품목 추가', style: TextStyle(fontSize: 13)),
-              style: OutlinedButton.styleFrom(
-                foregroundColor: const Color(0xFF0D9488),
-                side: const BorderSide(color: Color(0xFF0D9488)),
-                minimumSize: const Size(double.infinity, 36),
-                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+          if (_allowStructuralEditing)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(14, 8, 14, 12),
+              child: OutlinedButton.icon(
+                onPressed: () {
+                  category.items
+                      .add(_SignageItem(korean: '', english: '', price: 0));
+                  onChanged();
+                },
+                icon: const Icon(Icons.add, size: 16),
+                label: const Text('품목 추가', style: TextStyle(fontSize: 13)),
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: const Color(0xFF0D9488),
+                  side: const BorderSide(color: Color(0xFF0D9488)),
+                  minimumSize: const Size(double.infinity, 36),
+                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                ),
               ),
             ),
-          ),
         ],
       ),
     );
@@ -781,13 +862,13 @@ class _ItemRow extends StatelessWidget {
   });
 
   void _openEditSheet(BuildContext context) {
-    Navigator.of(context).push(
-      MaterialPageRoute(
-        builder: (_) => _ItemEditSheet(
-          item: item,
-          index: index,
-          onChanged: onChanged,
-        ),
+    AppNavigation.pushGuarded(
+      context,
+      minimumRole: UserRole.operator,
+      child: _ItemEditSheet(
+        item: item,
+        index: index,
+        onChanged: onChanged,
       ),
     );
   }
@@ -875,14 +956,15 @@ class _ItemRow extends StatelessWidget {
             const SizedBox(width: 4),
             const Icon(Icons.edit_outlined, size: 15, color: Color(0xFFCBD5E1)),
             // 삭제 버튼
-            IconButton(
-              icon: const Icon(Icons.close, size: 16),
-              tooltip: '삭제',
-              color: const Color(0xFF94A3B8),
-              onPressed: onDelete,
-              padding: const EdgeInsets.all(4),
-              constraints: const BoxConstraints(minWidth: 28, minHeight: 28),
-            ),
+            if (_allowStructuralEditing)
+              IconButton(
+                icon: const Icon(Icons.close, size: 16),
+                tooltip: '삭제',
+                color: const Color(0xFF94A3B8),
+                onPressed: onDelete,
+                padding: const EdgeInsets.all(4),
+                constraints: const BoxConstraints(minWidth: 28, minHeight: 28),
+              ),
           ],
         ),
       ),
@@ -912,6 +994,9 @@ class _ItemEditSheetState extends State<_ItemEditSheet> {
   late final TextEditingController _englishCtrl;
   late final TextEditingController _priceCtrl;
   late final TextEditingController _noteCtrl;
+  String? _priceError;
+  bool _dirty = false;
+  bool _committed = false;
 
   @override
   void initState() {
@@ -920,6 +1005,14 @@ class _ItemEditSheetState extends State<_ItemEditSheet> {
     _englishCtrl = TextEditingController(text: widget.item.english);
     _priceCtrl = TextEditingController(text: widget.item.price.toString());
     _noteCtrl = TextEditingController(text: widget.item.note);
+    for (final controller in [
+      _koreanCtrl,
+      _englishCtrl,
+      _priceCtrl,
+      _noteCtrl
+    ]) {
+      controller.addListener(_updateDirtyState);
+    }
   }
 
   @override
@@ -932,100 +1025,148 @@ class _ItemEditSheetState extends State<_ItemEditSheet> {
   }
 
   void _save() {
+    final price = parseSignagePrice(_priceCtrl.text);
+    if (price == null || price < 0) {
+      setState(() => _priceError = '0 이상의 숫자를 입력해 주세요.');
+      return;
+    }
     widget.item.korean = _koreanCtrl.text;
     widget.item.english = _englishCtrl.text;
-    final n = int.tryParse(_priceCtrl.text);
-    if (n != null && n >= 0) widget.item.price = n;
+    widget.item.price = price;
     widget.item.note = _noteCtrl.text;
-    Navigator.of(context).pop();
+    _committed = true;
     widget.onChanged();
+    Navigator.of(context).pop();
+  }
+
+  void _updateDirtyState() {
+    final nextDirty = _koreanCtrl.text != widget.item.korean ||
+        _englishCtrl.text != widget.item.english ||
+        _priceCtrl.text != widget.item.price.toString() ||
+        _noteCtrl.text != widget.item.note;
+    if (nextDirty != _dirty || _priceError != null) {
+      setState(() {
+        _dirty = nextDirty;
+        _priceError = null;
+      });
+    }
+  }
+
+  Future<void> _handleBlockedPop() async {
+    final discard = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('편집 내용 폐기'),
+        content: const Text('저장하지 않은 품목 편집 내용을 버리시겠습니까?'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('계속 편집'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('버리기'),
+          ),
+        ],
+      ),
+    );
+    if (discard != true || !mounted) return;
+    _committed = true;
+    Navigator.of(context).pop();
   }
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('품목 편집'),
-        bottom: PreferredSize(
-          preferredSize: const Size.fromHeight(1),
-          child: Container(height: 1, color: const Color(0xFFE2E8F0)),
+    return PopScope(
+      canPop: _committed || !_dirty,
+      onPopInvokedWithResult: (didPop, result) {
+        if (!didPop) _handleBlockedPop();
+      },
+      child: Scaffold(
+        appBar: AppBar(
+          title: const Text('품목 편집'),
+          bottom: PreferredSize(
+            preferredSize: const Size.fromHeight(1),
+            child: Container(height: 1, color: const Color(0xFFE2E8F0)),
+          ),
         ),
-      ),
-      body: SafeArea(
-        child: ListView(
-          padding: const EdgeInsets.fromLTRB(20, 16, 20, 24),
-          children: [
-            Row(
-              children: [
-                Container(
-                  width: 28,
-                  height: 28,
-                  decoration: BoxDecoration(
-                    color: const Color(0xFF0D9488),
-                    borderRadius: BorderRadius.circular(7),
-                  ),
-                  alignment: Alignment.center,
-                  child: Text(
-                    '${widget.index}',
-                    style: const TextStyle(
-                      fontSize: 13,
-                      fontWeight: FontWeight.w700,
-                      color: Colors.white,
+        body: SafeArea(
+          child: ListView(
+            padding: const EdgeInsets.fromLTRB(20, 16, 20, 24),
+            children: [
+              Row(
+                children: [
+                  Container(
+                    width: 28,
+                    height: 28,
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF0D9488),
+                      borderRadius: BorderRadius.circular(7),
+                    ),
+                    alignment: Alignment.center,
+                    child: Text(
+                      '${widget.index}',
+                      style: const TextStyle(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w700,
+                        color: Colors.white,
+                      ),
                     ),
                   ),
-                ),
-                const SizedBox(width: 10),
-                const Text(
-                  '메뉴 항목 정보',
-                  style: TextStyle(
-                    fontSize: 16,
-                    fontWeight: FontWeight.w700,
-                    color: Color(0xFF0F172A),
+                  const SizedBox(width: 10),
+                  const Text(
+                    '메뉴 항목 정보',
+                    style: TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.w700,
+                      color: Color(0xFF0F172A),
+                    ),
                   ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 20),
-            _SheetField(
-              label: '한글명',
-              controller: _koreanCtrl,
-              hint: '메뉴 이름',
-              autofocus: true,
-            ),
-            const SizedBox(height: 14),
-            _SheetField(
-              label: 'English',
-              controller: _englishCtrl,
-              hint: 'Menu name',
-            ),
-            const SizedBox(height: 14),
-            _SheetField(
-              label: '가격 (원)',
-              controller: _priceCtrl,
-              hint: '0',
-              keyboardType: TextInputType.number,
-              textAlign: TextAlign.right,
-            ),
-            const SizedBox(height: 14),
-            _SheetField(
-              label: '비고 (선택)',
-              controller: _noteCtrl,
-              hint: '예: 매운맛, 계절한정 등',
-            ),
-          ],
+                ],
+              ),
+              const SizedBox(height: 20),
+              _SheetField(
+                label: '한글명',
+                controller: _koreanCtrl,
+                hint: '메뉴 이름',
+                autofocus: true,
+              ),
+              const SizedBox(height: 14),
+              _SheetField(
+                label: 'English',
+                controller: _englishCtrl,
+                hint: 'Menu name',
+              ),
+              const SizedBox(height: 14),
+              _SheetField(
+                label: '가격 (원)',
+                controller: _priceCtrl,
+                hint: '0',
+                keyboardType: TextInputType.number,
+                textAlign: TextAlign.right,
+                errorText: _priceError,
+              ),
+              const SizedBox(height: 14),
+              _SheetField(
+                label: '비고 (선택)',
+                controller: _noteCtrl,
+                hint: '예: 매운맛, 계절한정 등',
+              ),
+            ],
+          ),
         ),
-      ),
-      bottomNavigationBar: SafeArea(
-        top: false,
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(20, 8, 20, 20),
-          child: FilledButton(
-            onPressed: _save,
-            style: FilledButton.styleFrom(
-              backgroundColor: const Color(0xFF0D9488),
-              minimumSize: const Size(double.infinity, 50),
+        bottomNavigationBar: SafeArea(
+          top: false,
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(20, 8, 20, 20),
+            child: FilledButton(
+              onPressed: _save,
+              style: FilledButton.styleFrom(
+                backgroundColor: const Color(0xFF0D9488),
+                minimumSize: const Size(double.infinity, 50),
+              ),
+              child: const Text('저장', style: TextStyle(fontSize: 15)),
             ),
-            child: const Text('저장', style: TextStyle(fontSize: 15)),
           ),
         ),
       ),
@@ -1040,6 +1181,7 @@ class _SheetField extends StatelessWidget {
   final TextInputType keyboardType;
   final TextAlign textAlign;
   final bool autofocus;
+  final String? errorText;
 
   const _SheetField({
     required this.label,
@@ -1048,6 +1190,7 @@ class _SheetField extends StatelessWidget {
     this.keyboardType = TextInputType.text,
     this.textAlign = TextAlign.start,
     this.autofocus = false,
+    this.errorText,
   });
 
   @override
@@ -1072,6 +1215,7 @@ class _SheetField extends StatelessWidget {
           style: const TextStyle(fontSize: 15),
           decoration: InputDecoration(
             hintText: hint,
+            errorText: errorText,
             border: const OutlineInputBorder(),
             contentPadding:
                 const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
@@ -1080,6 +1224,15 @@ class _SheetField extends StatelessWidget {
       ],
     );
   }
+}
+
+int? parseSignagePrice(Object? value) {
+  if (value is int) return value;
+  if (value is double && value.isFinite && value == value.roundToDouble()) {
+    return value.toInt();
+  }
+  final normalized = value?.toString().trim().replaceAll(',', '') ?? '';
+  return int.tryParse(normalized);
 }
 
 // ─── 하단 액션 바 ─────────────────────────────────────────────────────────────
@@ -1129,9 +1282,8 @@ class _ActionBar extends StatelessWidget {
               Icon(
                 dirty ? Icons.edit_outlined : Icons.check_circle_outline,
                 size: 14,
-                color: dirty
-                    ? const Color(0xFF0F766E)
-                    : const Color(0xFF64748B),
+                color:
+                    dirty ? const Color(0xFF0F766E) : const Color(0xFF64748B),
               ),
               const SizedBox(width: 6),
               Expanded(

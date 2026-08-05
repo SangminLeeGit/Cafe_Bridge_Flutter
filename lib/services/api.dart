@@ -1,6 +1,7 @@
+import 'dart:async';
 import 'dart:convert';
-import 'dart:io';
 
+import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 
 class ApiResponse<T> {
@@ -14,30 +15,57 @@ class ApiResponse<T> {
 }
 
 class ApiService {
-  static const Duration _timeout = Duration(seconds: 15);
   static const String _defaultBaseUrl = 'https://pos.cafe-bridge.org';
+  static const Set<String> _debugHttpHosts = {
+    'localhost',
+    '127.0.0.1',
+    '10.0.2.2',
+  };
 
   static String defaultBaseUrl() {
     return _defaultBaseUrl;
   }
 
-  static String normalizeBaseUrl(String raw) {
+  static String normalizeBaseUrl(
+    String raw, {
+    bool requireHttps = !kDebugMode,
+    Set<String>? allowedProductionHosts,
+  }) {
     final trimmed = raw.trim();
     if (trimmed.isEmpty) {
       return defaultBaseUrl();
     }
 
-    final withScheme = trimmed.contains('://') ? trimmed : 'http://$trimmed';
-    final uri = Uri.parse(withScheme);
+    final schemeProbe = Uri.tryParse('//$trimmed');
+    final useDebugHttp = !requireHttps &&
+        schemeProbe != null &&
+        _debugHttpHosts.contains(schemeProbe.host.toLowerCase());
+    final defaultScheme = useDebugHttp ? 'http' : 'https';
+    final withScheme =
+        trimmed.contains('://') ? trimmed : '$defaultScheme://$trimmed';
+    final uri = Uri.tryParse(withScheme);
+    if (uri == null || uri.host.isEmpty) {
+      throw const FormatException('올바른 서버 주소를 입력해 주세요.');
+    }
+    if (uri.scheme != 'http' && uri.scheme != 'https') {
+      throw const FormatException('서버 주소는 HTTP 또는 HTTPS URL이어야 합니다.');
+    }
+    if (uri.scheme == 'http' &&
+        (requireHttps || !_debugHttpHosts.contains(uri.host.toLowerCase()))) {
+      throw const FormatException('HTTP 서버는 디버그 빌드의 로컬 개발 주소에서만 사용할 수 있습니다.');
+    }
+    if (uri.userInfo.isNotEmpty || uri.hasQuery || uri.hasFragment) {
+      throw const FormatException('서버 주소에는 인증 정보, 쿼리 또는 프래그먼트를 사용할 수 없습니다.');
+    }
+    if (requireHttps &&
+        allowedProductionHosts != null &&
+        !allowedProductionHosts
+            .map((host) => host.toLowerCase())
+            .contains(uri.host.toLowerCase())) {
+      throw const FormatException('허용되지 않은 서버 호스트입니다.');
+    }
 
-    // HTTPS URLs (e.g. Cloudflare tunnel) — don't append port.
-    // Also strip any non-standard port that may have been wrongly stored previously.
     if (uri.scheme == 'https') {
-      if (uri.hasPort && uri.port != 443) {
-        return Uri(scheme: uri.scheme, host: uri.host, path: uri.path)
-            .toString()
-            .replaceAll(RegExp(r'/$'), '');
-      }
       return uri.toString().replaceAll(RegExp(r'/$'), '');
     }
 
@@ -74,80 +102,53 @@ class ApiService {
     return uri.replace(queryParameters: query.isEmpty ? null : query);
   }
 
-  static Map<String, String> defaultRange([int days = 13]) {
-    final now = DateTime.now();
-    final past = now.subtract(Duration(days: days));
-    return {
-      'from_date': _formatDate(past),
-      'to_date': _formatDate(now),
-    };
-  }
-
   static String formatDate(DateTime date) => _formatDate(date);
 
+  static DateTime kstNow() {
+    final value = DateTime.now().toUtc().add(const Duration(hours: 9));
+    return DateTime(
+      value.year,
+      value.month,
+      value.day,
+      value.hour,
+      value.minute,
+      value.second,
+      value.millisecond,
+      value.microsecond,
+    );
+  }
+
+  // Static entry points are kept for pure callers and tests. Stateful code
+  // should use an injected ApiClient so a single HTTP client can be reused.
   static Future<ApiResponse<Map<String, dynamic>>> fetchJson(
     String baseUrl,
     String endpoint, {
     Map<String, Object?>? params,
     String? sessionCookie,
-  }) async {
-    final uri = buildUri(baseUrl, endpoint, params: params);
-    try {
-      final response = await _send(
-        'GET',
-        uri,
-        sessionCookie: sessionCookie,
+  }) =>
+      _withClient(
+        (client) => client.fetchJson(
+          baseUrl,
+          endpoint,
+          params: params,
+          sessionCookie: sessionCookie,
+        ),
       );
-      return ApiResponse(
-        data: _decodeMap(response),
-        sessionCookie: _extractSessionCookie(response),
-      );
-    } on SocketException catch (error) {
-      throw ApiException('네트워크 연결 실패: $error');
-    } on HttpException catch (error) {
-      throw ApiException('HTTP 예외: $error');
-    } on FormatException catch (error) {
-      throw ApiException('응답 파싱 실패: $error');
-    }
-  }
 
   static Future<ApiResponse<List<dynamic>>> fetchJsonList(
     String baseUrl,
     String endpoint, {
     Map<String, Object?>? params,
     String? sessionCookie,
-  }) async {
-    final uri = buildUri(baseUrl, endpoint, params: params);
-    try {
-      final response = await _send(
-        'GET',
-        uri,
-        sessionCookie: sessionCookie,
+  }) =>
+      _withClient(
+        (client) => client.fetchJsonList(
+          baseUrl,
+          endpoint,
+          params: params,
+          sessionCookie: sessionCookie,
+        ),
       );
-
-      if (response.statusCode < 200 || response.statusCode >= 300) {
-        throw ApiException(
-          'HTTP ${response.statusCode}: ${_decodeErrorMessage(response)}',
-          statusCode: response.statusCode,
-        );
-      }
-
-      final decoded = json.decode(utf8.decode(response.bodyBytes));
-      if (decoded is List<dynamic>) {
-        return ApiResponse(
-          data: decoded,
-          sessionCookie: _extractSessionCookie(response),
-        );
-      }
-      throw const ApiException('예상과 다른 응답 형식입니다.');
-    } on SocketException catch (error) {
-      throw ApiException('네트워크 연결 실패: $error');
-    } on HttpException catch (error) {
-      throw ApiException('HTTP 예외: $error');
-    } on FormatException catch (error) {
-      throw ApiException('응답 파싱 실패: $error');
-    }
-  }
 
   static Future<ApiResponse<Map<String, dynamic>>> postJson(
     String baseUrl,
@@ -157,12 +158,110 @@ class ApiService {
     String? csrfToken,
     bool includeCsrfToken = true,
     String method = 'POST',
-  }) async {
-    final uri = buildUri(baseUrl, endpoint);
+  }) =>
+      _withClient(
+        (client) => client.postJson(
+          baseUrl,
+          endpoint,
+          body: body,
+          sessionCookie: sessionCookie,
+          csrfToken: csrfToken,
+          includeCsrfToken: includeCsrfToken,
+          method: method,
+        ),
+      );
+
+  static Future<T> _withClient<T>(Future<T> Function(ApiClient) action) async {
+    final client = ApiClient();
     try {
+      return await action(client);
+    } finally {
+      client.close();
+    }
+  }
+
+  static String _formatDate(DateTime date) {
+    return '${date.year}-${date.month.toString().padLeft(2, '0')}-${date.day.toString().padLeft(2, '0')}';
+  }
+}
+
+/// Stateful HTTP boundary. A single client is reused by [AppState] and can be
+/// replaced in tests without making UI code know about the http package.
+class ApiClient {
+  ApiClient({http.Client? client}) : _client = client ?? http.Client();
+
+  static const Duration _timeout = Duration(seconds: 15);
+
+  final http.Client _client;
+  bool _closed = false;
+
+  Future<ApiResponse<Map<String, dynamic>>> fetchJson(
+    String baseUrl,
+    String endpoint, {
+    Map<String, Object?>? params,
+    String? sessionCookie,
+  }) {
+    return _guard(() async {
+      final response = await _send(
+        'GET',
+        ApiService.buildUri(baseUrl, endpoint, params: params),
+        sessionCookie: sessionCookie,
+      );
+      return ApiResponse(
+        data: _decodeMap(response),
+        sessionCookie: _extractSessionCookie(response),
+      );
+    });
+  }
+
+  Future<ApiResponse<List<dynamic>>> fetchJsonList(
+    String baseUrl,
+    String endpoint, {
+    Map<String, Object?>? params,
+    String? sessionCookie,
+  }) {
+    return _guard(() async {
+      final response = await _send(
+        'GET',
+        ApiService.buildUri(baseUrl, endpoint, params: params),
+        sessionCookie: sessionCookie,
+      );
+      if (response.statusCode < 200 || response.statusCode >= 300) {
+        throw ApiException(
+          'HTTP ${response.statusCode}: ${_decodeErrorMessage(response)}',
+          statusCode: response.statusCode,
+        );
+      }
+      if (response.statusCode == 204) {
+        return ApiResponse(
+          data: const <dynamic>[],
+          sessionCookie: _extractSessionCookie(response),
+        );
+      }
+      final decoded = json.decode(utf8.decode(response.bodyBytes));
+      if (decoded is List<dynamic>) {
+        return ApiResponse(
+          data: decoded,
+          sessionCookie: _extractSessionCookie(response),
+        );
+      }
+      throw const ApiException('예상과 다른 응답 형식입니다.');
+    });
+  }
+
+  Future<ApiResponse<Map<String, dynamic>>> postJson(
+    String baseUrl,
+    String endpoint, {
+    Map<String, dynamic>? body,
+    String? sessionCookie,
+    String? csrfToken,
+    bool includeCsrfToken = true,
+    String method = 'POST',
+  }) {
+    return _guard(() async {
       final response = await _send(
         method,
-        uri,
+        ApiService.buildUri(baseUrl, endpoint),
         body: body,
         sessionCookie: sessionCookie,
         csrfToken: includeCsrfToken ? csrfToken : null,
@@ -171,13 +270,55 @@ class ApiService {
         data: _decodeMap(response),
         sessionCookie: _extractSessionCookie(response),
       );
-    } on SocketException catch (error) {
-      throw ApiException('네트워크 연결 실패: $error');
-    } on HttpException catch (error) {
-      throw ApiException('HTTP 예외: $error');
+    });
+  }
+
+  Future<T> _guard<T>(Future<T> Function() operation) async {
+    try {
+      return await operation();
+    } on TimeoutException catch (error) {
+      throw ApiException('요청 시간 초과: $error', isTransportError: true);
+    } on http.ClientException catch (error) {
+      throw ApiException('네트워크 요청 실패: $error', isTransportError: true);
     } on FormatException catch (error) {
       throw ApiException('응답 파싱 실패: $error');
     }
+  }
+
+  Future<http.Response> _send(
+    String method,
+    Uri uri, {
+    Map<String, dynamic>? body,
+    String? sessionCookie,
+    String? csrfToken,
+  }) async {
+    if (_closed) {
+      throw StateError('ApiClient has been closed.');
+    }
+    final request = http.Request(method, uri);
+    request.headers['Accept'] = 'application/json';
+    if (sessionCookie != null && sessionCookie.isNotEmpty) {
+      request.headers['Cookie'] = sessionCookie;
+    }
+    if (csrfToken != null && csrfToken.isNotEmpty) {
+      request.headers['X-CSRF-Token'] = csrfToken;
+    }
+    if (body != null) {
+      request.headers['Content-Type'] = 'application/json';
+      request.body = json.encode(body);
+    }
+    return _client
+        .send(request)
+        .then(http.Response.fromStream)
+        .timeout(_timeout);
+  }
+
+  void close() {
+    if (_closed) {
+      return;
+    }
+    _closed = true;
+    _client.close();
   }
 
   static Map<String, dynamic> _decodeMap(http.Response response) {
@@ -187,7 +328,9 @@ class ApiService {
         statusCode: response.statusCode,
       );
     }
-
+    if (response.statusCode == 204) {
+      return const <String, dynamic>{};
+    }
     final decoded = json.decode(utf8.decode(response.bodyBytes));
     if (decoded is Map<String, dynamic>) {
       return decoded;
@@ -210,7 +353,7 @@ class ApiService {
         return response.reasonPhrase ?? '오류';
       }
     } catch (_) {
-      // Ignore secondary parse failures and use the HTTP reason phrase.
+      // Use the HTTP reason phrase when an error body is not JSON.
     }
     return response.reasonPhrase ?? '오류';
   }
@@ -246,59 +389,29 @@ class ApiService {
     return detail.toString().trim();
   }
 
-  static Future<http.Response> _send(
-    String method,
-    Uri uri, {
-    Map<String, dynamic>? body,
-    String? sessionCookie,
-    String? csrfToken,
-  }) async {
-    final client = http.Client();
-    try {
-      final request = http.Request(method, uri);
-      request.headers['Accept'] = 'application/json';
-      if (sessionCookie != null && sessionCookie.isNotEmpty) {
-        request.headers['Cookie'] = sessionCookie;
-      }
-      if (csrfToken != null && csrfToken.isNotEmpty) {
-        request.headers['X-CSRF-Token'] = csrfToken;
-      }
-      if (body != null) {
-        request.headers['Content-Type'] = 'application/json';
-        request.body = json.encode(body);
-      }
-
-      final streamed = await client.send(request).timeout(_timeout);
-      final response = await http.Response.fromStream(streamed);
-      return response;
-    } finally {
-      client.close();
-    }
-  }
-
   static String? _extractSessionCookie(http.Response response) {
     final raw = response.headers['set-cookie'];
     if (raw == null || raw.isEmpty) {
       return null;
     }
-
     final firstPart = raw.split(';').first.trim();
     if (!firstPart.contains('=')) {
       return null;
     }
     return firstPart;
   }
-
-  static String _formatDate(DateTime date) {
-    return '${date.year}-${date.month.toString().padLeft(2, '0')}-${date.day.toString().padLeft(2, '0')}';
-  }
 }
 
 class ApiException implements Exception {
   final String message;
   final int? statusCode;
+  final bool isTransportError;
 
-  const ApiException(this.message, {this.statusCode});
+  const ApiException(
+    this.message, {
+    this.statusCode,
+    this.isTransportError = false,
+  });
 
   @override
   String toString() => message;

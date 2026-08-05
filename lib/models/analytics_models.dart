@@ -48,6 +48,12 @@ class MonthlyDayRecord {
   }
 }
 
+void validateAnalyticsDateRange(DateTime from, DateTime to) {
+  if (from.isAfter(to)) {
+    throw ArgumentError('시작일은 종료일보다 늦을 수 없습니다.');
+  }
+}
+
 class MonthlyTotals {
   final int gross;
   final int pureSales;
@@ -194,6 +200,7 @@ class HourlyHeatmapCell {
   final int billCount;
   final int totalAmount;
   final int totalCustomers;
+  final int? receiptCount;
 
   const HourlyHeatmapCell({
     required this.dow,
@@ -201,6 +208,7 @@ class HourlyHeatmapCell {
     required this.billCount,
     required this.totalAmount,
     required this.totalCustomers,
+    this.receiptCount,
   });
 
   factory HourlyHeatmapCell.fromJson(Map<String, dynamic> json) {
@@ -210,6 +218,9 @@ class HourlyHeatmapCell {
       billCount: asInt(json['bill_count']),
       totalAmount: asInt(json['total_amount']),
       totalCustomers: asInt(json['total_customers']),
+      receiptCount: json.containsKey('receipt_count')
+          ? asInt(json['receipt_count'])
+          : null,
     );
   }
 }
@@ -219,12 +230,14 @@ class HourlyTotal {
   final int billCount;
   final int totalAmount;
   final int totalCustomers;
+  final int? receiptCount;
 
   const HourlyTotal({
     required this.hour,
     required this.billCount,
     required this.totalAmount,
     required this.totalCustomers,
+    this.receiptCount,
   });
 
   factory HourlyTotal.fromJson(Map<String, dynamic> json) {
@@ -233,6 +246,9 @@ class HourlyTotal {
       billCount: asInt(json['bill_count']),
       totalAmount: asInt(json['total_amount']),
       totalCustomers: asInt(json['total_customers']),
+      receiptCount: json.containsKey('receipt_count')
+          ? asInt(json['receipt_count'])
+          : null,
     );
   }
 }
@@ -353,6 +369,10 @@ class PaymentDayRecord {
   final int pointAmount;
   final int giftAmount;
   final int prepaidAmount;
+  final int receivableAmount;
+  final int exchangeAmount;
+  final int staffCardAmount;
+  final int emoneyAmount;
   final int receiptCount;
   final int customerCount;
 
@@ -364,6 +384,10 @@ class PaymentDayRecord {
     required this.pointAmount,
     required this.giftAmount,
     required this.prepaidAmount,
+    required this.receivableAmount,
+    required this.exchangeAmount,
+    required this.staffCardAmount,
+    required this.emoneyAmount,
     required this.receiptCount,
     required this.customerCount,
   });
@@ -377,6 +401,10 @@ class PaymentDayRecord {
       pointAmount: asInt(json['point_amount']),
       giftAmount: asInt(json['gift_amount']),
       prepaidAmount: asInt(json['prepaid_amount']),
+      receivableAmount: asInt(json['receivable_amount']),
+      exchangeAmount: asInt(json['exchange_amount']),
+      staffCardAmount: asInt(json['staff_card_amount']),
+      emoneyAmount: asInt(json['emoney_amount']),
       receiptCount: asInt(json['receipt_count']),
       customerCount: asInt(json['customer_count']),
     );
@@ -390,6 +418,10 @@ class PaymentTotals {
   final int point;
   final int gift;
   final int prepaid;
+  final int receivable;
+  final int exchange;
+  final int staffCard;
+  final int emoney;
   final int receipts;
 
   const PaymentTotals({
@@ -399,6 +431,10 @@ class PaymentTotals {
     required this.point,
     required this.gift,
     required this.prepaid,
+    required this.receivable,
+    required this.exchange,
+    required this.staffCard,
+    required this.emoney,
     required this.receipts,
   });
 
@@ -410,6 +446,10 @@ class PaymentTotals {
       point: asInt(json['point']),
       gift: asInt(json['gift']),
       prepaid: asInt(json['prepaid']),
+      receivable: asInt(json['receivable']),
+      exchange: asInt(json['exchange']),
+      staffCard: asInt(json['staff_card']),
+      emoney: asInt(json['emoney']),
       receipts: asInt(json['receipts']),
     );
   }
@@ -697,7 +737,7 @@ int asInt(Object? value) {
     return value.round();
   }
   if (value is String) {
-    return int.tryParse(value) ?? 0;
+    return int.tryParse(value.replaceAll(',', '')) ?? 0;
   }
   return 0;
 }
@@ -710,7 +750,7 @@ double asDouble(Object? value) {
     return value.toDouble();
   }
   if (value is String) {
-    return double.tryParse(value) ?? 0;
+    return double.tryParse(value.replaceAll(',', '')) ?? 0;
   }
   return 0;
 }
@@ -824,11 +864,29 @@ class ForecastDayRecord {
   }
 }
 
+class ForecastPrediction {
+  final String predictedDate;
+  final int predictedTotal;
+
+  const ForecastPrediction({
+    required this.predictedDate,
+    required this.predictedTotal,
+  });
+
+  factory ForecastPrediction.fromJson(Map<String, dynamic> json) {
+    return ForecastPrediction(
+      predictedDate: asString(json['predicted_date']),
+      predictedTotal: asInt(json['predicted_total']),
+    );
+  }
+}
+
 class ForecastData {
   final String error;
   final int year;
   final int month;
   final List<ForecastDayRecord> days;
+  final List<ForecastPrediction> forecastDays;
   final int daysInMonth;
   final int actualTotal;
   final int actualDays;
@@ -843,6 +901,7 @@ class ForecastData {
     required this.year,
     required this.month,
     required this.days,
+    required this.forecastDays,
     required this.daysInMonth,
     required this.actualTotal,
     required this.actualDays,
@@ -854,6 +913,14 @@ class ForecastData {
   });
 
   factory ForecastData.fromJson(Map<String, dynamic> json) {
+    final forecastDays = asListOfMaps(json['forecast_days'])
+        .map(ForecastPrediction.fromJson)
+        .toList(growable: false);
+    final forecastRemaining = forecastDays.fold<int>(
+      0,
+      (sum, day) => sum + day.predictedTotal,
+    );
+    final actualTotal = asInt(json['actual_total']);
     return ForecastData(
       error: asString(json['error']),
       year: asInt(json['year']),
@@ -861,12 +928,13 @@ class ForecastData {
       days: asListOfMaps(json['days'])
           .map(ForecastDayRecord.fromJson)
           .toList(growable: false),
+      forecastDays: forecastDays,
       daysInMonth: asInt(json['days_in_month']),
-      actualTotal: asInt(json['actual_total']),
+      actualTotal: actualTotal,
       actualDays: asInt(json['actual_days']),
       remainingDays: asInt(json['remaining_days']),
-      forecastRemaining: asInt(json['forecast_remaining']),
-      projectedTotal: asInt(json['projected_total']),
+      forecastRemaining: forecastRemaining,
+      projectedTotal: actualTotal + forecastRemaining,
       dailyAvg: asInt(json['daily_avg']),
       progressPct: asDouble(json['progress_pct']),
     );
