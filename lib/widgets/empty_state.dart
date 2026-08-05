@@ -1,15 +1,21 @@
 import 'package:flutter/material.dart';
 
+import '../theme/app_theme.dart';
+
 class EmptyState extends StatelessWidget {
   final String title;
   final String? message;
   final Widget? action;
+  final IconData icon;
+  final bool destructive;
 
   const EmptyState({
     super.key,
     required this.title,
     this.message,
     this.action,
+    this.icon = Icons.inbox_outlined,
+    this.destructive = false,
   });
 
   @override
@@ -20,10 +26,12 @@ class EmptyState extends StatelessWidget {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            const Icon(
-              Icons.inbox_outlined,
+            Icon(
+              icon,
               size: 40,
-              color: Color(0xFF94A3B8),
+              color: destructive
+                  ? CafeBridgeColors.danger
+                  : CafeBridgeColors.textFaint,
             ),
             const SizedBox(height: 12),
             Text(
@@ -32,7 +40,7 @@ class EmptyState extends StatelessWidget {
               style: const TextStyle(
                 fontSize: 18,
                 fontWeight: FontWeight.w700,
-                color: Color(0xFF0F172A),
+                color: CafeBridgeColors.textPrimary,
               ),
             ),
             if (message != null) ...[
@@ -42,7 +50,7 @@ class EmptyState extends StatelessWidget {
                 textAlign: TextAlign.center,
                 style: const TextStyle(
                   fontSize: 14,
-                  color: Color(0xFF64748B),
+                  color: CafeBridgeColors.textMuted,
                 ),
               ),
             ],

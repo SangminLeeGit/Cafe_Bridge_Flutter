@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../state/app_state.dart';
+import '../theme/app_theme.dart';
 
 class AppUpdateBanner extends StatelessWidget {
   final bool dense;
@@ -26,7 +27,7 @@ class AppUpdateBanner extends StatelessWidget {
       width: double.infinity,
       padding: EdgeInsets.all(dense ? 12 : 14),
       decoration: BoxDecoration(
-        color: const Color(0xFFFFF7ED),
+        color: CafeBridgeColors.warningSoft,
         borderRadius: BorderRadius.circular(dense ? 0 : 18),
         border: Border.all(color: const Color(0xFFFED7AA)),
       ),

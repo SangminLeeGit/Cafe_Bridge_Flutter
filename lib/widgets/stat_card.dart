@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import '../theme/app_theme.dart';
+
 class StatCard extends StatelessWidget {
   final String label;
   final String value;
@@ -17,9 +19,9 @@ class StatCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final bgColor =
-        accent ? const Color.fromRGBO(13, 148, 136, 0.1) : Colors.white;
+        accent ? CafeBridgeColors.accentSoft : CafeBridgeColors.surface;
     final borderColor =
-        accent ? const Color(0xFF0D9488) : const Color(0xFFE2E8F0);
+        accent ? CafeBridgeColors.accent : CafeBridgeColors.border;
 
     return Container(
       padding: const EdgeInsets.all(16),
@@ -35,7 +37,7 @@ class StatCard extends StatelessWidget {
             label.toUpperCase(),
             style: const TextStyle(
               fontSize: 12,
-              color: Color(0xFF94A3B8),
+              color: CafeBridgeColors.textFaint,
               fontWeight: FontWeight.bold,
             ),
           ),
@@ -44,7 +46,7 @@ class StatCard extends StatelessWidget {
             value,
             style: const TextStyle(
               fontSize: 24,
-              color: Color(0xFF0F172A),
+              color: CafeBridgeColors.textPrimary,
               fontWeight: FontWeight.bold,
             ),
           ),
@@ -54,7 +56,7 @@ class StatCard extends StatelessWidget {
               sub!,
               style: const TextStyle(
                 fontSize: 12,
-                color: Color(0xFF64748B),
+                color: CafeBridgeColors.textMuted,
               ),
             ),
           ],

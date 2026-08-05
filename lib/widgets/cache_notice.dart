@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../models/dashboard_model.dart';
+import '../theme/app_theme.dart';
 
 class CacheNotice extends StatelessWidget {
   final DateTime? cachedAt;
@@ -17,8 +18,8 @@ class CacheNotice extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
       decoration: BoxDecoration(
-        color: const Color(0xFFFFF7ED),
-        borderRadius: BorderRadius.circular(999),
+        color: CafeBridgeColors.warningSoft,
+        borderRadius: BorderRadius.circular(CafeBridgeRadii.pill),
         border: Border.all(color: const Color(0xFFFED7AA)),
       ),
       child: Text(

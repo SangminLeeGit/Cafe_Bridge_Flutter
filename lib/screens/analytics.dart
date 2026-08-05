@@ -17,7 +17,80 @@ class AnalyticsScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return const DefaultTabController(
-      length: 10,
+      length: 3,
+      child: Column(
+        children: [
+          ColoredBox(
+            color: Colors.white,
+            child: TabBar(
+              labelPadding: EdgeInsets.symmetric(horizontal: 16),
+              tabs: [
+                Tab(text: '개요'),
+                Tab(text: '매출 흐름'),
+                Tab(text: '메뉴 인사이트'),
+              ],
+            ),
+          ),
+          Expanded(
+            child: TabBarView(
+              children: [
+                _AnalyticsGroup(
+                  tabs: [
+                    Tab(text: '월간'),
+                    Tab(text: '비교'),
+                    Tab(text: '트렌드'),
+                  ],
+                  children: [
+                    _MonthlyTab(),
+                    _CompareTab(),
+                    _TrendsTab(),
+                  ],
+                ),
+                _AnalyticsGroup(
+                  tabs: [
+                    Tab(text: '품목'),
+                    Tab(text: '시간대'),
+                    Tab(text: '요일'),
+                    Tab(text: '결제'),
+                  ],
+                  children: [
+                    _ItemsTab(),
+                    _HoursTab(),
+                    _WeekdayTab(),
+                    _PaymentsTab(),
+                  ],
+                ),
+                _AnalyticsGroup(
+                  tabs: [
+                    Tab(text: '메뉴 작업대'),
+                    Tab(text: '예측'),
+                    Tab(text: 'ABC'),
+                  ],
+                  children: [
+                    _MenuEngineeringTab(),
+                    _ForecastTab(),
+                    _AbcTab(),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _AnalyticsGroup extends StatelessWidget {
+  final List<Widget> tabs;
+  final List<Widget> children;
+
+  const _AnalyticsGroup({required this.tabs, required this.children});
+
+  @override
+  Widget build(BuildContext context) {
+    return DefaultTabController(
+      length: children.length,
       child: Column(
         children: [
           ColoredBox(
@@ -25,36 +98,11 @@ class AnalyticsScreen extends StatelessWidget {
             child: TabBar(
               isScrollable: true,
               tabAlignment: TabAlignment.start,
-              tabs: [
-                Tab(text: '월간'),
-                Tab(text: '품목'),
-                Tab(text: '시간대'),
-                Tab(text: '요일'),
-                Tab(text: '결제'),
-                Tab(text: '비교'),
-                Tab(text: '트렌드'),
-                Tab(text: '메뉴작업대'),
-                Tab(text: '예측'),
-                Tab(text: 'ABC'),
-              ],
+              labelPadding: const EdgeInsets.symmetric(horizontal: 14),
+              tabs: tabs,
             ),
           ),
-          Expanded(
-            child: TabBarView(
-              children: [
-                _MonthlyTab(),
-                _ItemsTab(),
-                _HoursTab(),
-                _WeekdayTab(),
-                _PaymentsTab(),
-                _CompareTab(),
-                _TrendsTab(),
-                _MenuEngineeringTab(),
-                _ForecastTab(),
-                _AbcTab(),
-              ],
-            ),
-          ),
+          Expanded(child: TabBarView(children: children)),
         ],
       ),
     );
