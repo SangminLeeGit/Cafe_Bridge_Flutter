@@ -51,10 +51,11 @@
 
 ### 1. 비교 기준과 발견사항
 
-- 현재 작업 브랜치 기준 커밋은 `main`의 `4a1960a`이며, 로컬에는 없던 `design` 브랜치를 `origin/design`의 `a745913`으로 읽기 전용 fetch했습니다.
-- 디자인 브랜치는 `docs/cafe-bridge-screen-map.md`, 공통 테마, 공통 전체 화면 shell, `main.dart`, 분석·업무·더보기 허브와 공통 위젯을 변경합니다.
-- `design`과 기준 커밋 사이에는 12개 파일, 830줄 추가와 251줄 삭제가 있으며 API 서비스, 응답 모델, 권한 모델, 작업 poller는 변경하지 않습니다.
-- 현재 작업 트리는 이미 인증·캐시·비동기 작업·상품 조회·가격 반영·일일보고서 기능을 추가한 미커밋 상태입니다. 이 변경을 덮어쓰거나 브랜치 병합으로 대체하지 않습니다.
+- 현재 작업 브랜치 기준선은 `main`의 `4a1960a`였으며, 초기 UI 통합 커밋 `a745913`과 최신 명세 커밋 `origin/design`의 `5d5a42d`까지 읽기 전용으로 비교했습니다.
+- 초기 디자인 변경은 `docs/cafe-bridge-screen-map.md`, 공통 테마, 공통 전체 화면 shell, `main.dart`, 분석·업무·더보기 허브와 공통 위젯을 변경했습니다.
+- 최신 디자인 변경은 `brand-spec.md`, `design-spec.md`, `screen-system.css`, HTML 화면 프레임과 명세 런처를 추가했습니다. 이는 구현 코드가 아니라 Flutter 클라이언트의 코드 추적형 웹 명세 산출물입니다.
+- 초기 디자인과 기준 커밋 사이에는 12개 파일, 830줄 추가와 251줄 삭제가 있었고 API 서비스, 응답 모델, 권한 모델, 작업 poller는 변경하지 않았습니다. 최신 명세는 18개 웹/문서 파일을 추가하지만 API 계약은 여전히 변경하지 않습니다.
+- 현재 작업 브랜치에는 인증·캐시·비동기 작업·상품 조회·가격 반영·일일보고서 기능이 이미 반영되어 있습니다. 이 변경을 덮어쓰거나 브랜치 병합으로 대체하지 않습니다.
 
 ### 2. 선별 적용 결정
 
@@ -66,6 +67,7 @@
 | 전역 토큰과 화면 shell | 기존 코드가 사용하는 `AppColors` 이름을 유지한 채 디자인의 색상·간격·반지름·상태 토큰을 확장합니다. `AppScreen`을 push된 운영 화면에 적용하고 Material 3 버튼·입력·탭·카드·SnackBar 규칙을 전역화합니다. |
 | 상태 표현 | 초기화에는 공통 `LoadingState`를 사용하고, 기존 `EmptyState`의 재시도·빈 데이터 흐름을 보존하면서 아이콘·오류 강조를 확장합니다. 캐시·업데이트·패널·통계 카드도 토큰을 사용합니다. |
 | 웹 전용 요소 배제 | 마우스 hover, 데스크톱 전용 sidebar/table 레이아웃은 복제하지 않습니다. Android safe area, 44dp 이상 터치 영역, 스크롤 가능한 계층형 탭, 반응형 카드 grid, 시스템 뒤로 가기를 사용합니다. |
+| 최신 웹 명세 산출물 | HTML iframe 프레임, CSS 선택 필터, 웹 anchor 이동, root-level 중복 로고와 monospace trace 표현은 Android 리소스로 복사하지 않습니다. 의미 있는 토큰·상태 문구·화면/API 추적 정보만 Flutter 테마·위젯·문서에 반영합니다. |
 
 ### 3. 구현 순서
 
@@ -90,3 +92,11 @@
 - Android SDK/에뮬레이터 연결 여부를 확인하되 연결 장치가 없으면 실기기 검증을 가장하지 않고 정적·빌드·테스트 결과만 기록합니다.
 - 변경 diff에서 미사용 import/리소스, debug 출력, 임시 파일, 중복 shell을 확인하고 기존 사용자 변경은 되돌리지 않습니다.
 - 검증 완료 후 의도한 파일만 stage하여 명확한 커밋 메시지로 현재 원격 추적 브랜치에 push합니다.
+
+### 6. 최신 웹 명세 재검토 결과
+
+- `brand-spec.md`의 색상·타이포그래피·운영 콘솔 posture는 현재 `AppColors`, Material 3 기본 sans-serif, 5개 하단 destination과 일치합니다.
+- `design-spec.md`의 화면 맵과 API surface는 현재 Flutter 소스 및 `docs/cafe-bridge-screen-map.md`에 반영되어 있습니다. 정적 예시 숫자와 demo payload는 Android에 추가하지 않습니다.
+- `screen-system.css`의 카드·패널·상태·입력·탭 규칙은 기존 `AppTheme`, `AppScreen`, `Panel`, `StatCard`, `EmptyState`, `NetworkState`, `AccessGate`로 재해석되어 있습니다.
+- `screens/*.html`, `index.html`, CSS, 웹 전용 root 로고는 Android APK의 asset/navigation/runtime에 포함하지 않습니다. Android는 기존 `assets/branding/cafe_bridge_logo.png` symlink와 Flutter `Image.asset` 경로를 유지합니다.
+- 최신 design의 `android/gradle.properties`가 Jetifier를 다시 활성화하지만, Android Lint에서 Java class major 68을 처리하지 못하는 근본 도구체인 오류를 재발시키므로 현재 `android.enableJetifier=false`와 compileSdk 경고 설정을 유지합니다.

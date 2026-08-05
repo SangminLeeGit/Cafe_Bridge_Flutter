@@ -2,6 +2,8 @@
 
 `origin/design`의 화면 구성 의도를 현재 Flutter/Android 계약에 맞게 선별 적용한 기준선이다. API path, JSON 모델, 세션·캐시 정책은 기존 구현을 유지한다.
 
+최신 `origin/design`의 `brand-spec.md`, `design-spec.md`, `screen-system.css`, `screens/*.html`은 실제 APK UI가 아닌 코드 추적형 웹 명세 산출물이다. HTML 프레임·CSS 런처·웹 anchor/filter·중복 로고 리소스는 Android에 복사하지 않고, 아래 화면·상태·토큰 의미만 Flutter Material 3로 재해석한다.
+
 ## 진입 구조
 
 ```text
