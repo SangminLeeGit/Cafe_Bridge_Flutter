@@ -65,13 +65,14 @@ print(json.dumps({
 }, ensure_ascii=False, separators=(",", ":")))
 PY
 )"
+DELIVERY_ID="$(python3 -c 'import uuid; print(uuid.uuid4())')"
 TIMESTAMP="$(date +%s)"
-SIGNATURE="$(TIMESTAMP="$TIMESTAMP" PAYLOAD="$PAYLOAD" SECRET="$CAFE_BRIDGE_FLUTTER_CI_CALLBACK_SECRET" python3 - <<'PY'
+SIGNATURE="$(TIMESTAMP="$TIMESTAMP" DELIVERY_ID="$DELIVERY_ID" PAYLOAD="$PAYLOAD" SECRET="$CAFE_BRIDGE_FLUTTER_CI_CALLBACK_SECRET" python3 - <<'PY'
 import hashlib
 import hmac
 import os
 
-message = f"{os.environ['TIMESTAMP']}\n{os.environ['PAYLOAD']}".encode("utf-8")
+message = f"{os.environ['TIMESTAMP']}\n{os.environ['DELIVERY_ID']}\n{os.environ['PAYLOAD']}".encode("utf-8")
 print(hmac.new(os.environ["SECRET"].encode("utf-8"), message, hashlib.sha256).hexdigest())
 PY
 )"
@@ -79,6 +80,7 @@ curl -fsS \
   -X POST \
   -H "Content-Type: application/json" \
   -H "X-Cafe-Bridge-CI-Timestamp: ${TIMESTAMP}" \
+  -H "X-Cafe-Bridge-CI-Delivery: ${DELIVERY_ID}" \
   -H "X-Cafe-Bridge-CI-Signature: ${SIGNATURE}" \
   --data "$PAYLOAD" \
   "$REPORT_URL"
@@ -251,13 +253,14 @@ print(json.dumps({
 }, ensure_ascii=False, separators=(",", ":")))
 PY
 )"
+DELIVERY_ID="$(python3 -c 'import uuid; print(uuid.uuid4())')"
 TIMESTAMP="$(date +%s)"
-SIGNATURE="$(TIMESTAMP="$TIMESTAMP" PAYLOAD="$PAYLOAD" SECRET="$CAFE_BRIDGE_FLUTTER_CI_CALLBACK_SECRET" python3 - <<'PY'
+SIGNATURE="$(TIMESTAMP="$TIMESTAMP" DELIVERY_ID="$DELIVERY_ID" PAYLOAD="$PAYLOAD" SECRET="$CAFE_BRIDGE_FLUTTER_CI_CALLBACK_SECRET" python3 - <<'PY'
 import hashlib
 import hmac
 import os
 
-message = f"{os.environ['TIMESTAMP']}\n{os.environ['PAYLOAD']}".encode("utf-8")
+message = f"{os.environ['TIMESTAMP']}\n{os.environ['DELIVERY_ID']}\n{os.environ['PAYLOAD']}".encode("utf-8")
 print(hmac.new(os.environ["SECRET"].encode("utf-8"), message, hashlib.sha256).hexdigest())
 PY
 )"
@@ -265,6 +268,7 @@ curl -fsS \
   -X POST \
   -H "Content-Type: application/json" \
   -H "X-Cafe-Bridge-CI-Timestamp: ${TIMESTAMP}" \
+  -H "X-Cafe-Bridge-CI-Delivery: ${DELIVERY_ID}" \
   -H "X-Cafe-Bridge-CI-Signature: ${SIGNATURE}" \
   --data "$PAYLOAD" \
   "$REPORT_URL"
@@ -282,7 +286,20 @@ cleanup_gradle() {
   pkill -u "$(id -u)" -f 'KotlinCompileDaemon' >/dev/null 2>&1 || true
 }
 trap cleanup_gradle EXIT INT TERM
-"$FLUTTER_BIN" pub get
+EXPECTED_FLUTTER_VERSION="$(tr -d '[:space:]' < .flutter-version)"
+EXPECTED_FLUTTER_REVISION="$(tr -d '[:space:]' < .flutter-revision)"
+FLUTTER_VERSION_JSON="$("$FLUTTER_BIN" --version --machine)"
+ACTUAL_FLUTTER_VERSION="$(python3 -c 'import json,sys; print(json.load(sys.stdin)["frameworkVersion"])' <<< "$FLUTTER_VERSION_JSON")"
+ACTUAL_FLUTTER_REVISION="$(python3 -c 'import json,sys; print(json.load(sys.stdin)["frameworkRevision"])' <<< "$FLUTTER_VERSION_JSON")"
+if [[ "$ACTUAL_FLUTTER_VERSION" != "$EXPECTED_FLUTTER_VERSION" ]]; then
+  echo "Flutter version mismatch: expected $EXPECTED_FLUTTER_VERSION, got $ACTUAL_FLUTTER_VERSION" >&2
+  exit 1
+fi
+if [[ "$ACTUAL_FLUTTER_REVISION" != "$EXPECTED_FLUTTER_REVISION" ]]; then
+  echo "Flutter revision mismatch: expected $EXPECTED_FLUTTER_REVISION, got $ACTUAL_FLUTTER_REVISION" >&2
+  exit 1
+fi
+"$FLUTTER_BIN" pub get --enforce-lockfile
 "$FLUTTER_BIN" build apk --release --build-name "$VERSION_NAME" --build-number "$BUILD_NUMBER"
 
 APKSIGNER="$ANDROID_SDK_ROOT/build-tools/35.0.0/apksigner"
@@ -331,13 +348,14 @@ print(json.dumps({
 }, ensure_ascii=False, separators=(",", ":")))
 PY
 )"
+DELIVERY_ID="$(python3 -c 'import uuid; print(uuid.uuid4())')"
 TIMESTAMP="$(date +%s)"
-SIGNATURE="$(TIMESTAMP="$TIMESTAMP" PAYLOAD="$PAYLOAD" SECRET="$CAFE_BRIDGE_FLUTTER_CI_CALLBACK_SECRET" python3 - <<'PY'
+SIGNATURE="$(TIMESTAMP="$TIMESTAMP" DELIVERY_ID="$DELIVERY_ID" PAYLOAD="$PAYLOAD" SECRET="$CAFE_BRIDGE_FLUTTER_CI_CALLBACK_SECRET" python3 - <<'PY'
 import hashlib
 import hmac
 import os
 
-message = f"{os.environ['TIMESTAMP']}\n{os.environ['PAYLOAD']}".encode("utf-8")
+message = f"{os.environ['TIMESTAMP']}\n{os.environ['DELIVERY_ID']}\n{os.environ['PAYLOAD']}".encode("utf-8")
 print(hmac.new(os.environ["SECRET"].encode("utf-8"), message, hashlib.sha256).hexdigest())
 PY
 )"
@@ -345,6 +363,7 @@ curl -fsS \
   -X POST \
   -H "Content-Type: application/json" \
   -H "X-Cafe-Bridge-CI-Timestamp: ${TIMESTAMP}" \
+  -H "X-Cafe-Bridge-CI-Delivery: ${DELIVERY_ID}" \
   -H "X-Cafe-Bridge-CI-Signature: ${SIGNATURE}" \
   --data "$PAYLOAD" \
   "$REPORT_URL"
@@ -386,18 +405,20 @@ print(json.dumps({
 PY
 )"
 TIMESTAMP="$(date +%s)"
-SIGNATURE="$(TIMESTAMP="$TIMESTAMP" METADATA_JSON="$METADATA_JSON" SECRET="$CAFE_BRIDGE_FLUTTER_CI_CALLBACK_SECRET" python3 - <<'PY'
+DELIVERY_ID="$(python3 -c 'import uuid; print(uuid.uuid4())')"
+SIGNATURE="$(TIMESTAMP="$TIMESTAMP" DELIVERY_ID="$DELIVERY_ID" METADATA_JSON="$METADATA_JSON" SECRET="$CAFE_BRIDGE_FLUTTER_CI_CALLBACK_SECRET" python3 - <<'PY'
 import hashlib
 import hmac
 import os
 
-message = f"{os.environ['TIMESTAMP']}\n{os.environ['METADATA_JSON']}".encode("utf-8")
+message = f"{os.environ['TIMESTAMP']}\n{os.environ['DELIVERY_ID']}\n{os.environ['METADATA_JSON']}".encode("utf-8")
 print(hmac.new(os.environ["SECRET"].encode("utf-8"), message, hashlib.sha256).hexdigest())
 PY
 )"
 curl -fsS \
   -X POST \
   -H "X-Cafe-Bridge-CI-Timestamp: ${TIMESTAMP}" \
+  -H "X-Cafe-Bridge-CI-Delivery: ${DELIVERY_ID}" \
   -H "X-Cafe-Bridge-CI-Signature: ${SIGNATURE}" \
   --form-string "metadata_json=${METADATA_JSON}" \
   -F "apk=@${APK_PATH};type=application/vnd.android.package-archive" \

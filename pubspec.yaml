@@ -11,17 +11,18 @@ environment:
 dependencies:
   flutter:
     sdk: flutter
+  flutter_localizations:
+    sdk: flutter
 
+  # flutter_localizations references the framework Cupertino delegate.
   cupertino_icons: ^1.0.2
   provider: ^6.1.1
   http: ^1.2.0
-  fl_chart: ^0.66.0
-  intl: ^0.19.0
+  intl: ^0.20.2
   shared_preferences: ^2.5.3
   flutter_secure_storage: ^10.0.0
   package_info_plus: ^8.0.2
   path_provider: ^2.1.4
-  open_filex: ^4.5.0
   crypto: ^3.0.3
 
 dev_dependencies:

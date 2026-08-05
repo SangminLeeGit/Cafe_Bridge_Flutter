@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../core/async_request_guard.dart';
+import '../navigation/app_navigation.dart';
 import '../models/costing_models.dart';
 import '../state/app_state.dart';
 import '../widgets/cache_notice.dart';
@@ -15,7 +17,7 @@ class CostingScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return DefaultTabController(
-      length: 3,
+      length: 4,
       child: Column(
         children: [
           Container(
@@ -42,6 +44,7 @@ class CostingScreen extends StatelessWidget {
                     Tab(text: '대시보드'),
                     Tab(text: '재료'),
                     Tab(text: '레시피'),
+                    Tab(text: '임시 계산'),
                   ],
                 ),
               ],
@@ -53,6 +56,7 @@ class CostingScreen extends StatelessWidget {
                 _CostingDashboardTab(),
                 _IngredientsTab(),
                 _RecipesTab(),
+                _RecipeCalculatorTab(),
               ],
             ),
           ),
@@ -71,7 +75,8 @@ class _CostingDashboardTab extends StatefulWidget {
   State<_CostingDashboardTab> createState() => _CostingDashboardTabState();
 }
 
-class _CostingDashboardTabState extends State<_CostingDashboardTab> {
+class _CostingDashboardTabState extends State<_CostingDashboardTab>
+    with AsyncRequestGuard<_CostingDashboardTab> {
   CostingDashboardData? _data;
   bool _isLoading = true;
   String _error = '';
@@ -85,6 +90,8 @@ class _CostingDashboardTabState extends State<_CostingDashboardTab> {
   }
 
   Future<void> _load() async {
+    if (!mounted) return;
+    final request = beginAsyncRequest();
     final appState = context.read<AppState>();
     setState(() {
       _isLoading = true;
@@ -97,7 +104,7 @@ class _CostingDashboardTabState extends State<_CostingDashboardTab> {
         parser: CostingDashboardData.fromJson,
         cacheTtl: const Duration(minutes: 10),
       );
-      if (!mounted) return;
+      if (!isCurrentAsyncRequest(request)) return;
       setState(() {
         _data = response.data;
         _fromCache = response.fromCache;
@@ -105,7 +112,7 @@ class _CostingDashboardTabState extends State<_CostingDashboardTab> {
         _isLoading = false;
       });
     } catch (error) {
-      if (!mounted) return;
+      if (!isCurrentAsyncRequest(request)) return;
       setState(() {
         _error = error.toString();
         _isLoading = false;
@@ -163,7 +170,7 @@ class _CostingDashboardTabState extends State<_CostingDashboardTab> {
                 label: '최종 단가 등록',
                 value: s.lastPriceChangeAt.isEmpty
                     ? '-'
-                    : s.lastPriceChangeAt.substring(0, 10),
+                    : _safeDateLabel(s.lastPriceChangeAt),
               ),
             ],
           ),
@@ -232,7 +239,8 @@ class _IngredientsTab extends StatefulWidget {
   State<_IngredientsTab> createState() => _IngredientsTabState();
 }
 
-class _IngredientsTabState extends State<_IngredientsTab> {
+class _IngredientsTabState extends State<_IngredientsTab>
+    with AsyncRequestGuard<_IngredientsTab> {
   List<Ingredient>? _list;
   bool _isLoading = true;
   String _error = '';
@@ -244,6 +252,8 @@ class _IngredientsTabState extends State<_IngredientsTab> {
   }
 
   Future<void> _load() async {
+    if (!mounted) return;
+    final request = beginAsyncRequest();
     final appState = context.read<AppState>();
     setState(() {
       _isLoading = true;
@@ -255,13 +265,13 @@ class _IngredientsTabState extends State<_IngredientsTab> {
         parser: (json) => _parseIngredients(json),
         cacheTtl: const Duration(minutes: 10),
       );
-      if (!mounted) return;
+      if (!isCurrentAsyncRequest(request)) return;
       setState(() {
         _list = response.data;
         _isLoading = false;
       });
     } catch (error) {
-      if (!mounted) return;
+      if (!isCurrentAsyncRequest(request)) return;
       setState(() {
         _error = error.toString();
         _isLoading = false;
@@ -354,7 +364,7 @@ class _IngredientCard extends StatelessWidget {
             ? const Text('단가 없음',
                 style: TextStyle(color: Color(0xFF94A3B8), fontSize: 12))
             : Text(
-                '${i.currentUnitCost!.toStringAsFixed(i.currentUnitCost! < 10 ? 2 : 0)}원/\${i.baseUnit}',
+                '${i.currentUnitCost!.toStringAsFixed(i.currentUnitCost! < 10 ? 2 : 0)}원/${i.baseUnit}',
                 style: const TextStyle(fontWeight: FontWeight.w700),
               ),
       ),
@@ -371,7 +381,8 @@ class _RecipesTab extends StatefulWidget {
   State<_RecipesTab> createState() => _RecipesTabState();
 }
 
-class _RecipesTabState extends State<_RecipesTab> {
+class _RecipesTabState extends State<_RecipesTab>
+    with AsyncRequestGuard<_RecipesTab> {
   List<RecipeSummaryRow>? _list;
   bool _isLoading = true;
   String _error = '';
@@ -383,6 +394,8 @@ class _RecipesTabState extends State<_RecipesTab> {
   }
 
   Future<void> _load() async {
+    if (!mounted) return;
+    final request = beginAsyncRequest();
     final appState = context.read<AppState>();
     setState(() {
       _isLoading = true;
@@ -394,13 +407,13 @@ class _RecipesTabState extends State<_RecipesTab> {
         parser: (json) => _parseRecipes(json),
         cacheTtl: const Duration(minutes: 10),
       );
-      if (!mounted) return;
+      if (!isCurrentAsyncRequest(request)) return;
       setState(() {
         _list = response.data;
         _isLoading = false;
       });
     } catch (error) {
-      if (!mounted) return;
+      if (!isCurrentAsyncRequest(request)) return;
       setState(() {
         _error = error.toString();
         _isLoading = false;
@@ -523,7 +536,8 @@ class RecipeDetailScreen extends StatefulWidget {
   State<RecipeDetailScreen> createState() => _RecipeDetailScreenState();
 }
 
-class _RecipeDetailScreenState extends State<RecipeDetailScreen> {
+class _RecipeDetailScreenState extends State<RecipeDetailScreen>
+    with AsyncRequestGuard<RecipeDetailScreen> {
   RecipeDetailData? _data;
   bool _isLoading = true;
   String _error = '';
@@ -535,6 +549,8 @@ class _RecipeDetailScreenState extends State<RecipeDetailScreen> {
   }
 
   Future<void> _load() async {
+    if (!mounted) return;
+    final request = beginAsyncRequest();
     final appState = context.read<AppState>();
     setState(() {
       _isLoading = true;
@@ -546,13 +562,13 @@ class _RecipeDetailScreenState extends State<RecipeDetailScreen> {
         parser: RecipeDetailData.fromJson,
         cacheTtl: const Duration(minutes: 5),
       );
-      if (!mounted) return;
+      if (!isCurrentAsyncRequest(request)) return;
       setState(() {
         _data = response.data;
         _isLoading = false;
       });
     } catch (error) {
-      if (!mounted) return;
+      if (!isCurrentAsyncRequest(request)) return;
       setState(() {
         _error = error.toString();
         _isLoading = false;
@@ -660,7 +676,8 @@ class IngredientDetailScreen extends StatefulWidget {
   State<IngredientDetailScreen> createState() => _IngredientDetailScreenState();
 }
 
-class _IngredientDetailScreenState extends State<IngredientDetailScreen> {
+class _IngredientDetailScreenState extends State<IngredientDetailScreen>
+    with AsyncRequestGuard<IngredientDetailScreen> {
   List<IngredientPrice>? _prices;
   bool _isLoading = true;
   String _error = '';
@@ -672,6 +689,8 @@ class _IngredientDetailScreenState extends State<IngredientDetailScreen> {
   }
 
   Future<void> _load() async {
+    if (!mounted) return;
+    final request = beginAsyncRequest();
     final appState = context.read<AppState>();
     setState(() {
       _isLoading = true;
@@ -691,13 +710,13 @@ class _IngredientDetailScreenState extends State<IngredientDetailScreen> {
         },
         cacheTtl: const Duration(minutes: 5),
       );
-      if (!mounted) return;
+      if (!isCurrentAsyncRequest(request)) return;
       setState(() {
         _prices = response.data;
         _isLoading = false;
       });
     } catch (error) {
-      if (!mounted) return;
+      if (!isCurrentAsyncRequest(request)) return;
       setState(() {
         _error = error.toString();
         _isLoading = false;
@@ -760,26 +779,389 @@ class _IngredientDetailScreenState extends State<IngredientDetailScreen> {
   }
 }
 
+// ─── Temporary recipe calculator ─────────────────────────────────────────────
+
+class _RecipeCalculatorTab extends StatefulWidget {
+  const _RecipeCalculatorTab();
+
+  @override
+  State<_RecipeCalculatorTab> createState() => _RecipeCalculatorTabState();
+}
+
+class _RecipeCalculatorTabState extends State<_RecipeCalculatorTab>
+    with AsyncRequestGuard<_RecipeCalculatorTab> {
+  final _menuNameController = TextEditingController(text: '임시 계산');
+  final _sellingPriceController = TextEditingController();
+  final _targetRatioController = TextEditingController(text: '30');
+  final List<_CalculatorLine> _lines = [_CalculatorLine()];
+  List<Ingredient> _ingredients = const [];
+  RecipeCalculateSummary? _summary;
+  List<_CalculatedLine> _calculatedLines = const [];
+  bool _loading = true;
+  bool _calculating = false;
+  String _error = '';
+
+  @override
+  void initState() {
+    super.initState();
+    _loadIngredients();
+  }
+
+  @override
+  void dispose() {
+    _menuNameController.dispose();
+    _sellingPriceController.dispose();
+    _targetRatioController.dispose();
+    for (final line in _lines) {
+      line.dispose();
+    }
+    super.dispose();
+  }
+
+  Future<void> _loadIngredients() async {
+    if (!mounted) return;
+    final request = beginAsyncRequest();
+    setState(() {
+      _loading = true;
+      _error = '';
+    });
+    try {
+      final response = await context.read<AppState>().fetchMapParsed(
+            '/api/costing/ingredients',
+            parser: _IngredientsTabState._parseIngredients,
+            cacheTtl: const Duration(minutes: 10),
+          );
+      if (!isCurrentAsyncRequest(request)) return;
+      setState(() {
+        _ingredients = response.data
+            .where((ingredient) => ingredient.currentUnitCost != null)
+            .toList(growable: false);
+        _loading = false;
+      });
+    } catch (error) {
+      if (!isCurrentAsyncRequest(request)) return;
+      setState(() {
+        _error = error.toString();
+        _loading = false;
+      });
+    }
+  }
+
+  Future<void> _calculate() async {
+    final sellingPrice =
+        _parseOptionalNonnegativeInt(_sellingPriceController.text);
+    final targetPercent = _parseNumber(_targetRatioController.text);
+    if (_sellingPriceController.text.trim().isNotEmpty &&
+        sellingPrice == null) {
+      setState(() => _error = '판매가는 0 이상의 숫자로 입력해 주세요.');
+      return;
+    }
+    if (targetPercent == null || targetPercent <= 0 || targetPercent >= 100) {
+      setState(() => _error = '목표 원가율은 0보다 크고 100보다 작아야 합니다.');
+      return;
+    }
+
+    final items = <Map<String, dynamic>>[];
+    for (final line in _lines) {
+      final ingredient = _ingredientById(line.ingredientId);
+      final quantity = _parseNumber(line.quantityController.text);
+      if (ingredient == null || quantity == null || quantity <= 0) {
+        setState(() => _error = '모든 재료와 0보다 큰 사용량을 입력해 주세요.');
+        return;
+      }
+      items.add({
+        'ingredient_id': ingredient.ingredientId,
+        'quantity': quantity,
+        'unit': ingredient.baseUnit,
+      });
+    }
+
+    if (!mounted) return;
+    final request = beginAsyncRequest();
+    final appState = context.read<AppState>();
+    setState(() {
+      _calculating = true;
+      _error = '';
+      _summary = null;
+      _calculatedLines = const [];
+    });
+    try {
+      final response = await appState.postJson(
+        '/api/costing/calculate',
+        body: {
+          'menu_name': _menuNameController.text.trim().isEmpty
+              ? '임시 계산'
+              : _menuNameController.text.trim(),
+          if (sellingPrice != null) 'selling_price': sellingPrice,
+          'target_cost_ratio': targetPercent / 100,
+          'status': 'draft',
+          'items': items,
+        },
+      );
+      final rawError = response['error']?.toString().trim() ?? '';
+      if (rawError.isNotEmpty) throw FormatException(rawError);
+      final summarySource = response['summary'];
+      if (summarySource is! Map) {
+        throw const FormatException('계산 결과 형식이 올바르지 않습니다.');
+      }
+      final rawItems = response['items'];
+      final calculatedLines = rawItems is List
+          ? rawItems
+              .whereType<Map>()
+              .map((item) => _CalculatedLine.fromJson(
+                    Map<String, dynamic>.from(item),
+                  ))
+              .toList(growable: false)
+          : const <_CalculatedLine>[];
+      if (!isCurrentAsyncRequest(request)) return;
+      setState(() {
+        _summary = RecipeCalculateSummary.fromJson(
+          Map<String, dynamic>.from(summarySource),
+        );
+        _calculatedLines = calculatedLines;
+        _calculating = false;
+      });
+    } catch (error) {
+      if (!isCurrentAsyncRequest(request)) return;
+      setState(() {
+        _error = error.toString();
+        _calculating = false;
+      });
+    }
+  }
+
+  Ingredient? _ingredientById(int? id) {
+    if (id == null) return null;
+    for (final ingredient in _ingredients) {
+      if (ingredient.ingredientId == id) return ingredient;
+    }
+    return null;
+  }
+
+  void _addLine() => setState(() => _lines.add(_CalculatorLine()));
+
+  void _removeLine(int index) {
+    if (_lines.length == 1) return;
+    setState(() => _lines.removeAt(index).dispose());
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (_loading) return const Center(child: CircularProgressIndicator());
+    if (_ingredients.isEmpty && _error.isNotEmpty) {
+      return EmptyState(
+        title: '계산용 재료를 불러오지 못했습니다.',
+        message: _error,
+        action: FilledButton(
+            onPressed: _loadIngredients, child: const Text('다시 시도')),
+      );
+    }
+    if (_ingredients.isEmpty) {
+      return const EmptyState(title: '단가가 등록된 활성 재료가 없습니다.');
+    }
+
+    return ListView(
+      padding: const EdgeInsets.all(16),
+      children: [
+        Panel(
+          title: '임시 레시피 계산',
+          subtitle: '계산 결과만 확인하며 레시피로 저장하지 않습니다.',
+          child: Column(
+            children: [
+              TextField(
+                controller: _menuNameController,
+                decoration: const InputDecoration(labelText: '메뉴명'),
+              ),
+              const SizedBox(height: 12),
+              Row(
+                children: [
+                  Expanded(
+                    child: TextField(
+                      controller: _sellingPriceController,
+                      keyboardType: TextInputType.number,
+                      decoration: const InputDecoration(labelText: '판매가 (선택)'),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: TextField(
+                      controller: _targetRatioController,
+                      keyboardType:
+                          const TextInputType.numberWithOptions(decimal: true),
+                      decoration:
+                          const InputDecoration(labelText: '목표 원가율 (%)'),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 16),
+              ..._lines.asMap().entries.map((entry) {
+                final index = entry.key;
+                final line = entry.value;
+                final ingredient = _ingredientById(line.ingredientId);
+                return Padding(
+                  padding: const EdgeInsets.only(bottom: 12),
+                  child: Row(
+                    children: [
+                      Expanded(
+                        flex: 3,
+                        child: DropdownButtonFormField<int>(
+                          initialValue: line.ingredientId,
+                          isExpanded: true,
+                          decoration: const InputDecoration(labelText: '재료'),
+                          items: _ingredients
+                              .map((item) => DropdownMenuItem(
+                                    value: item.ingredientId,
+                                    child:
+                                        Text('${item.name} (${item.baseUnit})'),
+                                  ))
+                              .toList(growable: false),
+                          onChanged: (value) =>
+                              setState(() => line.ingredientId = value),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        flex: 2,
+                        child: TextField(
+                          controller: line.quantityController,
+                          keyboardType: const TextInputType.numberWithOptions(
+                              decimal: true),
+                          decoration: InputDecoration(
+                            labelText:
+                                '사용량${ingredient == null ? '' : ' (${ingredient.baseUnit})'}',
+                          ),
+                        ),
+                      ),
+                      IconButton(
+                        onPressed: _lines.length == 1
+                            ? null
+                            : () => _removeLine(index),
+                        tooltip: '재료 제거',
+                        icon: const Icon(Icons.remove_circle_outline),
+                      ),
+                    ],
+                  ),
+                );
+              }),
+              Align(
+                alignment: Alignment.centerLeft,
+                child: TextButton.icon(
+                  onPressed: _addLine,
+                  icon: const Icon(Icons.add),
+                  label: const Text('재료 추가'),
+                ),
+              ),
+              if (_error.isNotEmpty)
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 12),
+                  child: Text(
+                    _error,
+                    style: const TextStyle(color: Color(0xFFDC2626)),
+                  ),
+                ),
+              FilledButton.icon(
+                onPressed: _calculating ? null : _calculate,
+                icon: const Icon(Icons.calculate_outlined),
+                label: Text(_calculating ? '계산 중...' : '원가 계산'),
+              ),
+            ],
+          ),
+        ),
+        if (_summary != null) ...[
+          const SizedBox(height: 16),
+          _MetricGrid(
+            cards: [
+              StatCard(
+                  label: '총 원가',
+                  value: '${_won(_summary!.totalCost)}원',
+                  accent: true),
+              StatCard(
+                  label: '원가율',
+                  value: '${(_summary!.costRatio * 100).toStringAsFixed(1)}%'),
+              StatCard(
+                  label: '예상 마진', value: '${_won(_summary!.marginAmount)}원'),
+              StatCard(
+                  label: '권장 판매가',
+                  value: '${_won(_summary!.recommendedPrice)}원'),
+            ],
+          ),
+          const SizedBox(height: 16),
+          Panel(
+            title: '재료별 원가',
+            child: Column(
+              children: _calculatedLines
+                  .map((line) => ListTile(
+                        dense: true,
+                        contentPadding: EdgeInsets.zero,
+                        title: Text(line.name),
+                        subtitle: Text('${line.quantity} ${line.unit}'),
+                        trailing: Text(
+                          '${_won(line.lineCost)}원',
+                          style: const TextStyle(fontWeight: FontWeight.w700),
+                        ),
+                      ))
+                  .toList(growable: false),
+            ),
+          ),
+        ],
+      ],
+    );
+  }
+}
+
+class _CalculatorLine {
+  int? ingredientId;
+  final TextEditingController quantityController = TextEditingController();
+
+  void dispose() => quantityController.dispose();
+}
+
+class _CalculatedLine {
+  final String name;
+  final double quantity;
+  final String unit;
+  final int lineCost;
+
+  const _CalculatedLine({
+    required this.name,
+    required this.quantity,
+    required this.unit,
+    required this.lineCost,
+  });
+
+  factory _CalculatedLine.fromJson(Map<String, dynamic> json) {
+    return _CalculatedLine(
+      name: json['ingredient_name']?.toString() ?? '',
+      quantity: _parseNumber(json['quantity']?.toString() ?? '') ?? 0,
+      unit: json['unit']?.toString() ?? '',
+      lineCost:
+          _parseOptionalNonnegativeInt(json['line_cost']?.toString() ?? '') ??
+              0,
+    );
+  }
+}
+
 // ─── Shared helpers ───────────────────────────────────────────────────────────
 
 void _pushRecipeDetail(BuildContext context, RecipeSummaryRow recipe) {
-  Navigator.of(context).push(
-    MaterialPageRoute(
-      builder: (_) => RecipeDetailScreen(
-        recipeId: recipe.recipeId,
-        recipeName: recipe.menuName,
-      ),
+  AppNavigation.pushGuarded(
+    context,
+    minimumRole: UserRole.operator,
+    child: RecipeDetailScreen(
+      recipeId: recipe.recipeId,
+      recipeName: recipe.menuName,
     ),
   );
 }
 
 void _pushIngredientDetail(BuildContext context, Ingredient ingredient) {
-  Navigator.of(context).push(
-    MaterialPageRoute(
-      builder: (_) => IngredientDetailScreen(
-        ingredientId: ingredient.ingredientId,
-        ingredientName: ingredient.name,
-      ),
+  AppNavigation.pushGuarded(
+    context,
+    minimumRole: UserRole.operator,
+    child: IngredientDetailScreen(
+      ingredientId: ingredient.ingredientId,
+      ingredientName: ingredient.name,
     ),
   );
 }
@@ -807,4 +1189,24 @@ String _won(num value) {
     buffer.write(str[i]);
   }
   return value < 0 ? '-${buffer.toString()}' : buffer.toString();
+}
+
+String _safeDateLabel(String value) {
+  final normalized = value.trim().replaceFirst(' ', 'T');
+  final parsed = DateTime.tryParse(normalized);
+  if (parsed == null) return value;
+  return '${parsed.year.toString().padLeft(4, '0')}-${parsed.month.toString().padLeft(2, '0')}-${parsed.day.toString().padLeft(2, '0')}';
+}
+
+double? _parseNumber(String value) {
+  final normalized = value.trim().replaceAll(',', '');
+  if (normalized.isEmpty) return null;
+  return double.tryParse(normalized);
+}
+
+int? _parseOptionalNonnegativeInt(String value) {
+  final normalized = value.trim().replaceAll(',', '');
+  if (normalized.isEmpty) return null;
+  final parsed = int.tryParse(normalized);
+  return parsed != null && parsed >= 0 ? parsed : null;
 }

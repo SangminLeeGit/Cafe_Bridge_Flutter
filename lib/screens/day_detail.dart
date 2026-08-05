@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../core/async_request_guard.dart';
 import '../models/dashboard_model.dart';
 import '../state/app_state.dart';
 import '../widgets/cache_notice.dart';
@@ -21,7 +22,8 @@ class DayDetailScreen extends StatefulWidget {
   State<DayDetailScreen> createState() => _DayDetailScreenState();
 }
 
-class _DayDetailScreenState extends State<DayDetailScreen> {
+class _DayDetailScreenState extends State<DayDetailScreen>
+    with AsyncRequestGuard<DayDetailScreen> {
   DayDetailData? _data;
   bool _isLoading = true;
   String _error = '';
@@ -37,6 +39,8 @@ class _DayDetailScreenState extends State<DayDetailScreen> {
   }
 
   Future<void> _fetchData() async {
+    if (!mounted) return;
+    final request = beginAsyncRequest();
     final appState = context.read<AppState>();
     setState(() {
       _isLoading = true;
@@ -48,7 +52,7 @@ class _DayDetailScreenState extends State<DayDetailScreen> {
         '/api/days/$_targetDate',
         parser: DayDetailData.fromJson,
       );
-      if (!mounted) {
+      if (!isCurrentAsyncRequest(request)) {
         return;
       }
       setState(() {
@@ -58,7 +62,7 @@ class _DayDetailScreenState extends State<DayDetailScreen> {
         _isLoading = false;
       });
     } catch (error) {
-      if (!mounted) {
+      if (!isCurrentAsyncRequest(request)) {
         return;
       }
       setState(() {

@@ -11,10 +11,10 @@
 
 ## High-level architecture
 
-- `lib/main.dart` creates a single `AppState`, awaits `AppState.load()`, and provides it with `ChangeNotifierProvider`. `AppRoot` shows `LoginScreen` until a restored or refreshed session becomes authenticated, then switches to `MainLayout`.
-- `lib/state/app_state.dart` is the main application boundary. It owns the API base URL, session cookie, CSRF token, remember-me state, role/access checks, keepalive, offline/cache mode, update checks, deploy notices, and the shared request helpers (`fetchMapParsed`, `fetchListParsed`, `postJson`).
-- `lib/services/api.dart` is a thin HTTP layer: base URL normalization, timeout handling, GET/POST requests, JSON decoding, and session-cookie extraction. `lib/services/cache_store.dart` persists cached JSON in `SharedPreferences`, scoped by `loginId@baseUrl`.
-- Most authenticated screens should go through `AppState` instead of calling `ApiService` directly. The main exception is explicit unauthenticated health checking in settings (`/healthz`).
+- `lib/main.dart` creates a single `AppState`, loads local state before `runApp`, and starts remote restoration after providing it with `ChangeNotifierProvider`. `AppRoot` shows `LoginScreen` until a restored or refreshed session becomes authenticated, then switches to `MainLayout`.
+- `lib/state/app_state.dart` is the application boundary. It owns session-facing state and orchestration, while `ApiClient`, `ApiCacheStore`, and `ActiveTaskStore` own HTTP, JSON cache, and resumable-task persistence respectively.
+- `lib/services/api.dart` contains pure URL/date policy plus the injectable `ApiClient`: timeout handling, GET/POST requests, JSON decoding, transport errors, and session-cookie extraction. `lib/services/cache_store.dart` persists cached JSON in `SharedPreferences`, scoped by `loginId@baseUrl`.
+- Authenticated screens go through `AppState`; settings health checking also goes through `AppState.checkConnection`. UI code does not access `SharedPreferences` directly.
 - `lib/screens/` is feature-oriented. Dashboard, analytics, sync, costing, menu workspace, signage, and workforce each manage their own screen-local loading/error/polling state and parse backend payloads into immutable models under `lib/models/`.
 - `OperationsScreen` is the operational hub that routes into costing, menu workspace, signage, and sync. `lib/screens/workforce.dart` is only an export shim to `workforce_mobile.dart`.
 - `MenuWorkspaceScreen` is the densest feature. It has a product-browser tab plus a workspace tab; the workspace tab loads the snapshot, validation state, apply runs, and task histories in parallel and refreshes through a shared `ValueNotifier`.
@@ -25,7 +25,7 @@
 - Keep global/shared state in `AppState`; keep feature filters, tab controllers, timers, and request lifecycle flags inside the screen `State` object. This repo does not use a second global state layer.
 - Respect role gating with `UserRole`, `canAccess`, `hasOperatorAccess`, and `hasAdminAccess`. Screens and actions are commonly hidden instead of shown-disabled.
 - Parse backend JSON with the helpers in `lib/models/api_contracts.dart` (`asString`, `asInt`, `asBool`, `asMap`, `asListOfMaps`, etc.). Existing models are intentionally tolerant of mixed backend types and usually expose immutable fields plus `fromJson`.
-- Preserve offline behavior when using `fetchMapParsed` or `fetchListParsed`: pass through `fromCache` and `cachedAt`, and show `CacheNotice` when stale cached data is being displayed.
+- Preserve offline behavior when using `fetchMapParsed`: pass through `fromCache` and `cachedAt`, and show `CacheNotice` when stale cached data is being displayed.
 - For async backend jobs (for example sync runs and menu workspace apply flows), the established pattern is: start the job with `appState.postJson(...)`, store the returned task id, then poll the task status endpoint from widget state with a `Timer` until completion.
 - UI structure is intentionally consistent: loading spinner -> `EmptyState` on failure/empty data -> `RefreshIndicator` with `ListView`/`CustomScrollView` sections built from shared widgets such as `Panel`, `StatCard`, and `CacheNotice`.
 - UI copy is mostly Korean, including operational labels and user-facing error messages. Match the existing language and tone when editing screens.

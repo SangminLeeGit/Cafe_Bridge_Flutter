@@ -2,9 +2,12 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:crypto/crypto.dart';
+import 'package:flutter/services.dart';
 import 'package:http/http.dart' as http;
-import 'package:open_filex/open_filex.dart';
 import 'package:path_provider/path_provider.dart';
+
+import 'app_update_service_models.dart';
+import 'app_update_validation.dart';
 
 class ApkDownloadResult {
   final String filePath;
@@ -19,32 +22,71 @@ class ApkDownloadResult {
 class AppUpdateService {
   static const bool supported = true;
   static const Duration _downloadTimeout = Duration(minutes: 3);
+  static const MethodChannel _updateChannel = MethodChannel(
+    'org.cafe.bridge.mobile/app_update',
+  );
 
   static Future<ApkDownloadResult> downloadApk({
     required String downloadUrl,
     required String version,
     required int buildNumber,
-    String? expectedSha256,
+    required int currentBuildNumber,
+    required String expectedSha256,
     int? expectedFileSize,
     void Function(int received, int total)? onProgress,
+    ApkDownloadCancellationToken? cancellationToken,
   }) async {
-    final uri = Uri.parse(downloadUrl);
+    if (cancellationToken?.isCancelled ?? false) {
+      throw const AppUpdateException(
+        AppUpdateErrorCode.cancelled,
+        '업데이트 다운로드가 취소되었습니다.',
+      );
+    }
+    var requestUri = validateApkUpdate(
+      downloadUrl: downloadUrl,
+      expectedSha256: expectedSha256,
+      latestBuild: buildNumber,
+      currentBuild: currentBuildNumber,
+    );
     final client = http.Client();
+    cancellationToken?.attach(client.close);
     IOSink? sink;
     File? tempFile;
 
     try {
-      final request = http.Request('GET', uri);
-      final response = await client.send(request).timeout(_downloadTimeout);
-      if (response.statusCode < 200 || response.statusCode >= 300) {
-        throw Exception('업데이트 파일 다운로드 실패 (HTTP ${response.statusCode})');
-      }
-
       final supportDirectory = await getApplicationSupportDirectory();
       final updateDirectory = Directory('${supportDirectory.path}/updates');
       await updateDirectory.create(recursive: true);
+      await _deleteStalePackages(updateDirectory, keepPath: '');
 
-      final fileName = _resolveFileName(uri, version, buildNumber);
+      var redirectsFollowed = 0;
+      late http.StreamedResponse response;
+      while (true) {
+        final request = http.Request('GET', requestUri)
+          ..followRedirects = false;
+        response = await client.send(request).timeout(_downloadTimeout);
+        if (!_isRedirect(response.statusCode)) {
+          break;
+        }
+
+        final nextUri = resolveApkDownloadRedirect(
+          currentUri: requestUri,
+          location: response.headers['location'],
+          redirectsFollowed: redirectsFollowed,
+        );
+        await response.stream.listen((_) {}).cancel();
+        requestUri = nextUri;
+        redirectsFollowed += 1;
+      }
+
+      validateApkDownloadHttpStatus(response.statusCode);
+      validateApkDownloadLengths(
+        expectedFileSize: expectedFileSize,
+        contentLength: response.contentLength,
+      );
+      final bodyStopwatch = Stopwatch()..start();
+
+      final fileName = _resolveFileName(requestUri, version, buildNumber);
       final targetFile = File('${updateDirectory.path}/$fileName');
       tempFile = File('${updateDirectory.path}/$fileName.part');
 
@@ -57,10 +99,26 @@ class AppUpdateService {
 
       sink = tempFile.openWrite();
       var received = 0;
-      await for (final chunk in response.stream) {
-        received += chunk.length;
+      await for (final chunk in response.stream.timeout(_downloadTimeout)) {
+        if (cancellationToken?.isCancelled ?? false) {
+          throw const AppUpdateException(
+            AppUpdateErrorCode.cancelled,
+            '업데이트 다운로드가 취소되었습니다.',
+          );
+        }
+        if (bodyStopwatch.elapsed >= _downloadTimeout) {
+          throw TimeoutException('APK response body deadline exceeded');
+        }
+        received = validateApkDownloadChunk(
+          bytesReceived: received,
+          incomingBytes: chunk.length,
+          expectedFileSize: expectedFileSize,
+        );
         sink.add(chunk);
         onProgress?.call(received, response.contentLength ?? 0);
+      }
+      if (bodyStopwatch.elapsed >= _downloadTimeout) {
+        throw TimeoutException('APK response body deadline exceeded');
       }
 
       await sink.flush();
@@ -69,17 +127,22 @@ class AppUpdateService {
 
       final expectedSize = expectedFileSize ?? 0;
       if (expectedSize > 0 && received != expectedSize) {
-        throw Exception(
-          '파일 크기 검증 실패: 수신 $received bytes, 기대 $expectedSize bytes',
+        throw AppUpdateRefreshRequiredException(
+          '업데이트 파일 크기가 변경되었습니다. 최신 업데이트 정보를 다시 조회해 주세요. '
+          '(수신 $received bytes, 기대 $expectedSize bytes)',
         );
       }
 
-      final normalizedSha = (expectedSha256 ?? '').trim().toLowerCase();
-      if (normalizedSha.isNotEmpty) {
-        final digest = await _calculateSha256(tempFile.path);
-        if (digest.toLowerCase() != normalizedSha) {
-          throw Exception('무결성 검증 실패: SHA-256 해시가 일치하지 않습니다.');
-        }
+      final digest = await _calculateSha256(tempFile.path);
+      validateDownloadedApkSha256(
+        expectedSha256: expectedSha256,
+        actualSha256: digest,
+      );
+      if (cancellationToken?.isCancelled ?? false) {
+        throw const AppUpdateException(
+          AppUpdateErrorCode.cancelled,
+          '업데이트 다운로드가 취소되었습니다.',
+        );
       }
 
       await tempFile.rename(targetFile.path);
@@ -89,38 +152,80 @@ class AppUpdateService {
         bytesReceived: received,
       );
     } on TimeoutException {
-      throw Exception('업데이트 파일 다운로드 시간이 초과되었습니다.');
+      if (cancellationToken?.isCancelled ?? false) {
+        throw const AppUpdateException(
+          AppUpdateErrorCode.cancelled,
+          '업데이트 다운로드가 취소되었습니다.',
+        );
+      }
+      throw const AppUpdateException(
+        AppUpdateErrorCode.timeout,
+        '업데이트 파일 다운로드 시간이 초과되었습니다.',
+      );
+    } on http.ClientException catch (error) {
+      if (cancellationToken?.isCancelled ?? false) {
+        throw const AppUpdateException(
+          AppUpdateErrorCode.cancelled,
+          '업데이트 다운로드가 취소되었습니다.',
+        );
+      }
+      throw AppUpdateException(
+        AppUpdateErrorCode.downloadFailed,
+        '업데이트 파일 다운로드 연결에 실패했습니다: ${error.message}',
+      );
+    } catch (_) {
+      if (cancellationToken?.isCancelled ?? false) {
+        throw const AppUpdateException(
+          AppUpdateErrorCode.cancelled,
+          '업데이트 다운로드가 취소되었습니다.',
+        );
+      }
+      rethrow;
     } finally {
-      if (sink != null) {
-        await sink.close();
+      try {
+        if (sink != null) {
+          await sink.close();
+        }
+      } finally {
+        try {
+          if (tempFile != null && await tempFile.exists()) {
+            await tempFile.delete();
+          }
+        } finally {
+          cancellationToken?.detach();
+          client.close();
+        }
       }
-      if (tempFile != null && await tempFile.exists()) {
-        await tempFile.delete();
-      }
-      client.close();
     }
   }
 
-  static Future<String> openInstaller(String filePath) async {
-    final result = await OpenFilex.open(
-      filePath,
-      type: 'application/vnd.android.package-archive',
-    );
-
-    switch (result.type) {
-      case ResultType.done:
-        return '설치 화면을 열었습니다. 차단되면 이 앱의 알 수 없는 앱 설치를 허용해 주세요.';
-      case ResultType.fileNotFound:
-        throw Exception('다운로드한 APK 파일을 찾을 수 없습니다. 다시 다운로드해 주세요.');
-      case ResultType.noAppToOpen:
-        throw Exception('APK 설치 프로그램을 열 수 없습니다. 기기 정책을 확인해 주세요.');
-      case ResultType.permissionDenied:
-        throw Exception('설치 권한이 거부되었습니다. 이 앱의 알 수 없는 앱 설치를 허용해 주세요.');
-      case ResultType.error:
-        if (result.message.trim().isNotEmpty) {
-          throw Exception('APK 설치를 시작하지 못했습니다: ${result.message}');
-        }
-        throw Exception('APK 설치를 시작하지 못했습니다.');
+  static Future<AppInstallerResult> requestInstaller(
+    String filePath, {
+    required int expectedBuildNumber,
+  }) async {
+    try {
+      final response = await _updateChannel.invokeMethod<Object?>(
+        'verifyAndInstallApk',
+        {
+          'filePath': filePath,
+          'expectedBuild': expectedBuildNumber,
+        },
+      );
+      if (response is! Map) {
+        throw const FormatException('APK 설치 상태 응답이 비어 있습니다.');
+      }
+      return AppInstallerResult.fromChannel(
+        Map<Object?, Object?>.from(response),
+      );
+    } on PlatformException catch (error) {
+      final message = error.message ?? 'APK 설치를 시작하지 못했습니다.';
+      final code = appUpdateErrorCodeForInstallerPlatformCode(error.code);
+      throw AppUpdateException(code, message);
+    } on FormatException catch (error) {
+      throw AppUpdateException(
+        AppUpdateErrorCode.invalidUpdate,
+        error.message,
+      );
     }
   }
 
@@ -132,6 +237,14 @@ class AppUpdateService {
         ? candidate
         : 'cafe-bridge-$version+$buildNumber.apk';
     return normalized.replaceAll(RegExp(r'[^A-Za-z0-9._+-]'), '_');
+  }
+
+  static bool _isRedirect(int statusCode) {
+    return statusCode == HttpStatus.movedPermanently ||
+        statusCode == HttpStatus.found ||
+        statusCode == HttpStatus.seeOther ||
+        statusCode == HttpStatus.temporaryRedirect ||
+        statusCode == HttpStatus.permanentRedirect;
   }
 
   static Future<void> _deleteStalePackages(
@@ -149,7 +262,7 @@ class AppUpdateService {
       if (entity.path == keepPath) {
         continue;
       }
-      if (entity.path.endsWith('.apk') || entity.path.endsWith('.apk.part')) {
+      if (isApkUpdateArtifactPath(entity.path)) {
         await entity.delete();
       }
     }

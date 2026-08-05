@@ -77,7 +77,8 @@ class RecipeSummaryRow {
     );
   }
 
-  bool get isOverCost => costRatio > targetCostRatio && sellingPrice > 0 && targetCostRatio > 0;
+  bool get isOverCost =>
+      costRatio > targetCostRatio && sellingPrice > 0 && targetCostRatio > 0;
 }
 
 class CostingDashboardData {
@@ -174,8 +175,10 @@ class IngredientPrice {
       priceId: asInt(json['price_id']),
       ingredientId: asInt(json['ingredient_id']),
       unitCost: asDouble(json['unit_cost']),
-      packageSize: json['package_size'] == null ? null : asDouble(json['package_size']),
-      packageCost: json['package_cost'] == null ? null : asDouble(json['package_cost']),
+      packageSize:
+          json['package_size'] == null ? null : asDouble(json['package_size']),
+      packageCost:
+          json['package_cost'] == null ? null : asDouble(json['package_cost']),
       packageUnit: asString(json['package_unit']),
       effectiveDate: asString(json['effective_date']),
       supplierName: asString(json['supplier_name']),
@@ -215,7 +218,9 @@ class RecipeItem {
       ingredientName: asString(json['ingredient_name']),
       ingredientBaseUnit: asString(json['ingredient_base_unit']),
       qty: asDouble(json['qty']),
-      currentUnitCost: json['current_unit_cost'] == null ? null : asDouble(json['current_unit_cost']),
+      currentUnitCost: json['current_unit_cost'] == null
+          ? null
+          : asDouble(json['current_unit_cost']),
       lineCost: json['line_cost'] == null ? null : asDouble(json['line_cost']),
       notes: asString(json['notes']),
     );

@@ -1,7 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../core/async_request_guard.dart';
 import '../models/analytics_models.dart';
+import '../navigation/app_navigation.dart';
+import '../services/api.dart';
 import '../models/dashboard_model.dart';
 import '../state/app_state.dart';
 import '../widgets/cache_notice.dart';
@@ -116,7 +119,8 @@ class _MonthlyTab extends StatefulWidget {
   State<_MonthlyTab> createState() => _MonthlyTabState();
 }
 
-class _MonthlyTabState extends State<_MonthlyTab> {
+class _MonthlyTabState extends State<_MonthlyTab>
+    with AsyncRequestGuard<_MonthlyTab> {
   late DateTime _selectedMonth;
   MonthlyReportData? _data;
   bool _isLoading = true;
@@ -127,7 +131,7 @@ class _MonthlyTabState extends State<_MonthlyTab> {
   @override
   void initState() {
     super.initState();
-    final now = DateTime.now();
+    final now = ApiService.kstNow();
     _selectedMonth = DateTime(now.year, now.month);
     _load();
   }
@@ -137,10 +141,10 @@ class _MonthlyTabState extends State<_MonthlyTab> {
       context: context,
       initialDate: _selectedMonth,
       firstDate: DateTime(2024),
-      lastDate: DateTime.now(),
+      lastDate: ApiService.kstNow(),
       initialDatePickerMode: DatePickerMode.year,
     );
-    if (picked == null) {
+    if (picked == null || !mounted) {
       return;
     }
     setState(() {
@@ -150,6 +154,8 @@ class _MonthlyTabState extends State<_MonthlyTab> {
   }
 
   Future<void> _load() async {
+    if (!mounted) return;
+    final request = beginAsyncRequest();
     final appState = context.read<AppState>();
     setState(() {
       _isLoading = true;
@@ -165,7 +171,7 @@ class _MonthlyTabState extends State<_MonthlyTab> {
         },
         parser: MonthlyReportData.fromJson,
       );
-      if (!mounted) {
+      if (!isCurrentAsyncRequest(request)) {
         return;
       }
       setState(() {
@@ -175,7 +181,7 @@ class _MonthlyTabState extends State<_MonthlyTab> {
         _isLoading = false;
       });
     } catch (error) {
-      if (!mounted) {
+      if (!isCurrentAsyncRequest(request)) {
         return;
       }
       setState(() {
@@ -261,10 +267,10 @@ class _MonthlyTabState extends State<_MonthlyTab> {
                     UiFormat.won(day.grossAmount),
                     style: const TextStyle(fontWeight: FontWeight.w700),
                   ),
-                  onTap: () => Navigator.of(context).push(
-                    MaterialPageRoute(
-                      builder: (_) => DayDetailScreen(date: day.businessDate),
-                    ),
+                  onTap: () => AppNavigation.pushGuarded(
+                    context,
+                    minimumRole: UserRole.viewer,
+                    child: DayDetailScreen(date: day.businessDate),
                   ),
                 );
               }).toList(growable: false),
@@ -288,7 +294,8 @@ class _ItemsTab extends StatefulWidget {
   State<_ItemsTab> createState() => _ItemsTabState();
 }
 
-class _ItemsTabState extends State<_ItemsTab> {
+class _ItemsTabState extends State<_ItemsTab>
+    with AsyncRequestGuard<_ItemsTab> {
   late DateTimeRange _range;
   ItemAnalysisData? _data;
   bool _isLoading = true;
@@ -308,9 +315,9 @@ class _ItemsTabState extends State<_ItemsTab> {
       context: context,
       initialDateRange: _range,
       firstDate: DateTime(2024),
-      lastDate: DateTime.now(),
+      lastDate: ApiService.kstNow(),
     );
-    if (picked == null) {
+    if (picked == null || !mounted) {
       return;
     }
     setState(() => _range = picked);
@@ -318,6 +325,8 @@ class _ItemsTabState extends State<_ItemsTab> {
   }
 
   Future<void> _load() async {
+    if (!mounted) return;
+    final request = beginAsyncRequest();
     final appState = context.read<AppState>();
     setState(() {
       _isLoading = true;
@@ -329,7 +338,7 @@ class _ItemsTabState extends State<_ItemsTab> {
         params: _rangeParams(_range),
         parser: ItemAnalysisData.fromJson,
       );
-      if (!mounted) {
+      if (!isCurrentAsyncRequest(request)) {
         return;
       }
       setState(() {
@@ -339,7 +348,7 @@ class _ItemsTabState extends State<_ItemsTab> {
         _isLoading = false;
       });
     } catch (error) {
-      if (!mounted) {
+      if (!isCurrentAsyncRequest(request)) {
         return;
       }
       setState(() {
@@ -441,7 +450,8 @@ class _HoursTab extends StatefulWidget {
   State<_HoursTab> createState() => _HoursTabState();
 }
 
-class _HoursTabState extends State<_HoursTab> {
+class _HoursTabState extends State<_HoursTab>
+    with AsyncRequestGuard<_HoursTab> {
   late DateTimeRange _range;
   HourlyAnalysisData? _data;
   bool _isLoading = true;
@@ -461,9 +471,9 @@ class _HoursTabState extends State<_HoursTab> {
       context: context,
       initialDateRange: _range,
       firstDate: DateTime(2024),
-      lastDate: DateTime.now(),
+      lastDate: ApiService.kstNow(),
     );
-    if (picked == null) {
+    if (picked == null || !mounted) {
       return;
     }
     setState(() => _range = picked);
@@ -471,6 +481,8 @@ class _HoursTabState extends State<_HoursTab> {
   }
 
   Future<void> _load() async {
+    if (!mounted) return;
+    final request = beginAsyncRequest();
     final appState = context.read<AppState>();
     setState(() {
       _isLoading = true;
@@ -482,7 +494,7 @@ class _HoursTabState extends State<_HoursTab> {
         params: _rangeParams(_range),
         parser: HourlyAnalysisData.fromJson,
       );
-      if (!mounted) {
+      if (!isCurrentAsyncRequest(request)) {
         return;
       }
       setState(() {
@@ -492,7 +504,7 @@ class _HoursTabState extends State<_HoursTab> {
         _isLoading = false;
       });
     } catch (error) {
-      if (!mounted) {
+      if (!isCurrentAsyncRequest(request)) {
         return;
       }
       setState(() {
@@ -575,7 +587,9 @@ class _HoursTabState extends State<_HoursTab> {
                   contentPadding: EdgeInsets.zero,
                   title: Text('${row.hour}:00'),
                   subtitle: Text(
-                    '영수 ${UiFormat.number(row.billCount)}건 · 고객 ${UiFormat.number(row.totalCustomers)}명',
+                    row.receiptCount == null
+                        ? '결제 ${UiFormat.number(row.billCount)}건 · 고객 ${UiFormat.number(row.totalCustomers)}명'
+                        : '영수 ${UiFormat.number(row.receiptCount)}건 · 고객 ${UiFormat.number(row.totalCustomers)}명',
                   ),
                   trailing: Text(
                     UiFormat.won(row.totalAmount),
@@ -598,7 +612,9 @@ class _HoursTabState extends State<_HoursTab> {
                   contentPadding: EdgeInsets.zero,
                   title: Text('${_dowLabel(cell.dow)} ${cell.hour}:00'),
                   subtitle: Text(
-                    '영수 ${UiFormat.number(cell.billCount)}건 · 고객 ${UiFormat.number(cell.totalCustomers)}명',
+                    cell.receiptCount == null
+                        ? '결제 ${UiFormat.number(cell.billCount)}건 · 고객 ${UiFormat.number(cell.totalCustomers)}명'
+                        : '영수 ${UiFormat.number(cell.receiptCount)}건 · 고객 ${UiFormat.number(cell.totalCustomers)}명',
                   ),
                   trailing: Text(
                     UiFormat.won(cell.totalAmount),
@@ -621,7 +637,8 @@ class _WeekdayTab extends StatefulWidget {
   State<_WeekdayTab> createState() => _WeekdayTabState();
 }
 
-class _WeekdayTabState extends State<_WeekdayTab> {
+class _WeekdayTabState extends State<_WeekdayTab>
+    with AsyncRequestGuard<_WeekdayTab> {
   late DateTimeRange _range;
   WeekdayAnalysisData? _data;
   bool _isLoading = true;
@@ -641,9 +658,9 @@ class _WeekdayTabState extends State<_WeekdayTab> {
       context: context,
       initialDateRange: _range,
       firstDate: DateTime(2024),
-      lastDate: DateTime.now(),
+      lastDate: ApiService.kstNow(),
     );
-    if (picked == null) {
+    if (picked == null || !mounted) {
       return;
     }
     setState(() => _range = picked);
@@ -651,6 +668,8 @@ class _WeekdayTabState extends State<_WeekdayTab> {
   }
 
   Future<void> _load() async {
+    if (!mounted) return;
+    final request = beginAsyncRequest();
     final appState = context.read<AppState>();
     setState(() {
       _isLoading = true;
@@ -662,7 +681,7 @@ class _WeekdayTabState extends State<_WeekdayTab> {
         params: _rangeParams(_range),
         parser: WeekdayAnalysisData.fromJson,
       );
-      if (!mounted) {
+      if (!isCurrentAsyncRequest(request)) {
         return;
       }
       setState(() {
@@ -672,7 +691,7 @@ class _WeekdayTabState extends State<_WeekdayTab> {
         _isLoading = false;
       });
     } catch (error) {
-      if (!mounted) {
+      if (!isCurrentAsyncRequest(request)) {
         return;
       }
       setState(() {
@@ -780,7 +799,8 @@ class _PaymentsTab extends StatefulWidget {
   State<_PaymentsTab> createState() => _PaymentsTabState();
 }
 
-class _PaymentsTabState extends State<_PaymentsTab> {
+class _PaymentsTabState extends State<_PaymentsTab>
+    with AsyncRequestGuard<_PaymentsTab> {
   late DateTimeRange _range;
   PaymentAnalysisData? _data;
   bool _isLoading = true;
@@ -800,9 +820,9 @@ class _PaymentsTabState extends State<_PaymentsTab> {
       context: context,
       initialDateRange: _range,
       firstDate: DateTime(2024),
-      lastDate: DateTime.now(),
+      lastDate: ApiService.kstNow(),
     );
-    if (picked == null) {
+    if (picked == null || !mounted) {
       return;
     }
     setState(() => _range = picked);
@@ -810,6 +830,8 @@ class _PaymentsTabState extends State<_PaymentsTab> {
   }
 
   Future<void> _load() async {
+    if (!mounted) return;
+    final request = beginAsyncRequest();
     final appState = context.read<AppState>();
     setState(() {
       _isLoading = true;
@@ -821,7 +843,7 @@ class _PaymentsTabState extends State<_PaymentsTab> {
         params: _rangeParams(_range),
         parser: PaymentAnalysisData.fromJson,
       );
-      if (!mounted) {
+      if (!isCurrentAsyncRequest(request)) {
         return;
       }
       setState(() {
@@ -831,7 +853,7 @@ class _PaymentsTabState extends State<_PaymentsTab> {
         _isLoading = false;
       });
     } catch (error) {
-      if (!mounted) {
+      if (!isCurrentAsyncRequest(request)) {
         return;
       }
       setState(() {
@@ -905,6 +927,23 @@ class _PaymentsTabState extends State<_PaymentsTab> {
           ),
           const SizedBox(height: 16),
           Panel(
+            title: '결제수단 합계',
+            subtitle: '기간 내 수단별 결제 금액',
+            child: Column(
+              children: [
+                _PaymentAmount(label: '카드', amount: data.totals.card),
+                _PaymentAmount(label: '현금', amount: data.totals.cash),
+                _PaymentAmount(label: '포인트', amount: data.totals.point),
+                _PaymentAmount(label: '상품권', amount: data.totals.gift),
+                _PaymentAmount(label: '선불카드', amount: data.totals.prepaid),
+                _PaymentAmount(label: '외상', amount: data.totals.receivable),
+                _PaymentAmount(label: '교환권', amount: data.totals.exchange),
+                _PaymentAmount(label: '직원카드', amount: data.totals.staffCard),
+                _PaymentAmount(label: '전자화폐', amount: data.totals.emoney),
+              ],
+            ),
+          ),
+          Panel(
             title: '수단별 평균 영수액',
             subtitle: '영수증 단위 결제 방식 분포',
             child: Column(
@@ -924,16 +963,14 @@ class _PaymentsTabState extends State<_PaymentsTab> {
           ),
           Panel(
             title: '일별 결제 구성',
-            subtitle: '일자별 카드/현금 흐름',
+            subtitle: '일자별 전체 결제수단 흐름',
             child: Column(
               children: data.days.map((day) {
                 return ListTile(
                   dense: true,
                   contentPadding: EdgeInsets.zero,
                   title: Text(UiFormat.weekday(day.businessDate)),
-                  subtitle: Text(
-                    '카드 ${UiFormat.won(day.cardAmount)} · 현금 ${UiFormat.won(day.cashAmount)}',
-                  ),
+                  subtitle: Text(_paymentDaySummary(day)),
                   trailing: Text(
                     UiFormat.won(day.grossAmount),
                     style: const TextStyle(fontWeight: FontWeight.w700),
@@ -955,7 +992,8 @@ class _CompareTab extends StatefulWidget {
   State<_CompareTab> createState() => _CompareTabState();
 }
 
-class _CompareTabState extends State<_CompareTab> {
+class _CompareTabState extends State<_CompareTab>
+    with AsyncRequestGuard<_CompareTab> {
   late DateTimeRange _range;
   CompareAnalysisData? _data;
   bool _isLoading = true;
@@ -975,9 +1013,9 @@ class _CompareTabState extends State<_CompareTab> {
       context: context,
       initialDateRange: _range,
       firstDate: DateTime(2024),
-      lastDate: DateTime.now(),
+      lastDate: ApiService.kstNow(),
     );
-    if (picked == null) {
+    if (picked == null || !mounted) {
       return;
     }
     setState(() => _range = picked);
@@ -986,6 +1024,8 @@ class _CompareTabState extends State<_CompareTab> {
 
   Future<void> _load() async {
     final previous = _previousRange(_range);
+    if (!mounted) return;
+    final request = beginAsyncRequest();
     final appState = context.read<AppState>();
     setState(() {
       _isLoading = true;
@@ -1002,7 +1042,7 @@ class _CompareTabState extends State<_CompareTab> {
         },
         parser: CompareAnalysisData.fromJson,
       );
-      if (!mounted) {
+      if (!isCurrentAsyncRequest(request)) {
         return;
       }
       setState(() {
@@ -1012,7 +1052,7 @@ class _CompareTabState extends State<_CompareTab> {
         _isLoading = false;
       });
     } catch (error) {
-      if (!mounted) {
+      if (!isCurrentAsyncRequest(request)) {
         return;
       }
       setState(() {
@@ -1127,7 +1167,8 @@ class _TrendsTab extends StatefulWidget {
   State<_TrendsTab> createState() => _TrendsTabState();
 }
 
-class _TrendsTabState extends State<_TrendsTab> {
+class _TrendsTabState extends State<_TrendsTab>
+    with AsyncRequestGuard<_TrendsTab> {
   late DateTimeRange _range;
   TrendsAnalysisData? _data;
   bool _isLoading = true;
@@ -1147,9 +1188,9 @@ class _TrendsTabState extends State<_TrendsTab> {
       context: context,
       initialDateRange: _range,
       firstDate: DateTime(2024),
-      lastDate: DateTime.now(),
+      lastDate: ApiService.kstNow(),
     );
-    if (picked == null) {
+    if (picked == null || !mounted) {
       return;
     }
     setState(() => _range = picked);
@@ -1157,6 +1198,8 @@ class _TrendsTabState extends State<_TrendsTab> {
   }
 
   Future<void> _load() async {
+    if (!mounted) return;
+    final request = beginAsyncRequest();
     final appState = context.read<AppState>();
     setState(() {
       _isLoading = true;
@@ -1168,7 +1211,7 @@ class _TrendsTabState extends State<_TrendsTab> {
         params: _rangeParams(_range),
         parser: TrendsAnalysisData.fromJson,
       );
-      if (!mounted) {
+      if (!isCurrentAsyncRequest(request)) {
         return;
       }
       setState(() {
@@ -1178,7 +1221,7 @@ class _TrendsTabState extends State<_TrendsTab> {
         _isLoading = false;
       });
     } catch (error) {
-      if (!mounted) {
+      if (!isCurrentAsyncRequest(request)) {
         return;
       }
       setState(() {
@@ -1443,12 +1486,13 @@ class _CompareInfoRow extends StatelessWidget {
 }
 
 DateTimeRange _defaultRange({required int days}) {
-  final end = DateTime.now();
+  final end = ApiService.kstNow();
   final start = end.subtract(Duration(days: days));
   return DateTimeRange(start: start, end: end);
 }
 
 Map<String, Object?> _rangeParams(DateTimeRange range) {
+  validateAnalyticsDateRange(range.start, range.end);
   return {
     'from_date': _formatDate(range.start),
     'to_date': _formatDate(range.end),
@@ -1492,7 +1536,8 @@ class _MenuEngineeringTab extends StatefulWidget {
   State<_MenuEngineeringTab> createState() => _MenuEngineeringTabState();
 }
 
-class _MenuEngineeringTabState extends State<_MenuEngineeringTab> {
+class _MenuEngineeringTabState extends State<_MenuEngineeringTab>
+    with AsyncRequestGuard<_MenuEngineeringTab> {
   late DateTimeRange _range;
   MenuEngineeringData? _data;
   bool _isLoading = true;
@@ -1512,14 +1557,16 @@ class _MenuEngineeringTabState extends State<_MenuEngineeringTab> {
       context: context,
       initialDateRange: _range,
       firstDate: DateTime(2024),
-      lastDate: DateTime.now(),
+      lastDate: ApiService.kstNow(),
     );
-    if (picked == null) return;
+    if (picked == null || !mounted) return;
     setState(() => _range = picked);
     await _load();
   }
 
   Future<void> _load() async {
+    if (!mounted) return;
+    final request = beginAsyncRequest();
     final appState = context.read<AppState>();
     setState(() {
       _isLoading = true;
@@ -1531,7 +1578,7 @@ class _MenuEngineeringTabState extends State<_MenuEngineeringTab> {
         params: _rangeParams(_range),
         parser: MenuEngineeringData.fromJson,
       );
-      if (!mounted) return;
+      if (!isCurrentAsyncRequest(request)) return;
       setState(() {
         _data = response.data;
         _fromCache = response.fromCache;
@@ -1539,7 +1586,7 @@ class _MenuEngineeringTabState extends State<_MenuEngineeringTab> {
         _isLoading = false;
       });
     } catch (error) {
-      if (!mounted) return;
+      if (!isCurrentAsyncRequest(request)) return;
       setState(() {
         _error = error.toString();
         _isLoading = false;
@@ -1652,7 +1699,7 @@ class _MenuEngineeringTabState extends State<_MenuEngineeringTab> {
       case 'Puzzle':
         return '? 퍼즐 (홍보 필요)';
       case 'Plowhorse':
-        return '🐴 플라우호스 (원가 검토)';
+        return '🐴 플라우호스 (판매가 검토)';
       case 'Dog':
         return '🐕 도그 (퇴출 검토)';
       default:
@@ -1663,13 +1710,13 @@ class _MenuEngineeringTabState extends State<_MenuEngineeringTab> {
   String _quadrantSubtitle(String q) {
     switch (q) {
       case 'Star':
-        return '인기 높고 수익성 좋음';
+        return '인기 높고 평균 판매가 높음';
       case 'Puzzle':
-        return '수익성 높지만 판매량 부족';
+        return '고단가지만 판매량 부족';
       case 'Plowhorse':
-        return '판매량 많지만 수익성 낮음';
+        return '판매량 많지만 평균 판매가 낮음';
       case 'Dog':
-        return '인기와 수익성 모두 낮음';
+        return '인기와 평균 판매가 모두 낮음';
       default:
         return '';
     }
@@ -1685,7 +1732,8 @@ class _ForecastTab extends StatefulWidget {
   State<_ForecastTab> createState() => _ForecastTabState();
 }
 
-class _ForecastTabState extends State<_ForecastTab> {
+class _ForecastTabState extends State<_ForecastTab>
+    with AsyncRequestGuard<_ForecastTab> {
   late DateTime _selectedMonth;
   ForecastData? _data;
   bool _isLoading = true;
@@ -1696,7 +1744,7 @@ class _ForecastTabState extends State<_ForecastTab> {
   @override
   void initState() {
     super.initState();
-    final now = DateTime.now();
+    final now = ApiService.kstNow();
     _selectedMonth = DateTime(now.year, now.month);
     _load();
   }
@@ -1706,15 +1754,17 @@ class _ForecastTabState extends State<_ForecastTab> {
       context: context,
       initialDate: _selectedMonth,
       firstDate: DateTime(2024),
-      lastDate: DateTime.now(),
+      lastDate: ApiService.kstNow(),
       initialDatePickerMode: DatePickerMode.year,
     );
-    if (picked == null) return;
+    if (picked == null || !mounted) return;
     setState(() => _selectedMonth = DateTime(picked.year, picked.month));
     await _load();
   }
 
   Future<void> _load() async {
+    if (!mounted) return;
+    final request = beginAsyncRequest();
     final appState = context.read<AppState>();
     setState(() {
       _isLoading = true;
@@ -1729,7 +1779,7 @@ class _ForecastTabState extends State<_ForecastTab> {
         },
         parser: ForecastData.fromJson,
       );
-      if (!mounted) return;
+      if (!isCurrentAsyncRequest(request)) return;
       setState(() {
         _data = response.data;
         _fromCache = response.fromCache;
@@ -1737,7 +1787,7 @@ class _ForecastTabState extends State<_ForecastTab> {
         _isLoading = false;
       });
     } catch (error) {
-      if (!mounted) return;
+      if (!isCurrentAsyncRequest(request)) return;
       setState(() {
         _error = error.toString();
         _isLoading = false;
@@ -1837,6 +1887,13 @@ class _ForecastTabState extends State<_ForecastTab> {
                   label: '최종 예상 총매출',
                   value: UiFormat.won(data.projectedTotal),
                 ),
+                if (data.forecastDays.isNotEmpty) const Divider(height: 24),
+                ...data.forecastDays.map(
+                  (day) => _CompareInfoRow(
+                    label: UiFormat.weekday(day.predictedDate),
+                    value: UiFormat.won(day.predictedTotal),
+                  ),
+                ),
               ],
             ),
           ),
@@ -1844,6 +1901,32 @@ class _ForecastTabState extends State<_ForecastTab> {
       ),
     );
   }
+}
+
+class _PaymentAmount extends StatelessWidget {
+  final String label;
+  final int amount;
+
+  const _PaymentAmount({required this.label, required this.amount});
+
+  @override
+  Widget build(BuildContext context) {
+    return _CompareInfoRow(label: label, value: UiFormat.won(amount));
+  }
+}
+
+String _paymentDaySummary(PaymentDayRecord day) {
+  return [
+    '카드 ${UiFormat.won(day.cardAmount)}',
+    '현금 ${UiFormat.won(day.cashAmount)}',
+    '포인트 ${UiFormat.won(day.pointAmount)}',
+    '상품권 ${UiFormat.won(day.giftAmount)}',
+    '선불카드 ${UiFormat.won(day.prepaidAmount)}',
+    '외상 ${UiFormat.won(day.receivableAmount)}',
+    '교환권 ${UiFormat.won(day.exchangeAmount)}',
+    '직원카드 ${UiFormat.won(day.staffCardAmount)}',
+    '전자화폐 ${UiFormat.won(day.emoneyAmount)}',
+  ].join(' · ');
 }
 
 // ─── ABC Analysis Tab ─────────────────────────────────────────────────────────
@@ -1855,7 +1938,7 @@ class _AbcTab extends StatefulWidget {
   State<_AbcTab> createState() => _AbcTabState();
 }
 
-class _AbcTabState extends State<_AbcTab> {
+class _AbcTabState extends State<_AbcTab> with AsyncRequestGuard<_AbcTab> {
   late DateTimeRange _range;
   AbcData? _data;
   bool _isLoading = true;
@@ -1875,14 +1958,16 @@ class _AbcTabState extends State<_AbcTab> {
       context: context,
       initialDateRange: _range,
       firstDate: DateTime(2024),
-      lastDate: DateTime.now(),
+      lastDate: ApiService.kstNow(),
     );
-    if (picked == null) return;
+    if (picked == null || !mounted) return;
     setState(() => _range = picked);
     await _load();
   }
 
   Future<void> _load() async {
+    if (!mounted) return;
+    final request = beginAsyncRequest();
     final appState = context.read<AppState>();
     setState(() {
       _isLoading = true;
@@ -1894,7 +1979,7 @@ class _AbcTabState extends State<_AbcTab> {
         params: _rangeParams(_range),
         parser: AbcData.fromJson,
       );
-      if (!mounted) return;
+      if (!isCurrentAsyncRequest(request)) return;
       setState(() {
         _data = response.data;
         _fromCache = response.fromCache;
@@ -1902,7 +1987,7 @@ class _AbcTabState extends State<_AbcTab> {
         _isLoading = false;
       });
     } catch (error) {
-      if (!mounted) return;
+      if (!isCurrentAsyncRequest(request)) return;
       setState(() {
         _error = error.toString();
         _isLoading = false;

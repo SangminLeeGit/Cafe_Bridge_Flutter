@@ -19,15 +19,14 @@ class StatCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final bgColor =
-        accent ? CafeBridgeColors.accentSoft : CafeBridgeColors.surface;
-    final borderColor =
-        accent ? CafeBridgeColors.accent : CafeBridgeColors.border;
+        accent ? AppColors.primary.withValues(alpha: 0.1) : AppColors.surface;
+    final borderColor = accent ? AppColors.primary : AppColors.border;
 
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
         color: bgColor,
-        borderRadius: BorderRadius.circular(12),
+        borderRadius: BorderRadius.circular(AppRadii.card),
         border: Border.all(color: borderColor),
       ),
       child: Column(
@@ -37,16 +36,18 @@ class StatCard extends StatelessWidget {
             label.toUpperCase(),
             style: const TextStyle(
               fontSize: 12,
-              color: CafeBridgeColors.textFaint,
+              color: AppColors.subtle,
               fontWeight: FontWeight.bold,
             ),
           ),
           const SizedBox(height: 4),
           Text(
             value,
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
             style: const TextStyle(
               fontSize: 24,
-              color: CafeBridgeColors.textPrimary,
+              color: AppColors.ink,
               fontWeight: FontWeight.bold,
             ),
           ),
@@ -54,9 +55,11 @@ class StatCard extends StatelessWidget {
             const SizedBox(height: 4),
             Text(
               sub!,
+              maxLines: 3,
+              overflow: TextOverflow.ellipsis,
               style: const TextStyle(
                 fontSize: 12,
-                color: CafeBridgeColors.textMuted,
+                color: AppColors.muted,
               ),
             ),
           ],

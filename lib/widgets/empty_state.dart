@@ -29,9 +29,7 @@ class EmptyState extends StatelessWidget {
             Icon(
               icon,
               size: 40,
-              color: destructive
-                  ? CafeBridgeColors.danger
-                  : CafeBridgeColors.textFaint,
+              color: destructive ? AppColors.danger : AppColors.subtle,
             ),
             const SizedBox(height: 12),
             Text(
@@ -40,7 +38,7 @@ class EmptyState extends StatelessWidget {
               style: const TextStyle(
                 fontSize: 18,
                 fontWeight: FontWeight.w700,
-                color: CafeBridgeColors.textPrimary,
+                color: AppColors.ink,
               ),
             ),
             if (message != null) ...[
@@ -50,7 +48,7 @@ class EmptyState extends StatelessWidget {
                 textAlign: TextAlign.center,
                 style: const TextStyle(
                   fontSize: 14,
-                  color: CafeBridgeColors.textMuted,
+                  color: AppColors.muted,
                 ),
               ),
             ],

@@ -18,14 +18,14 @@ class CacheNotice extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
       decoration: BoxDecoration(
-        color: CafeBridgeColors.warningSoft,
-        borderRadius: BorderRadius.circular(CafeBridgeRadii.pill),
-        border: Border.all(color: const Color(0xFFFED7AA)),
+        color: AppColors.warningSoft,
+        borderRadius: BorderRadius.circular(AppRadii.pill),
+        border: Border.all(color: AppColors.warningBorder),
       ),
       child: Text(
         '$prefix · ${UiFormat.compactDateTime(cachedAt?.toIso8601String())}',
         style: const TextStyle(
-          color: Color(0xFF9A3412),
+          color: AppColors.warningForeground,
           fontWeight: FontWeight.w700,
           fontSize: 12,
         ),

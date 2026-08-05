@@ -27,9 +27,9 @@ class AppUpdateBanner extends StatelessWidget {
       width: double.infinity,
       padding: EdgeInsets.all(dense ? 12 : 14),
       decoration: BoxDecoration(
-        color: CafeBridgeColors.warningSoft,
+        color: AppColors.warningSoft,
         borderRadius: BorderRadius.circular(dense ? 0 : 18),
-        border: Border.all(color: const Color(0xFFFED7AA)),
+        border: Border.all(color: AppColors.warningBorder),
       ),
       child: LayoutBuilder(
         builder: (context, constraints) {
@@ -40,7 +40,7 @@ class AppUpdateBanner extends StatelessWidget {
               Text(
                 '권장 업데이트 $latestLabel 이(가) 준비되었습니다.',
                 style: const TextStyle(
-                  color: Color(0xFF9A3412),
+                  color: AppColors.warningForeground,
                   fontWeight: FontWeight.w700,
                 ),
               ),
@@ -49,7 +49,7 @@ class AppUpdateBanner extends StatelessWidget {
                 Text(
                   updateInfo.releaseNotes.trim(),
                   style: const TextStyle(
-                    color: Color(0xFF9A3412),
+                    color: AppColors.warningForeground,
                     height: 1.35,
                   ),
                 ),
@@ -59,7 +59,7 @@ class AppUpdateBanner extends StatelessWidget {
                 Text(
                   appState.updateStatusMessage,
                   style: const TextStyle(
-                    color: Color(0xFF7C2D12),
+                    color: AppColors.warningStrong,
                     fontWeight: FontWeight.w600,
                     height: 1.35,
                   ),
@@ -70,14 +70,14 @@ class AppUpdateBanner extends StatelessWidget {
                 LinearProgressIndicator(
                   value: progress,
                   minHeight: 6,
-                  backgroundColor: const Color(0xFFFED7AA),
-                  color: const Color(0xFFEA580C),
+                  backgroundColor: AppColors.warningBorder,
+                  color: AppColors.warningAction,
                 ),
               ],
             ],
           );
 
-          final action = _buildActionButton(context, appState);
+          final action = _buildAction(context, appState);
 
           if (vertical) {
             return Column(
@@ -103,12 +103,12 @@ class AppUpdateBanner extends StatelessWidget {
     );
   }
 
-  Widget _buildActionButton(BuildContext context, AppState appState) {
+  Widget _buildAction(BuildContext context, AppState appState) {
     final hasDownloadedPackage = appState.canInstallDownloadedUpdate;
     final canTrigger = hasDownloadedPackage || appState.canStartAppUpdate;
     final progress = appState.updateDownloadProgress;
 
-    return FilledButton.tonalIcon(
+    final installButton = FilledButton.tonalIcon(
       onPressed: !canTrigger || appState.isUpdateActionInProgress
           ? null
           : () async {
@@ -150,6 +150,21 @@ class AppUpdateBanner extends StatelessWidget {
                 ? '설치 다시 열기'
                 : '다운로드 및 설치',
       ),
+    );
+    if (!appState.isUpdateActionInProgress) {
+      return installButton;
+    }
+    return Wrap(
+      spacing: 8,
+      runSpacing: 8,
+      children: [
+        installButton,
+        OutlinedButton.icon(
+          onPressed: appState.cancelAppUpdateDownload,
+          icon: const Icon(Icons.close),
+          label: const Text('취소'),
+        ),
+      ],
     );
   }
 

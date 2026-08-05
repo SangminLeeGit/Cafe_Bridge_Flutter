@@ -58,8 +58,12 @@ bool asBool(Object? value, {bool defaultValue = false}) {
   if (value is String) {
     final normalized = value.trim().toLowerCase();
     if (normalized.isEmpty) return defaultValue;
-    if (normalized == 'true' || normalized == '1' || normalized == 'yes') return true;
-    if (normalized == 'false' || normalized == '0' || normalized == 'no') return false;
+    if (normalized == 'true' || normalized == '1' || normalized == 'yes') {
+      return true;
+    }
+    if (normalized == 'false' || normalized == '0' || normalized == 'no') {
+      return false;
+    }
   }
   return defaultValue;
 }
@@ -121,7 +125,8 @@ class AppUpdateInfo {
       releaseNotes: asString(json['release_notes']),
       sha256: asString(json['sha256']),
       fileSize: asInt(json['file_size']),
-      forceUpdate: asBool(json['force_update']) || asBool(json['required_update']),
+      forceUpdate:
+          asBool(json['force_update']) || asBool(json['required_update']),
     );
   }
 
@@ -174,7 +179,8 @@ class DeployNoticeInfo {
 
   bool get hasNoticeId => noticeId.trim().isNotEmpty;
   bool get hasVersion => latestVersion.trim().isNotEmpty;
-  String get versionLabel => formatVersionDisplay(latestVersion, latestBuild, fallback: '-');
+  String get versionLabel =>
+      formatVersionDisplay(latestVersion, latestBuild, fallback: '-');
 }
 
 class AsyncTaskStartResponse {
@@ -223,7 +229,8 @@ class BrowserPriceApplyTaskResult {
     return BrowserPriceApplyTaskResult(
       productCode: asString(json['product_code']),
       itemName: asString(json['item_name']),
-      currentPrice: json['current_price'] == null ? null : asInt(json['current_price']),
+      currentPrice:
+          json['current_price'] == null ? null : asInt(json['current_price']),
       targetPrice: asInt(json['target_price']),
       status: asString(json['status']),
       message: asString(json['message']),
@@ -275,7 +282,10 @@ class BrowserPriceApplyTask {
       reason: asString(json['reason']),
       actor: asString(json['actor']),
       status: asString(json['status']),
-      result: rawResult is Map ? BrowserPriceApplyTaskResult.fromJson(Map<String, dynamic>.from(rawResult)) : null,
+      result: rawResult is Map
+          ? BrowserPriceApplyTaskResult.fromJson(
+              Map<String, dynamic>.from(rawResult))
+          : null,
       startedAt: asNullableString(json['started_at']),
       finishedAt: asNullableString(json['finished_at']),
       errorMessage: asString(json['error_message']),
@@ -397,7 +407,9 @@ class DeployUpdatePolicyInfo {
       fileSize: asInt(json['file_size']),
       policySource: asNullableString(json['policy_source']),
       policyWarning: asNullableString(json['policy_warning']),
-      downloadReady: json.containsKey('download_ready') ? asBool(json['download_ready']) : null,
+      downloadReady: json.containsKey('download_ready')
+          ? asBool(json['download_ready'])
+          : null,
     );
   }
 }
@@ -426,7 +438,8 @@ class DeployLatestReleaseArtifact {
   factory DeployLatestReleaseArtifact.fromJson(Map<String, dynamic> json) {
     return DeployLatestReleaseArtifact(
       latestVersion: asNullableString(json['latest_version']),
-      latestBuild: json['latest_build'] == null ? null : asInt(json['latest_build']),
+      latestBuild:
+          json['latest_build'] == null ? null : asInt(json['latest_build']),
       fileName: asNullableString(json['file_name']),
       publishedAt: asNullableString(json['published_at']),
       artifactPath: asNullableString(json['artifact_path']),
@@ -459,7 +472,10 @@ class DeployLatestReleaseInfo {
       latestJsonPath: asString(json['latest_json_path']),
       exists: asBool(json['exists']),
       readError: asNullableString(json['read_error']),
-      latest: rawLatest is Map ? DeployLatestReleaseArtifact.fromJson(Map<String, dynamic>.from(rawLatest)) : null,
+      latest: rawLatest is Map
+          ? DeployLatestReleaseArtifact.fromJson(
+              Map<String, dynamic>.from(rawLatest))
+          : null,
     );
   }
 }
@@ -478,8 +494,10 @@ class DeployVersionInfo {
   factory DeployVersionInfo.fromJson(Map<String, dynamic> json) {
     return DeployVersionInfo(
       pubspec: DeployPubspecInfo.fromJson(asMap(json['pubspec'])),
-      updatePolicy: DeployUpdatePolicyInfo.fromJson(asMap(json['update_policy'])),
-      latestRelease: DeployLatestReleaseInfo.fromJson(asMap(json['latest_release'])),
+      updatePolicy:
+          DeployUpdatePolicyInfo.fromJson(asMap(json['update_policy'])),
+      latestRelease:
+          DeployLatestReleaseInfo.fromJson(asMap(json['latest_release'])),
     );
   }
 }

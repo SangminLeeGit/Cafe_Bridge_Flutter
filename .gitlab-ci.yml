@@ -1,16 +1,16 @@
 stages:
+  - security
   - validate
   - release
 
 workflow:
   rules:
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
     - if: '$CI_PIPELINE_SOURCE == "push" && $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'
-    - if: '$CI_PIPELINE_SOURCE == "web"'
-    - if: '$CI_PIPELINE_SOURCE == "api"'
-    - if: '$CI_PIPELINE_SOURCE == "trigger"'
+    - if: '$CI_COMMIT_REF_PROTECTED == "true" && $CI_PIPELINE_SOURCE =~ /^(api|trigger|web)$/'
 
 variables:
-  GIT_DEPTH: "20"
+  GIT_DEPTH: "0"
   PUB_CACHE: "/var/cache/android-builder/pub"
   GRADLE_USER_HOME: "/var/cache/android-builder/gradle"
   RUNNER_SCRIPT_TIMEOUT: "50m"
@@ -37,8 +37,29 @@ android_validate:
   script:
     - ./.gitlab/ci/android-validate.sh
   rules:
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
     - if: '$CI_PIPELINE_SOURCE == "push" && $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'
-    - if: '$CI_PIPELINE_SOURCE =~ /^(api|trigger|web)$/'
+    - if: '$CI_COMMIT_REF_PROTECTED == "true" && $CI_PIPELINE_SOURCE =~ /^(api|trigger|web)$/'
+
+secret_detection:
+  stage: security
+  image:
+    name: zricethezav/gitleaks:v8.24.2@sha256:b5918eb91b8d2473cec722f066abb4352e4ffdc4ec9f4283ec143aba9ec9ebc4
+    entrypoint: [""]
+  timeout: 10 minutes
+  interruptible: true
+  script:
+    - gitleaks git --redact --no-banner --verbose
+
+sast:
+  stage: security
+  image:
+    name: semgrep/semgrep:1.171.0@sha256:bdf7013b2c3634a487671158da77c554f531742326b543a9464d2adf6c433ac8
+    entrypoint: [""]
+  timeout: 20 minutes
+  interruptible: true
+  script:
+    - semgrep scan --config p/default --error --metrics=off .
 
 android_release_apk:
   stage: release
@@ -52,13 +73,15 @@ android_release_apk:
   script:
     - ./.gitlab/ci/android-release.sh
   artifacts:
-    when: always
-    expire_in: 30 days
+    when: on_success
+    expire_in: 7 days
     paths:
       - build/app/outputs/flutter-apk/app-release.apk
   after_script:
     - if command -v gradle >/dev/null 2>&1; then gradle --stop || true; fi
     - pkill -u "$(id -u)" -f 'KotlinCompileDaemon' || true
   rules:
-    - if: '$CI_PIPELINE_SOURCE == "push" && $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'
-    - if: '$CI_PIPELINE_SOURCE =~ /^(api|trigger|web)$/'
+    - if: '$CI_COMMIT_REF_PROTECTED == "true" && $CI_PIPELINE_SOURCE =~ /^(api|trigger)$/'
+    - if: '$CI_COMMIT_REF_PROTECTED == "true" && ($CI_PIPELINE_SOURCE == "web" || ($CI_PIPELINE_SOURCE == "push" && $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH))'
+      when: manual
+      allow_failure: false

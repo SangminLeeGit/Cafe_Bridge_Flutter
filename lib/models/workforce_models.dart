@@ -208,11 +208,13 @@ class WorkplacePayRule {
       dailyWage: asNullableInt(json['daily_wage']),
       monthlySalary: asNullableInt(json['monthly_salary']),
       defaultBreakMinutes: asInt(json['default_break_minutes']),
-      overtimeDailyThresholdMinutes: asInt(json['overtime_daily_threshold_minutes']),
+      overtimeDailyThresholdMinutes:
+          asInt(json['overtime_daily_threshold_minutes']),
       nightEnabled: asBool(json['night_enabled'], defaultValue: true),
       overtimeEnabled: asBool(json['overtime_enabled'], defaultValue: true),
       holidayEnabled: asBool(json['holiday_enabled'], defaultValue: true),
-      weeklyHolidayEnabled: asBool(json['weekly_holiday_enabled'], defaultValue: true),
+      weeklyHolidayEnabled:
+          asBool(json['weekly_holiday_enabled'], defaultValue: true),
       weeklyHolidayStartDow: asInt(json['weekly_holiday_start_dow']),
       weeklyHolidayMinMinutes: asInt(json['weekly_holiday_min_minutes']),
       weeklyHolidayMinDays: asInt(json['weekly_holiday_min_days']),
@@ -282,8 +284,12 @@ class Workplace {
       isActive: asBool(json['is_active']),
       createdAt: asDateTime(json['created_at']),
       updatedAt: asDateTime(json['updated_at']),
-      payRule: json['pay_rule'] is Map ? WorkplacePayRule.fromJson(asMap(json['pay_rule'])) : null,
-      taxRule: json['tax_rule'] is Map ? WorkplaceTaxRule.fromJson(asMap(json['tax_rule'])) : null,
+      payRule: json['pay_rule'] is Map
+          ? WorkplacePayRule.fromJson(asMap(json['pay_rule']))
+          : null,
+      taxRule: json['tax_rule'] is Map
+          ? WorkplaceTaxRule.fromJson(asMap(json['tax_rule']))
+          : null,
     );
   }
 }
@@ -431,6 +437,8 @@ class Employee {
   final String resignedOn;
   final String phone;
   final int? hourlyWage;
+  final int? monthlySalary;
+  final String monthlySalaryCalculationMode;
   final String taxPreset;
   final double taxCustomRate;
   final String memo;
@@ -451,6 +459,8 @@ class Employee {
     required this.resignedOn,
     required this.phone,
     required this.hourlyWage,
+    required this.monthlySalary,
+    required this.monthlySalaryCalculationMode,
     required this.taxPreset,
     required this.taxCustomRate,
     required this.memo,
@@ -473,6 +483,9 @@ class Employee {
       resignedOn: asString(json['resigned_on']),
       phone: asString(json['phone']),
       hourlyWage: asNullableInt(json['hourly_wage']),
+      monthlySalary: asNullableInt(json['monthly_salary']),
+      monthlySalaryCalculationMode:
+          asString(json['monthly_salary_calculation_mode']),
       taxPreset: asString(json['tax_preset']),
       taxCustomRate: asDouble(json['tax_custom_rate']),
       memo: asString(json['memo']),
@@ -482,6 +495,27 @@ class Employee {
       updatedAt: asDateTime(json['updated_at']),
     );
   }
+
+  Map<String, dynamic> toPatchPayload({bool? active}) => {
+        'workplace_id': workplaceId,
+        'name': name,
+        'employee_no': employeeNo,
+        'role': role,
+        'employment_type': employmentType,
+        'joined_on': joinedOn,
+        'resigned_on': resignedOn,
+        'phone': phone,
+        'hourly_wage': hourlyWage,
+        'monthly_salary': monthlySalary,
+        'monthly_salary_calculation_mode': monthlySalaryCalculationMode.isEmpty
+            ? 'prorated_hours'
+            : monthlySalaryCalculationMode,
+        'tax_preset': taxPreset,
+        'tax_custom_rate': taxCustomRate,
+        'memo': memo,
+        'linked_auth_user_id': linkedAuthUserId,
+        'is_active': active ?? isActive,
+      };
 }
 
 class EmployeeAuditLog {
@@ -736,4 +770,232 @@ class EmployeePayPreview {
       netEstimate: asInt(json['net_estimate']),
     );
   }
+}
+
+class WorkforceShiftDraft {
+  final int? workplaceId;
+  final int? employeeId;
+  final String date;
+  final String startTime;
+  final String endTime;
+  final int breakMinutes;
+  final String leaveType;
+  final String holidayType;
+  final String memo;
+  final int extraAmount;
+  final int deductionAmount;
+
+  const WorkforceShiftDraft({
+    required this.workplaceId,
+    required this.employeeId,
+    required this.date,
+    required this.startTime,
+    required this.endTime,
+    required this.breakMinutes,
+    this.leaveType = 'none',
+    this.holidayType = 'none',
+    this.memo = '',
+    this.extraAmount = 0,
+    this.deductionAmount = 0,
+  });
+
+  factory WorkforceShiftDraft.fromShift(ShiftRecord shift) =>
+      WorkforceShiftDraft(
+        workplaceId: shift.workplaceId,
+        employeeId: shift.employeeId,
+        date: shift.shiftDate,
+        startTime: workforceTimePart(shift.startAt),
+        endTime: workforceTimePart(shift.endAt),
+        breakMinutes: shift.breakMinutes,
+        leaveType: shift.leaveType,
+        holidayType: shift.holidayType,
+        memo: shift.memo,
+        extraAmount: shift.adjustments
+            .where((item) => item.kind == 'extra')
+            .fold(0, (sum, item) => sum + item.amount),
+        deductionAmount: shift.adjustments
+            .where((item) => item.kind == 'deduction')
+            .fold(0, (sum, item) => sum + item.amount),
+      );
+
+  factory WorkforceShiftDraft.fromPreset(ShiftPreset preset, String date,
+          {int? employeeId}) =>
+      WorkforceShiftDraft(
+        workplaceId: preset.workplaceId,
+        employeeId: employeeId,
+        date: date,
+        startTime: preset.startTime,
+        endTime: preset.endTime,
+        breakMinutes: preset.breakMinutes,
+        leaveType: preset.leaveType,
+        holidayType: preset.holidayType,
+        memo: preset.memo,
+        extraAmount: preset.extraAmount,
+        deductionAmount: preset.deductionAmount,
+      );
+
+  String? validate() {
+    if (workplaceId == null) return '근무지를 선택하세요.';
+    if (employeeId == null) return '직원을 선택하세요.';
+    if (parseWorkforceDate(date) == null) {
+      return '유효한 날짜를 YYYY-MM-DD 형식으로 입력하세요.';
+    }
+    final start = parseWorkforceTime(startTime);
+    final end = parseWorkforceTime(endTime);
+    if (start == null || end == null) return '시간을 HH:mm 형식으로 입력하세요.';
+    if (start >= end) return '시작 시간은 종료 시간보다 빨라야 합니다.';
+    if (breakMinutes < 0) return '휴게시간은 0분 이상이어야 합니다.';
+    if (breakMinutes > end - start) return '휴게시간은 총 근무시간 이하여야 합니다.';
+    if (extraAmount < 0 || deductionAmount < 0) return '금액은 0원 이상이어야 합니다.';
+    return null;
+  }
+
+  Map<String, dynamic> toPayload() => {
+        'workplace_id': workplaceId,
+        'employee_id': employeeId,
+        'start_at': '${date.trim()}T${normalizeWorkforceTime(startTime)}',
+        'end_at': '${date.trim()}T${normalizeWorkforceTime(endTime)}',
+        'break_minutes': breakMinutes,
+        'leave_type': leaveType,
+        'holiday_type': holidayType,
+        'memo': memo.trim(),
+        'adjustments': [
+          if (extraAmount > 0)
+            {'kind': 'extra', 'label': '추가 지급', 'amount': extraAmount},
+          if (deductionAmount > 0)
+            {'kind': 'deduction', 'label': '추가 차감', 'amount': deductionAmount},
+        ],
+      };
+}
+
+class WorkforcePresetDraft {
+  final int? workplaceId;
+  final String name;
+  final String startTime;
+  final String endTime;
+  final int breakMinutes;
+  final String leaveType;
+  final String holidayType;
+  final String memo;
+  final int extraAmount;
+  final int deductionAmount;
+  final bool isFavorite;
+
+  const WorkforcePresetDraft({
+    required this.workplaceId,
+    required this.name,
+    required this.startTime,
+    required this.endTime,
+    required this.breakMinutes,
+    this.leaveType = 'none',
+    this.holidayType = 'none',
+    this.memo = '',
+    this.extraAmount = 0,
+    this.deductionAmount = 0,
+    this.isFavorite = false,
+  });
+
+  factory WorkforcePresetDraft.fromPreset(ShiftPreset preset) =>
+      WorkforcePresetDraft(
+        workplaceId: preset.workplaceId,
+        name: preset.name,
+        startTime: preset.startTime,
+        endTime: preset.endTime,
+        breakMinutes: preset.breakMinutes,
+        leaveType: preset.leaveType,
+        holidayType: preset.holidayType,
+        memo: preset.memo,
+        extraAmount: preset.extraAmount,
+        deductionAmount: preset.deductionAmount,
+        isFavorite: preset.isFavorite,
+      );
+
+  String? validate() {
+    if (workplaceId == null) return '근무지를 선택하세요.';
+    if (name.trim().isEmpty) return '프리셋 이름을 입력하세요.';
+    final start = parseWorkforceTime(startTime);
+    final end = parseWorkforceTime(endTime);
+    if (start == null || end == null) return '시간을 HH:mm 형식으로 입력하세요.';
+    if (start >= end) return '시작 시간은 종료 시간보다 빨라야 합니다.';
+    if (breakMinutes < 0) return '휴게시간은 0분 이상이어야 합니다.';
+    if (breakMinutes > end - start) return '휴게시간은 총 근무시간 이하여야 합니다.';
+    if (extraAmount < 0 || deductionAmount < 0) return '금액은 0원 이상이어야 합니다.';
+    return null;
+  }
+
+  Map<String, dynamic> toPayload() => {
+        'workplace_id': workplaceId,
+        'name': name.trim(),
+        'start_time': normalizeWorkforceTime(startTime),
+        'end_time': normalizeWorkforceTime(endTime),
+        'break_minutes': breakMinutes,
+        'leave_type': leaveType,
+        'holiday_type': holidayType,
+        'memo': memo.trim(),
+        'extra_amount': extraAmount,
+        'deduction_amount': deductionAmount,
+        'is_favorite': isFavorite,
+      };
+}
+
+DateTime? parseWorkforceDate(String value) {
+  final text = value.trim();
+  if (!RegExp(r'^\d{4}-\d{2}-\d{2}$').hasMatch(text)) return null;
+  final parsed = DateTime.tryParse(text);
+  if (parsed == null) return null;
+  final normalized =
+      '${parsed.year.toString().padLeft(4, '0')}-${parsed.month.toString().padLeft(2, '0')}-${parsed.day.toString().padLeft(2, '0')}';
+  return normalized == text ? parsed : null;
+}
+
+int? parseWorkforceTime(String value) {
+  final match =
+      RegExp(r'^(\d{1,2}):(\d{2})(?::\d{2})?$').firstMatch(value.trim());
+  if (match == null) return null;
+  final hour = int.tryParse(match.group(1)!);
+  final minute = int.tryParse(match.group(2)!);
+  if (hour == null || minute == null || hour > 23 || minute > 59) return null;
+  return hour * 60 + minute;
+}
+
+String normalizeWorkforceTime(String value) {
+  final minutes = parseWorkforceTime(value);
+  if (minutes == null) return value.trim();
+  return '${(minutes ~/ 60).toString().padLeft(2, '0')}:${(minutes % 60).toString().padLeft(2, '0')}';
+}
+
+String workforceTimePart(String value) {
+  final text = value.trim();
+  final time = text.contains('T') ? text.split('T').last : text;
+  return RegExp(r'^(\d{1,2}:\d{2})').firstMatch(time)?.group(1) ?? text;
+}
+
+String? validateEmployeeForm({
+  required int? workplaceId,
+  required String name,
+  required String joinedOn,
+  required String resignedOn,
+  required String hourlyWage,
+  required String taxRate,
+}) {
+  if (workplaceId == null) return '근무지를 선택하세요.';
+  if (name.trim().isEmpty) return '직원 이름을 입력하세요.';
+  final joined = joinedOn.trim().isEmpty ? null : parseWorkforceDate(joinedOn);
+  final resigned =
+      resignedOn.trim().isEmpty ? null : parseWorkforceDate(resignedOn);
+  if (joinedOn.trim().isNotEmpty && joined == null) return '유효한 입사일을 입력하세요.';
+  if (resignedOn.trim().isNotEmpty && resigned == null) {
+    return '유효한 퇴사일을 입력하세요.';
+  }
+  if (joined != null && resigned != null && resigned.isBefore(joined)) {
+    return '퇴사일은 입사일보다 빠를 수 없습니다.';
+  }
+  final wage =
+      hourlyWage.trim().isEmpty ? null : int.tryParse(hourlyWage.trim());
+  if (hourlyWage.trim().isNotEmpty && (wage == null || wage < 0)) {
+    return '시급은 0원 이상이어야 합니다.';
+  }
+  final rate = double.tryParse(taxRate.trim());
+  if (rate == null || rate < 0) return '세율은 0 이상이어야 합니다.';
+  return null;
 }

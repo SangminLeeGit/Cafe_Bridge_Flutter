@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../theme/app_theme.dart';
 
-/// 전체 화면으로 진입하는 운영 도구 화면의 공통 shell.
+/// Shared shell for pushed operational screens.
 class AppScreen extends StatelessWidget {
   final String title;
   final String? subtitle;
@@ -29,9 +29,7 @@ class AppScreen extends StatelessWidget {
             if (subtitle != null)
               Text(
                 subtitle!,
-                style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                      color: CafeBridgeColors.textMuted,
-                    ),
+                style: Theme.of(context).textTheme.bodySmall,
               ),
           ],
         ),
@@ -62,14 +60,14 @@ class PermissionState extends StatelessWidget {
   Widget build(BuildContext context) {
     return Center(
       child: Padding(
-        padding: const EdgeInsets.all(CafeBridgeSpacing.section),
+        padding: const EdgeInsets.all(AppSpacing.section),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
             const Icon(
               Icons.lock_outline,
               size: 42,
-              color: CafeBridgeColors.textFaint,
+              color: AppColors.subtle,
             ),
             const SizedBox(height: 12),
             Text(
@@ -108,14 +106,14 @@ class NetworkState extends StatelessWidget {
   Widget build(BuildContext context) {
     return Center(
       child: Padding(
-        padding: const EdgeInsets.all(CafeBridgeSpacing.section),
+        padding: const EdgeInsets.all(AppSpacing.section),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
             const Icon(
               Icons.cloud_off_outlined,
               size: 42,
-              color: CafeBridgeColors.info,
+              color: AppColors.info,
             ),
             const SizedBox(height: 12),
             Text(
@@ -154,7 +152,7 @@ class LoadingState extends StatelessWidget {
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          const CircularProgressIndicator(color: CafeBridgeColors.accent),
+          const CircularProgressIndicator(color: AppColors.primary),
           const SizedBox(height: 12),
           Text(message, style: Theme.of(context).textTheme.bodyMedium),
         ],

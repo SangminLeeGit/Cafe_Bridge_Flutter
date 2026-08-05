@@ -19,9 +19,9 @@ class Panel extends StatelessWidget {
     return Container(
       margin: const EdgeInsets.only(bottom: 16),
       decoration: BoxDecoration(
-        color: CafeBridgeColors.surface,
-        borderRadius: BorderRadius.circular(CafeBridgeRadii.card),
-        border: Border.all(color: CafeBridgeColors.border),
+        color: AppColors.surface,
+        borderRadius: BorderRadius.circular(AppRadii.card),
+        border: Border.all(color: AppColors.border),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -29,8 +29,7 @@ class Panel extends StatelessWidget {
           Container(
             padding: const EdgeInsets.all(16),
             decoration: const BoxDecoration(
-              border:
-                  Border(bottom: BorderSide(color: CafeBridgeColors.border)),
+              border: Border(bottom: BorderSide(color: AppColors.border)),
             ),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -40,7 +39,7 @@ class Panel extends StatelessWidget {
                   style: const TextStyle(
                     fontSize: 16,
                     fontWeight: FontWeight.w600,
-                    color: CafeBridgeColors.textPrimary,
+                    color: AppColors.ink,
                   ),
                 ),
                 if (subtitle != null) ...[
@@ -49,7 +48,7 @@ class Panel extends StatelessWidget {
                     subtitle!,
                     style: const TextStyle(
                       fontSize: 12,
-                      color: CafeBridgeColors.textFaint,
+                      color: AppColors.subtle,
                     ),
                   ),
                 ],
