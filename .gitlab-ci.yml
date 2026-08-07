@@ -14,7 +14,6 @@ variables:
   GIT_DEPTH: "0"
   PUB_CACHE: "/var/cache/android-builder/pub"
   GRADLE_USER_HOME: "/var/cache/android-builder/gradle"
-  RUNNER_AFTER_SCRIPT_TIMEOUT: "5m"
   DEPLOY_TASK_ID:
     value: ""
     description: "Optional server-side deployment task ID."
