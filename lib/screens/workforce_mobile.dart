@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../core/async_request_guard.dart';
+import '../models/api_contracts.dart';
 import '../models/workforce_models.dart';
 import '../services/api.dart';
 import '../state/app_state.dart';
@@ -116,15 +117,7 @@ class _DashboardTabState extends State<_DashboardTab>
       );
       final workplacesResponse = await appState.fetchMapParsed<List<Workplace>>(
         '/api/workforce/workplaces',
-        parser: (json) {
-          final raw = json['workplaces'];
-          if (raw is! List) return const <Workplace>[];
-          return raw
-              .whereType<Map>()
-              .map(
-                  (item) => Workplace.fromJson(Map<String, dynamic>.from(item)))
-              .toList(growable: false);
-        },
+        parser: _parseWorkplaces,
         cacheTtl: Duration.zero,
         allowStaleOnError: false,
       );
@@ -147,6 +140,7 @@ class _DashboardTabState extends State<_DashboardTab>
   }
 
   Future<void> _editWorkplace({Workplace? workplace}) async {
+    if (!context.read<AppState>().hasOperatorAccess) return;
     final saved = await showDialog<bool>(
       context: context,
       builder: (dialogContext) {
@@ -296,6 +290,7 @@ class _DashboardTabState extends State<_DashboardTab>
   }
 
   Future<void> _deleteWorkplace(Workplace workplace) async {
+    if (!context.read<AppState>().hasOperatorAccess) return;
     final appState = context.read<AppState>();
     final messenger = ScaffoldMessenger.of(context);
     final confirmed = await showDialog<bool>(
@@ -326,6 +321,9 @@ class _DashboardTabState extends State<_DashboardTab>
 
   @override
   Widget build(BuildContext context) {
+    final canOperate = context.select<AppState, bool>(
+      (state) => state.hasOperatorAccess,
+    );
     if (_loading) return const Center(child: CircularProgressIndicator());
     if (_error.isNotEmpty) {
       return EmptyState(
@@ -371,20 +369,25 @@ class _DashboardTabState extends State<_DashboardTab>
                 value: '${_workplaces.length}곳',
                 sub: '최저시급 ${_won(data.minimumWage)}원'),
           ]),
+          if (!canOperate) ...[
+            const SizedBox(height: 12),
+            const _WorkforceReadOnlyHint(),
+          ],
           const SizedBox(height: 16),
           Panel(
             title: '근무지 관리',
             subtitle: '추가 / 수정 / 삭제',
             child: Column(
               children: [
-                Align(
-                  alignment: Alignment.centerRight,
-                  child: FilledButton.icon(
-                      onPressed: () => _editWorkplace(),
-                      icon: const Icon(Icons.add, size: 16),
-                      label: const Text('근무지 추가')),
-                ),
-                const SizedBox(height: 12),
+                if (canOperate)
+                  Align(
+                    alignment: Alignment.centerRight,
+                    child: FilledButton.icon(
+                        onPressed: () => _editWorkplace(),
+                        icon: const Icon(Icons.add, size: 16),
+                        label: const Text('근무지 추가')),
+                  ),
+                if (canOperate) const SizedBox(height: 12),
                 if (_workplaces.isEmpty)
                   const Text('등록된 근무지가 없습니다.',
                       style: TextStyle(color: Color(0xFF64748B)))
@@ -425,17 +428,19 @@ class _DashboardTabState extends State<_DashboardTab>
                           const SizedBox(height: 8),
                           Row(
                             children: [
-                              TextButton.icon(
-                                  onPressed: () =>
-                                      _editWorkplace(workplace: full),
-                                  icon:
-                                      const Icon(Icons.edit_outlined, size: 16),
-                                  label: const Text('편집')),
-                              TextButton.icon(
-                                  onPressed: () => _deleteWorkplace(full),
-                                  icon: const Icon(Icons.delete_outline,
-                                      size: 16),
-                                  label: const Text('삭제')),
+                              if (canOperate) ...[
+                                TextButton.icon(
+                                    onPressed: () =>
+                                        _editWorkplace(workplace: full),
+                                    icon: const Icon(Icons.edit_outlined,
+                                        size: 16),
+                                    label: const Text('편집')),
+                                TextButton.icon(
+                                    onPressed: () => _deleteWorkplace(full),
+                                    icon: const Icon(Icons.delete_outline,
+                                        size: 16),
+                                    label: const Text('삭제')),
+                              ],
                               const Spacer(),
                               Text(
                                   full.payRule?.hourlyWage != null
@@ -474,11 +479,17 @@ class _CalendarTabState extends State<_CalendarTab>
   late DateTime _selectedMonth;
   int? _workplaceId;
   List<Workplace> _workplaces = const [];
+  List<Employee> _employees = const [];
+  List<ShiftPreset> _presets = const [];
   WorkloadCalendarData? _data;
   bool _loading = true;
   String _error = '';
   bool _fromCache = false;
   DateTime? _cachedAt;
+  final Set<String> _selectedDates = <String>{};
+  bool _bulkSubmitting = false;
+  String _bulkMessage = '';
+  String _bulkError = '';
 
   @override
   void initState() {
@@ -497,7 +508,12 @@ class _CalendarTabState extends State<_CalendarTab>
       initialDatePickerMode: DatePickerMode.year,
     );
     if (picked == null || !mounted) return;
-    setState(() => _selectedMonth = DateTime(picked.year, picked.month));
+    setState(() {
+      _selectedMonth = DateTime(picked.year, picked.month);
+      _selectedDates.clear();
+      _bulkMessage = '';
+      _bulkError = '';
+    });
     await _load();
   }
 
@@ -516,6 +532,19 @@ class _CalendarTabState extends State<_CalendarTab>
         cacheTtl: Duration.zero,
         allowStaleOnError: false,
       );
+      final employeesResponse = await appState.fetchMapParsed<List<Employee>>(
+        '/api/workforce/employees',
+        params: const {'is_active': true},
+        parser: _parseEmployees,
+        cacheTtl: Duration.zero,
+        allowStaleOnError: false,
+      );
+      final presetsResponse = await appState.fetchMapParsed<List<ShiftPreset>>(
+        '/api/workforce/presets',
+        parser: _parsePresets,
+        cacheTtl: Duration.zero,
+        allowStaleOnError: false,
+      );
       final calendarResponse =
           await appState.fetchMapParsed<WorkloadCalendarData>(
         '/api/workforce/calendar',
@@ -531,6 +560,8 @@ class _CalendarTabState extends State<_CalendarTab>
       if (!isCurrentAsyncRequest(request)) return;
       setState(() {
         _workplaces = workplacesResponse.data;
+        _employees = employeesResponse.data;
+        _presets = presetsResponse.data;
         _data = calendarResponse.data;
         _fromCache = workplacesResponse.fromCache || calendarResponse.fromCache;
         _cachedAt = workplacesResponse.cachedAt ?? calendarResponse.cachedAt;
@@ -545,8 +576,202 @@ class _CalendarTabState extends State<_CalendarTab>
     }
   }
 
+  Future<void> _openBulkCreate() async {
+    if (!context.read<AppState>().hasOperatorAccess) return;
+    if (_selectedDates.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('달력에서 등록할 날짜를 먼저 선택하세요.')),
+      );
+      return;
+    }
+    if (_workplaces.isEmpty || _employees.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('근무지와 활성 직원을 먼저 등록하세요.')),
+      );
+      return;
+    }
+
+    final sortedDates = _selectedDates.toList()..sort();
+    final values = await showDialog<_BulkShiftValues>(
+      context: context,
+      builder: (dialogContext) => _BulkShiftFormDialog(
+        workplaces: _workplaces,
+        employees: _employees,
+        presets: _presets,
+        dates: sortedDates,
+      ),
+    );
+    if (values == null || !mounted) return;
+
+    final appState = context.read<AppState>();
+    setState(() {
+      _bulkSubmitting = true;
+      _bulkMessage = '';
+      _bulkError = '';
+    });
+    final completedDates = <String>[];
+    Object? failedError;
+    String? failedDate;
+    try {
+      for (final date in sortedDates) {
+        try {
+          await appState.postJson(
+            '/api/workforce/shifts',
+            body: values.toDraft(date).toPayload(),
+          );
+          completedDates.add(date);
+          if (mounted) {
+            setState(() {
+              _bulkMessage =
+                  '${completedDates.length}/${sortedDates.length}일 등록 중...';
+            });
+          }
+        } catch (error) {
+          failedDate = date;
+          failedError = error;
+          break;
+        }
+      }
+      if (!mounted) return;
+      setState(() {
+        _selectedDates.removeAll(completedDates);
+        if (failedDate == null) {
+          _bulkMessage = '${completedDates.length}건을 등록했습니다.';
+        } else {
+          _bulkError = '$failedDate 등록 실패: $failedError';
+          _bulkMessage =
+              '${completedDates.length}건 등록 완료. 남은 날짜를 다시 시도할 수 있습니다.';
+        }
+      });
+      await _load();
+    } finally {
+      if (mounted) setState(() => _bulkSubmitting = false);
+    }
+  }
+
+  void _toggleDate(String date) {
+    if (!context.read<AppState>().hasOperatorAccess || _bulkSubmitting) return;
+    setState(() {
+      if (!_selectedDates.add(date)) _selectedDates.remove(date);
+      _bulkMessage = '';
+      _bulkError = '';
+    });
+  }
+
+  Widget _buildMonthSelector(WorkloadCalendarData data) {
+    final daysInMonth = DateTime(data.year, data.month + 1, 0).day;
+    final dayMap = <String, CalendarDay>{
+      for (final day in data.days) day.date: day,
+    };
+    final leading = DateTime(data.year, data.month, 1).weekday - 1;
+    final cells = <Widget>[
+      for (var index = 0; index < leading; index++) const SizedBox.shrink(),
+      for (var day = 1; day <= daysInMonth; day++)
+        Builder(
+          builder: (context) {
+            final date =
+                '${data.year.toString().padLeft(4, '0')}-${data.month.toString().padLeft(2, '0')}-${day.toString().padLeft(2, '0')}';
+            final summary = dayMap[date];
+            final selected = _selectedDates.contains(date);
+            return InkWell(
+              onTap: () => _toggleDate(date),
+              borderRadius: BorderRadius.circular(8),
+              child: Container(
+                constraints: const BoxConstraints(minHeight: 64),
+                padding: const EdgeInsets.all(6),
+                decoration: BoxDecoration(
+                  color: selected
+                      ? const Color(0xFFE6FFFB)
+                      : const Color(0xFFF8FAFC),
+                  border: Border.all(
+                    color: selected
+                        ? const Color(0xFF0D9488)
+                        : const Color(0xFFE2E8F0),
+                    width: selected ? 2 : 1,
+                  ),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      '$day${selected ? ' ✓' : ''}',
+                      style: const TextStyle(
+                          fontSize: 12, fontWeight: FontWeight.w700),
+                    ),
+                    const Spacer(),
+                    Text('근무 ${summary?.shiftCount ?? 0}건',
+                        style: const TextStyle(fontSize: 10)),
+                    Text('${(summary?.workedHours ?? 0).toStringAsFixed(1)}h',
+                        style: const TextStyle(
+                            fontSize: 10, color: Color(0xFF64748B))),
+                  ],
+                ),
+              ),
+            );
+          },
+        ),
+    ];
+    return Column(
+      children: [
+        const Row(
+          children: [
+            Expanded(
+                child: Center(
+                    child: Text('월',
+                        style: TextStyle(
+                            fontSize: 11, color: Color(0xFF64748B))))),
+            Expanded(
+                child: Center(
+                    child: Text('화',
+                        style: TextStyle(
+                            fontSize: 11, color: Color(0xFF64748B))))),
+            Expanded(
+                child: Center(
+                    child: Text('수',
+                        style: TextStyle(
+                            fontSize: 11, color: Color(0xFF64748B))))),
+            Expanded(
+                child: Center(
+                    child: Text('목',
+                        style: TextStyle(
+                            fontSize: 11, color: Color(0xFF64748B))))),
+            Expanded(
+                child: Center(
+                    child: Text('금',
+                        style: TextStyle(
+                            fontSize: 11, color: Color(0xFF64748B))))),
+            Expanded(
+                child: Center(
+                    child: Text('토',
+                        style: TextStyle(
+                            fontSize: 11, color: Color(0xFF64748B))))),
+            Expanded(
+                child: Center(
+                    child: Text('일',
+                        style: TextStyle(
+                            fontSize: 11, color: Color(0xFF64748B))))),
+          ],
+        ),
+        const SizedBox(height: 6),
+        GridView.count(
+          crossAxisCount: 7,
+          shrinkWrap: true,
+          physics: const NeverScrollableScrollPhysics(),
+          mainAxisSpacing: 4,
+          crossAxisSpacing: 4,
+          childAspectRatio: 0.82,
+          children: cells,
+        ),
+      ],
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
+    final canOperate = context.select<AppState, bool>(
+      (state) => state.hasOperatorAccess,
+    );
     if (_loading) return const Center(child: CircularProgressIndicator());
     if (_error.isNotEmpty) {
       return EmptyState(
@@ -616,6 +841,58 @@ class _CalendarTabState extends State<_CalendarTab>
                 value: '${data.summary.workedHours.toStringAsFixed(1)}h'),
             StatCard(label: '근무지 수', value: '${data.summary.workplaceCount}곳'),
           ]),
+          const SizedBox(height: 16),
+          Panel(
+            title: '선택 일괄등록',
+            subtitle: canOperate
+                ? '날짜를 선택한 뒤 동일한 근무 조건을 순차 등록합니다.'
+                : '조회 전용 · 날짜 선택과 등록은 operator 권한이 필요합니다.',
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                _buildMonthSelector(data),
+                const SizedBox(height: 12),
+                Text(
+                  '선택 날짜 ${_selectedDates.length}일',
+                  style: const TextStyle(fontWeight: FontWeight.w700),
+                ),
+                if (_bulkMessage.isNotEmpty) ...[
+                  const SizedBox(height: 6),
+                  Text(_bulkMessage,
+                      style: const TextStyle(color: Color(0xFF0F766E))),
+                ],
+                if (_bulkError.isNotEmpty) ...[
+                  const SizedBox(height: 6),
+                  Text(_bulkError,
+                      style: const TextStyle(color: Color(0xFFB91C1C))),
+                ],
+                const SizedBox(height: 10),
+                Row(
+                  children: [
+                    Expanded(
+                      child: OutlinedButton(
+                        onPressed: _bulkSubmitting || _selectedDates.isEmpty
+                            ? null
+                            : () => setState(_selectedDates.clear),
+                        child: const Text('선택 해제'),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      flex: 2,
+                      child: FilledButton.icon(
+                        onPressed: !canOperate || _bulkSubmitting
+                            ? null
+                            : _openBulkCreate,
+                        icon: const Icon(Icons.playlist_add, size: 18),
+                        label: Text(_bulkSubmitting ? '등록 중...' : '선택 일괄등록'),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
           const SizedBox(height: 16),
           Panel(
             title: '일자별 근무 현황',
@@ -742,6 +1019,7 @@ class _ShiftsTabState extends State<_ShiftsTab>
   }
 
   Future<void> _editShift({ShiftRecord? shift, ShiftPreset? preset}) async {
+    if (!context.read<AppState>().hasOperatorAccess) return;
     if (_workplaces.isEmpty || _employees.isEmpty) {
       ScaffoldMessenger.of(context)
           .showSnackBar(const SnackBar(content: Text('근무지와 활성 직원을 먼저 등록하세요.')));
@@ -804,6 +1082,7 @@ class _ShiftsTabState extends State<_ShiftsTab>
   }
 
   Future<void> _deleteShift(ShiftRecord shift) async {
+    if (!context.read<AppState>().hasOperatorAccess) return;
     final confirmed = await _confirmDelete(
         title: '근무 삭제',
         message: '${_formatWeekday(shift.shiftDate)} 근무를 삭제할까요?');
@@ -822,6 +1101,7 @@ class _ShiftsTabState extends State<_ShiftsTab>
   }
 
   Future<void> _editPreset({ShiftPreset? preset}) async {
+    if (!context.read<AppState>().hasOperatorAccess) return;
     if (_workplaces.isEmpty) {
       ScaffoldMessenger.of(context)
           .showSnackBar(const SnackBar(content: Text('근무지를 먼저 등록하세요.')));
@@ -862,6 +1142,7 @@ class _ShiftsTabState extends State<_ShiftsTab>
   }
 
   Future<void> _toggleFavorite(ShiftPreset preset) async {
+    if (!context.read<AppState>().hasOperatorAccess) return;
     try {
       await context.read<AppState>().postJson(
         '/api/workforce/presets/${preset.id}',
@@ -878,6 +1159,7 @@ class _ShiftsTabState extends State<_ShiftsTab>
   }
 
   Future<void> _deletePreset(ShiftPreset preset) async {
+    if (!context.read<AppState>().hasOperatorAccess) return;
     final confirmed = await _confirmDelete(
         title: '프리셋 삭제', message: '"${preset.name}" 프리셋을 삭제할까요?');
     if (!confirmed || !mounted) return;
@@ -916,6 +1198,9 @@ class _ShiftsTabState extends State<_ShiftsTab>
 
   @override
   Widget build(BuildContext context) {
+    final canOperate = context.select<AppState, bool>(
+      (state) => state.hasOperatorAccess,
+    );
     if (_loading) return const Center(child: CircularProgressIndicator());
     if (_error.isNotEmpty) {
       return EmptyState(
@@ -959,7 +1244,7 @@ class _ShiftsTabState extends State<_ShiftsTab>
                 label: const Text('기간'),
               ),
               FilledButton.icon(
-                onPressed: () => _editShift(),
+                onPressed: canOperate ? () => _editShift() : null,
                 icon: const Icon(Icons.add, size: 16),
                 label: const Text('빠른 등록'),
               ),
@@ -1009,6 +1294,10 @@ class _ShiftsTabState extends State<_ShiftsTab>
                   label: const Text('새로고침')),
             ],
           ),
+          if (!canOperate) ...[
+            const SizedBox(height: 12),
+            const _WorkforceReadOnlyHint(),
+          ],
           const SizedBox(height: 12),
           _MetricGrid(cards: [
             StatCard(label: '근무 건수', value: '${_shifts.length}건', accent: true),
@@ -1027,25 +1316,33 @@ class _ShiftsTabState extends State<_ShiftsTab>
                 : Column(
                     children: _shifts
                         .map((shift) => ListTile(
-                              onTap: () => _editShift(shift: shift),
+                              onTap: canOperate
+                                  ? () => _editShift(shift: shift)
+                                  : null,
                               dense: true,
                               contentPadding: EdgeInsets.zero,
                               title: Text(
                                   '${_formatWeekday(shift.shiftDate)} · ${timePart(shift.startAt)}-${timePart(shift.endAt)}'),
                               subtitle: Text(
                                   '${shift.workplaceName}${shift.employeeName?.isNotEmpty == true ? ' · ${shift.employeeName}' : ''}'),
-                              trailing: PopupMenuButton<String>(
-                                onSelected: (value) {
-                                  if (value == 'edit') _editShift(shift: shift);
-                                  if (value == 'delete') _deleteShift(shift);
-                                },
-                                itemBuilder: (_) => const [
-                                  PopupMenuItem(
-                                      value: 'edit', child: Text('수정')),
-                                  PopupMenuItem(
-                                      value: 'delete', child: Text('삭제')),
-                                ],
-                              ),
+                              trailing: canOperate
+                                  ? PopupMenuButton<String>(
+                                      onSelected: (value) {
+                                        if (value == 'edit') {
+                                          _editShift(shift: shift);
+                                        }
+                                        if (value == 'delete') {
+                                          _deleteShift(shift);
+                                        }
+                                      },
+                                      itemBuilder: (_) => const [
+                                        PopupMenuItem(
+                                            value: 'edit', child: Text('수정')),
+                                        PopupMenuItem(
+                                            value: 'delete', child: Text('삭제')),
+                                      ],
+                                    )
+                                  : null,
                             ))
                         .toList(growable: false)),
           ),
@@ -1057,7 +1354,7 @@ class _ShiftsTabState extends State<_ShiftsTab>
               Align(
                 alignment: Alignment.centerRight,
                 child: OutlinedButton.icon(
-                  onPressed: () => _editPreset(),
+                  onPressed: canOperate ? () => _editPreset() : null,
                   icon: const Icon(Icons.add, size: 16),
                   label: const Text('프리셋 추가'),
                 ),
@@ -1075,32 +1372,38 @@ class _ShiftsTabState extends State<_ShiftsTab>
                               title: Text(preset.name),
                               subtitle: Text(
                                   '${preset.workplaceName} · ${preset.startTime}~${preset.endTime}'),
-                              leading: IconButton(
-                                tooltip: '즐겨찾기',
-                                onPressed: () => _toggleFavorite(preset),
-                                icon: Icon(preset.isFavorite
-                                    ? Icons.star
-                                    : Icons.star_border),
-                              ),
-                              trailing: PopupMenuButton<String>(
-                                onSelected: (value) {
-                                  if (value == 'use') {
-                                    _editShift(preset: preset);
-                                  }
-                                  if (value == 'edit') {
-                                    _editPreset(preset: preset);
-                                  }
-                                  if (value == 'delete') _deletePreset(preset);
-                                },
-                                itemBuilder: (_) => const [
-                                  PopupMenuItem(
-                                      value: 'use', child: Text('근무 생성')),
-                                  PopupMenuItem(
-                                      value: 'edit', child: Text('수정')),
-                                  PopupMenuItem(
-                                      value: 'delete', child: Text('삭제')),
-                                ],
-                              ),
+                              leading: canOperate
+                                  ? IconButton(
+                                      tooltip: '즐겨찾기',
+                                      onPressed: () => _toggleFavorite(preset),
+                                      icon: Icon(preset.isFavorite
+                                          ? Icons.star
+                                          : Icons.star_border),
+                                    )
+                                  : null,
+                              trailing: canOperate
+                                  ? PopupMenuButton<String>(
+                                      onSelected: (value) {
+                                        if (value == 'use') {
+                                          _editShift(preset: preset);
+                                        }
+                                        if (value == 'edit') {
+                                          _editPreset(preset: preset);
+                                        }
+                                        if (value == 'delete') {
+                                          _deletePreset(preset);
+                                        }
+                                      },
+                                      itemBuilder: (_) => const [
+                                        PopupMenuItem(
+                                            value: 'use', child: Text('근무 생성')),
+                                        PopupMenuItem(
+                                            value: 'edit', child: Text('수정')),
+                                        PopupMenuItem(
+                                            value: 'delete', child: Text('삭제')),
+                                      ],
+                                    )
+                                  : null,
                             ))
                         .toList(growable: false)),
             ]),
@@ -1400,6 +1703,7 @@ class _EmployeesTabState extends State<_EmployeesTab>
   }
 
   Future<void> _editEmployee({Employee? employee}) async {
+    if (!context.read<AppState>().hasOperatorAccess) return;
     final workplaces = await _loadWorkplaces();
     if (!mounted) return;
     if (workplaces.isEmpty) {
@@ -1673,6 +1977,7 @@ class _EmployeesTabState extends State<_EmployeesTab>
       final detail = detailResponse.data;
       final auditLogs = auditLogsResponse.data;
       final payslip = payslipResponse.data;
+      final canOperate = context.read<AppState>().hasOperatorAccess;
       await showDialog<void>(
         context: context,
         builder: (dialogContext) => AlertDialog(
@@ -1753,24 +2058,26 @@ class _EmployeesTabState extends State<_EmployeesTab>
             TextButton(
                 onPressed: () => Navigator.pop(dialogContext),
                 child: const Text('닫기')),
-            TextButton(
-                onPressed: () {
-                  Navigator.pop(dialogContext);
-                  _toggleActive(detail.employee);
-                },
-                child: Text(detail.employee.isActive ? '비활성화' : '활성화')),
-            TextButton(
-                onPressed: () {
-                  Navigator.pop(dialogContext);
-                  _deleteEmployee(detail.employee);
-                },
-                child: const Text('삭제')),
-            TextButton(
-                onPressed: () {
-                  Navigator.pop(dialogContext);
-                  _editEmployee(employee: detail.employee);
-                },
-                child: const Text('수정')),
+            if (canOperate) ...[
+              TextButton(
+                  onPressed: () {
+                    Navigator.pop(dialogContext);
+                    _toggleActive(detail.employee);
+                  },
+                  child: Text(detail.employee.isActive ? '비활성화' : '활성화')),
+              TextButton(
+                  onPressed: () {
+                    Navigator.pop(dialogContext);
+                    _deleteEmployee(detail.employee);
+                  },
+                  child: const Text('삭제')),
+              TextButton(
+                  onPressed: () {
+                    Navigator.pop(dialogContext);
+                    _editEmployee(employee: detail.employee);
+                  },
+                  child: const Text('수정')),
+            ],
             FilledButton(
                 onPressed: () {
                   Navigator.pop(dialogContext);
@@ -1988,6 +2295,7 @@ class _EmployeesTabState extends State<_EmployeesTab>
   }
 
   Future<void> _deleteEmployee(Employee employee) async {
+    if (!context.read<AppState>().hasOperatorAccess) return;
     final appState = context.read<AppState>();
     final messenger = ScaffoldMessenger.of(context);
     final confirmed = await showDialog<bool>(
@@ -2018,6 +2326,7 @@ class _EmployeesTabState extends State<_EmployeesTab>
   }
 
   Future<void> _toggleActive(Employee employee) async {
+    if (!context.read<AppState>().hasOperatorAccess) return;
     try {
       await context.read<AppState>().postJson(
           '/api/workforce/employees/${employee.id}',
@@ -2033,6 +2342,9 @@ class _EmployeesTabState extends State<_EmployeesTab>
 
   @override
   Widget build(BuildContext context) {
+    final canOperate = context.select<AppState, bool>(
+      (state) => state.hasOperatorAccess,
+    );
     if (_loading) return const Center(child: CircularProgressIndicator());
     if (_error.isNotEmpty) {
       return EmptyState(
@@ -2079,11 +2391,15 @@ class _EmployeesTabState extends State<_EmployeesTab>
                 ),
               ),
               FilledButton.icon(
-                  onPressed: () => _editEmployee(),
+                  onPressed: canOperate ? () => _editEmployee() : null,
                   icon: const Icon(Icons.person_add_alt_1, size: 16),
                   label: const Text('직원 추가')),
             ],
           ),
+          if (!canOperate) ...[
+            const SizedBox(height: 12),
+            const _WorkforceReadOnlyHint(),
+          ],
           const SizedBox(height: 12),
           _MetricGrid(cards: [
             StatCard(label: '전체 직원', value: '${list.length}명', accent: true),
@@ -2149,6 +2465,303 @@ class _EmployeesTabState extends State<_EmployeesTab>
   }
 }
 
+class _BulkShiftValues {
+  final int workplaceId;
+  final int employeeId;
+  final String startTime;
+  final String endTime;
+  final int breakMinutes;
+  final String leaveType;
+  final String holidayType;
+  final String memo;
+  final int extraAmount;
+  final int deductionAmount;
+
+  const _BulkShiftValues({
+    required this.workplaceId,
+    required this.employeeId,
+    required this.startTime,
+    required this.endTime,
+    required this.breakMinutes,
+    required this.leaveType,
+    required this.holidayType,
+    required this.memo,
+    required this.extraAmount,
+    required this.deductionAmount,
+  });
+
+  WorkforceShiftDraft toDraft(String date) => WorkforceShiftDraft(
+        workplaceId: workplaceId,
+        employeeId: employeeId,
+        date: date,
+        startTime: startTime,
+        endTime: endTime,
+        breakMinutes: breakMinutes,
+        leaveType: leaveType,
+        holidayType: holidayType,
+        memo: memo,
+        extraAmount: extraAmount,
+        deductionAmount: deductionAmount,
+      );
+}
+
+class _BulkShiftFormDialog extends StatefulWidget {
+  final List<Workplace> workplaces;
+  final List<Employee> employees;
+  final List<ShiftPreset> presets;
+  final List<String> dates;
+
+  const _BulkShiftFormDialog({
+    required this.workplaces,
+    required this.employees,
+    required this.presets,
+    required this.dates,
+  });
+
+  @override
+  State<_BulkShiftFormDialog> createState() => _BulkShiftFormDialogState();
+}
+
+class _BulkShiftFormDialogState extends State<_BulkShiftFormDialog> {
+  late int? _workplaceId;
+  late int? _employeeId;
+  int? _presetId;
+  late final TextEditingController _startController;
+  late final TextEditingController _endController;
+  late final TextEditingController _breakController;
+  late final TextEditingController _extraController;
+  late final TextEditingController _deductionController;
+  late final TextEditingController _memoController;
+  String _leaveType = 'none';
+  String _holidayType = 'none';
+  String? _error;
+
+  @override
+  void initState() {
+    super.initState();
+    _workplaceId = widget.workplaces.first.id;
+    final employees = _employeesFor(_workplaceId);
+    _employeeId = employees.isEmpty ? null : employees.first.id;
+    _startController = TextEditingController(text: '09:00');
+    _endController = TextEditingController(text: '18:00');
+    _breakController = TextEditingController(text: '60');
+    _extraController = TextEditingController(text: '0');
+    _deductionController = TextEditingController(text: '0');
+    _memoController = TextEditingController();
+  }
+
+  List<Employee> _employeesFor(int? workplaceId) => widget.employees
+      .where((employee) => employee.workplaceId == workplaceId)
+      .toList(growable: false);
+
+  List<ShiftPreset> get _presetsForWorkplace => widget.presets
+      .where((preset) => preset.workplaceId == _workplaceId)
+      .toList(growable: false);
+
+  @override
+  void dispose() {
+    _startController.dispose();
+    _endController.dispose();
+    _breakController.dispose();
+    _extraController.dispose();
+    _deductionController.dispose();
+    _memoController.dispose();
+    super.dispose();
+  }
+
+  void _applyPreset(int? presetId) {
+    ShiftPreset? preset;
+    for (final item in widget.presets) {
+      if (item.id == presetId) {
+        preset = item;
+        break;
+      }
+    }
+    setState(() {
+      _presetId = presetId;
+      if (preset == null) return;
+      _startController.text = _timePart(preset.startTime);
+      _endController.text = _timePart(preset.endTime);
+      _breakController.text = preset.breakMinutes.toString();
+      _extraController.text = preset.extraAmount.toString();
+      _deductionController.text = preset.deductionAmount.toString();
+      _memoController.text = preset.memo;
+      _leaveType = preset.leaveType;
+      _holidayType = preset.holidayType;
+    });
+  }
+
+  void _submit() {
+    final workplaceId = _workplaceId;
+    final employeeId = _employeeId;
+    final values = _BulkShiftValues(
+      workplaceId: workplaceId ?? 0,
+      employeeId: employeeId ?? 0,
+      startTime: _startController.text,
+      endTime: _endController.text,
+      breakMinutes: int.tryParse(_breakController.text) ?? -1,
+      leaveType: _leaveType,
+      holidayType: _holidayType,
+      memo: _memoController.text,
+      extraAmount: int.tryParse(_extraController.text) ?? -1,
+      deductionAmount: int.tryParse(_deductionController.text) ?? -1,
+    );
+    final error = values.toDraft(widget.dates.first).validate();
+    if (workplaceId == null || employeeId == null || error != null) {
+      setState(() => _error = error ?? '근무지와 직원을 선택하세요.');
+      return;
+    }
+    Navigator.pop(context, values);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final employees = _employeesFor(_workplaceId);
+    final presets = _presetsForWorkplace;
+    final employeeValue =
+        employees.any((item) => item.id == _employeeId) ? _employeeId : null;
+    final presetValue =
+        presets.any((item) => item.id == _presetId) ? _presetId : null;
+    return AlertDialog(
+      title: const Text('선택 일괄등록'),
+      content: SizedBox(
+        width: 560,
+        child: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Align(
+                alignment: Alignment.centerLeft,
+                child: Text(
+                    '${widget.dates.length}일 선택됨 · ${widget.dates.first} 외',
+                    style: const TextStyle(color: Color(0xFF64748B))),
+              ),
+              DropdownButtonFormField<int?>(
+                initialValue: _workplaceId,
+                decoration: const InputDecoration(labelText: '근무지 *'),
+                items: widget.workplaces
+                    .map((item) => DropdownMenuItem<int?>(
+                        value: item.id, child: Text(item.name)))
+                    .toList(growable: false),
+                onChanged: (value) => setState(() {
+                  _workplaceId = value;
+                  _employeeId = null;
+                  _presetId = null;
+                }),
+              ),
+              DropdownButtonFormField<int?>(
+                key: ValueKey('bulk-employee-$employeeValue'),
+                initialValue: employeeValue,
+                decoration: const InputDecoration(labelText: '직원 *'),
+                items: employees
+                    .map((item) => DropdownMenuItem<int?>(
+                        value: item.id, child: Text(item.name)))
+                    .toList(growable: false),
+                onChanged: (value) => setState(() => _employeeId = value),
+              ),
+              DropdownButtonFormField<int?>(
+                key: ValueKey('bulk-preset-$presetValue'),
+                initialValue: presetValue,
+                decoration: const InputDecoration(labelText: '템플릿'),
+                items: [
+                  const DropdownMenuItem<int?>(
+                      value: null, child: Text('직접 입력')),
+                  ...presets.map((item) => DropdownMenuItem<int?>(
+                      value: item.id, child: Text(item.name))),
+                ],
+                onChanged: _applyPreset,
+              ),
+              Row(
+                children: [
+                  Expanded(
+                      child: TextField(
+                          controller: _startController,
+                          decoration:
+                              const InputDecoration(labelText: '시작 *'))),
+                  const SizedBox(width: 12),
+                  Expanded(
+                      child: TextField(
+                          controller: _endController,
+                          decoration:
+                              const InputDecoration(labelText: '종료 *'))),
+                ],
+              ),
+              Row(
+                children: [
+                  Expanded(child: _numberField('휴게(분)', _breakController)),
+                  const SizedBox(width: 12),
+                  Expanded(child: _numberField('추가 지급', _extraController)),
+                  const SizedBox(width: 12),
+                  Expanded(child: _numberField('추가 차감', _deductionController)),
+                ],
+              ),
+              Row(
+                children: [
+                  Expanded(child: _leaveDropdown()),
+                  const SizedBox(width: 12),
+                  Expanded(child: _holidayDropdown()),
+                ],
+              ),
+              TextField(
+                controller: _memoController,
+                maxLines: 2,
+                decoration: const InputDecoration(labelText: '메모'),
+              ),
+              if (_error != null)
+                Padding(
+                  padding: const EdgeInsets.only(top: 8),
+                  child: Text(_error!,
+                      style: const TextStyle(color: Color(0xFFB91C1C))),
+                ),
+            ],
+          ),
+        ),
+      ),
+      actions: [
+        TextButton(
+            onPressed: () => Navigator.pop(context), child: const Text('취소')),
+        FilledButton(onPressed: _submit, child: const Text('등록 시작')),
+      ],
+    );
+  }
+
+  Widget _numberField(String label, TextEditingController controller) =>
+      TextField(
+        controller: controller,
+        keyboardType: TextInputType.number,
+        decoration: InputDecoration(labelText: label),
+      );
+
+  Widget _leaveDropdown() => DropdownButtonFormField<String>(
+        initialValue: _leaveType,
+        decoration: const InputDecoration(labelText: '근무 구분'),
+        items: const [
+          DropdownMenuItem(value: 'none', child: Text('정상근무')),
+          DropdownMenuItem(value: 'vacation', child: Text('휴가')),
+          DropdownMenuItem(value: 'absent', child: Text('결근')),
+          DropdownMenuItem(value: 'day_off', child: Text('휴무')),
+          DropdownMenuItem(value: 'paid_day_off', child: Text('유급휴무')),
+          DropdownMenuItem(value: 'substitute', child: Text('대타')),
+        ],
+        onChanged: (value) => setState(() => _leaveType = value ?? 'none'),
+      );
+
+  Widget _holidayDropdown() => DropdownButtonFormField<String>(
+        initialValue: _holidayType,
+        decoration: const InputDecoration(labelText: '휴일 구분'),
+        items: const [
+          DropdownMenuItem(value: 'none', child: Text('일반일')),
+          DropdownMenuItem(value: 'weekend', child: Text('주말')),
+          DropdownMenuItem(value: 'public', child: Text('공휴일')),
+          DropdownMenuItem(value: 'custom', child: Text('기타 휴일')),
+        ],
+        onChanged: (value) => setState(() => _holidayType = value ?? 'none'),
+      );
+
+  String _timePart(String value) =>
+      value.length > 5 ? value.substring(0, 5) : value;
+}
+
 class _MetricGrid extends StatelessWidget {
   final List<Widget> cards;
   const _MetricGrid({required this.cards});
@@ -2159,6 +2772,40 @@ class _MetricGrid extends StatelessWidget {
       minItemWidth: 280,
       maxColumns: 2,
       children: cards,
+    );
+  }
+}
+
+class _WorkforceReadOnlyHint extends StatelessWidget {
+  const _WorkforceReadOnlyHint();
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF8FAFC),
+        border: Border.all(color: const Color(0xFFE2E8F0)),
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: const Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(Icons.visibility_outlined, size: 18, color: Color(0xFF64748B)),
+          SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              '현재 계정은 조회 전용입니다. 근무지, 직원, 근무 기록 변경은 operator 권한에서 사용할 수 있습니다.',
+              style: TextStyle(
+                color: Color(0xFF475569),
+                fontSize: 13,
+                height: 1.4,
+              ),
+            ),
+          ),
+        ],
+      ),
     );
   }
 }
@@ -2185,38 +2832,26 @@ class _Tag extends StatelessWidget {
 }
 
 List<Workplace> _parseWorkplaces(Map<String, dynamic> json) {
-  final raw = json['workplaces'];
-  if (raw is! List) return const [];
-  return raw
-      .whereType<Map>()
-      .map((item) => Workplace.fromJson(Map<String, dynamic>.from(item)))
+  return requireListOfMaps(json, 'workplaces')
+      .map(Workplace.fromJson)
       .toList(growable: false);
 }
 
 List<Employee> _parseEmployees(Map<String, dynamic> json) {
-  final raw = json['employees'];
-  if (raw is! List) return const [];
-  return raw
-      .whereType<Map>()
-      .map((item) => Employee.fromJson(Map<String, dynamic>.from(item)))
+  return requireListOfMaps(json, 'employees')
+      .map(Employee.fromJson)
       .toList(growable: false);
 }
 
 List<ShiftRecord> _parseShifts(Map<String, dynamic> json) {
-  final raw = json['shifts'];
-  if (raw is! List) return const [];
-  return raw
-      .whereType<Map>()
-      .map((item) => ShiftRecord.fromJson(Map<String, dynamic>.from(item)))
+  return requireListOfMaps(json, 'shifts')
+      .map(ShiftRecord.fromJson)
       .toList(growable: false);
 }
 
 List<ShiftPreset> _parsePresets(Map<String, dynamic> json) {
-  final raw = json['presets'];
-  if (raw is! List) return const [];
-  return raw
-      .whereType<Map>()
-      .map((item) => ShiftPreset.fromJson(Map<String, dynamic>.from(item)))
+  return requireListOfMaps(json, 'presets')
+      .map(ShiftPreset.fromJson)
       .toList(growable: false);
 }
 

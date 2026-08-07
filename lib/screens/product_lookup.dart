@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../core/async_request_guard.dart';
+import '../models/api_contracts.dart';
 import '../state/app_state.dart';
 import '../widgets/access_gate.dart';
 import '../widgets/panel.dart';
@@ -108,11 +109,8 @@ class _ProductLookupScreenState extends State<ProductLookupScreen>
                 cacheTtl: refresh ? Duration.zero : const Duration(minutes: 10),
               );
       if (!isCurrentAsyncRequest(request)) return;
-      final rows = (response.data['rows'] as List? ?? const [])
-          .whereType<Map>()
-          .map((row) => ProductLookupItem.fromJson(
-                Map<String, dynamic>.from(row),
-              ))
+      final rows = requireListOfMaps(response.data, 'rows')
+          .map(ProductLookupItem.fromJson)
           .toList(growable: false);
       setState(() {
         _items = rows;

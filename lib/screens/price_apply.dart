@@ -106,7 +106,7 @@ class _PriceApplyScreenState extends State<PriceApplyScreen>
       final response =
           await appState.fetchMapParsed<List<BrowserPriceApplyTask>>(
         '/api/price/browser-apply-history',
-        parser: (json) => asListOfMaps(json['tasks'])
+        parser: (json) => requireListOfMaps(json, 'tasks')
             .map(BrowserPriceApplyTask.fromJson)
             .toList(growable: false),
         cacheTtl: Duration.zero,

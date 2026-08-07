@@ -11,6 +11,24 @@ List<Map<String, dynamic>> asListOfMaps(Object? source) {
       .toList(growable: false);
 }
 
+List<Map<String, dynamic>> requireListOfMaps(
+  Map<String, dynamic> json,
+  String key,
+) {
+  final raw = json[key];
+  if (raw is! List) {
+    throw FormatException('응답에 $key 목록이 없습니다.');
+  }
+  final rows = <Map<String, dynamic>>[];
+  for (final item in raw) {
+    if (item is! Map) {
+      throw FormatException('응답의 $key 항목 형식이 올바르지 않습니다.');
+    }
+    rows.add(Map<String, dynamic>.from(item));
+  }
+  return rows;
+}
+
 Map<String, int> asIntMap(Object? source) {
   if (source is! Map) return const {};
   final result = <String, int>{};

@@ -34,3 +34,5 @@ fi
 "$FLUTTER_BIN" pub get --enforce-lockfile
 "$FLUTTER_BIN" analyze
 "$FLUTTER_BIN" test
+"$FLUTTER_BIN" build apk --debug
+"$FLUTTER_BIN" build web --release

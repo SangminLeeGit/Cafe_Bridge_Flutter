@@ -844,17 +844,8 @@ class _UserManagementScreenState extends State<_UserManagementScreen> {
       final result = await appState.fetchMapParsed<List<AdminUserContract>>(
         '/api/auth/users',
         parser: (json) {
-          final raw = json['users'];
-          if (raw is! List) {
-            return const <AdminUserContract>[];
-          }
-          return raw
-              .whereType<Map>()
-              .map(
-                (item) => AdminUserContract.fromJson(
-                  Map<String, dynamic>.from(item),
-                ),
-              )
+          return requireListOfMaps(json, 'users')
+              .map(AdminUserContract.fromJson)
               .toList(growable: false);
         },
         cacheTtl: Duration.zero,
@@ -977,17 +968,8 @@ class _AuditLogScreenState extends State<_AuditLogScreen> {
       final result = await appState.fetchMapParsed<List<AuditLogEntryContract>>(
         '/api/auth/audit-logs',
         parser: (json) {
-          final raw = json['logs'];
-          if (raw is! List) {
-            return const <AuditLogEntryContract>[];
-          }
-          return raw
-              .whereType<Map>()
-              .map(
-                (item) => AuditLogEntryContract.fromJson(
-                  Map<String, dynamic>.from(item),
-                ),
-              )
+          return requireListOfMaps(json, 'logs')
+              .map(AuditLogEntryContract.fromJson)
               .toList(growable: false);
         },
         cacheTtl: Duration.zero,
@@ -1338,17 +1320,8 @@ class _AdminDeployPanelState extends State<_AdminDeployPanel> {
         '/api/deploy-history',
         params: const {'limit': 20},
         parser: (json) {
-          final raw = json['tasks'];
-          if (raw is! List) {
-            return const <_DeployTask>[];
-          }
-          return raw
-              .whereType<Map>()
-              .map(
-                (item) => _DeployTask.fromJson(
-                  Map<String, dynamic>.from(item),
-                ),
-              )
+          return requireListOfMaps(json, 'tasks')
+              .map(_DeployTask.fromJson)
               .toList(growable: false);
         },
         cacheTtl: Duration.zero,

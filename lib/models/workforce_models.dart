@@ -157,7 +157,7 @@ class WorkloadCalendarData {
       month: asInt(json['month']),
       fromDate: asString(json['from_date']),
       toDate: asString(json['to_date']),
-      days: asListOfMaps(json['days'])
+      days: requireListOfMaps(json, 'days')
           .map(CalendarDay.fromJson)
           .toList(growable: false),
       summary: WorkforceSummary.fromJson(asMap(json['summary'])),

@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:cafe_bridge_flutter/models/api_contracts.dart';
 import 'package:cafe_bridge_flutter/services/api.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -75,6 +76,34 @@ void main() {
         isA<ApiException>()
             .having((error) => error.isTransportError, 'transport', isTrue),
       ),
+    );
+  });
+
+  test('required list parsing rejects missing and malformed response fields',
+      () {
+    expect(
+      () => requireListOfMaps(const <String, dynamic>{}, 'rows'),
+      throwsFormatException,
+    );
+    expect(
+      () => requireListOfMaps(
+        const <String, dynamic>{
+          'rows': <Object?>[1]
+        },
+        'rows',
+      ),
+      throwsFormatException,
+    );
+    expect(
+      requireListOfMaps(
+        const <String, dynamic>{
+          'rows': <Object?>[
+            <String, dynamic>{'id': 1}
+          ]
+        },
+        'rows',
+      ),
+      hasLength(1),
     );
   });
 }

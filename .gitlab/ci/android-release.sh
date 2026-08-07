@@ -302,9 +302,17 @@ fi
 "$FLUTTER_BIN" pub get --enforce-lockfile
 "$FLUTTER_BIN" build apk --release --build-name "$VERSION_NAME" --build-number "$BUILD_NUMBER"
 
-APKSIGNER="$ANDROID_SDK_ROOT/build-tools/35.0.0/apksigner"
+APKSIGNER="${ANDROID_SDK_ROOT}/build-tools/35.0.0/apksigner"
 if [[ ! -x "$APKSIGNER" ]]; then
-  echo "apksigner not found: $APKSIGNER" >&2
+  APKSIGNER=""
+  for candidate in "${ANDROID_SDK_ROOT}"/build-tools/*/apksigner; do
+    if [[ -x "$candidate" ]]; then
+      APKSIGNER="$candidate"
+    fi
+  done
+fi
+if [[ -z "$APKSIGNER" || ! -x "$APKSIGNER" ]]; then
+  echo "apksigner not found under: ${ANDROID_SDK_ROOT}/build-tools" >&2
   exit 1
 fi
 APKSIGNER_OUTPUT="$("$APKSIGNER" verify --verbose --print-certs "$APK_PATH")"
