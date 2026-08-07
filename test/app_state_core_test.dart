@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
@@ -135,5 +136,59 @@ void main() {
     expect(stale.data, 7);
     expect(stale.fromCache, isTrue);
     expect(state.offlineMode, isTrue);
+  });
+
+  test('keeps update metadata when an unauthenticated session clears its epoch',
+      () async {
+    final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+    final baseUrl = 'http://127.0.0.1:${server.port}';
+    final updateRequestReceived = Completer<void>();
+    final releaseUpdateResponse = Completer<void>();
+    server.listen((request) async {
+      request.response.headers.contentType = ContentType.json;
+      if (request.uri.path == '/api/app-update/check') {
+        if (!updateRequestReceived.isCompleted) {
+          updateRequestReceived.complete();
+        }
+        await releaseUpdateResponse.future;
+        request.response.write(json.encode({
+          'platform': 'android',
+          'channel': 'prod',
+          'latest_version': '1.0.2',
+          'latest_build': 4,
+          'update_available': true,
+          'download_url': 'https://releases.example.com/cafe-bridge.apk',
+          'sha256':
+              '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef',
+          'file_size': 100,
+        }));
+      } else if (request.uri.path == '/api/auth/session') {
+        request.response.statusCode = HttpStatus.unauthorized;
+        request.response.write(json.encode({'detail': 'not authenticated'}));
+      }
+      await request.response.close();
+    });
+    addTearDown(() => server.close(force: true));
+
+    FlutterSecureStorage.setMockInitialValues({});
+    SharedPreferences.setMockInitialValues({'api_base_url': baseUrl});
+    final state = AppState();
+    addTearDown(state.dispose);
+    await state.loadLocal();
+
+    final updateFuture = state.checkForAppUpdate(
+      notify: false,
+      ignoreErrors: false,
+    );
+    await updateRequestReceived.future;
+    await expectLater(
+      state.refreshSession(notify: false),
+      throwsA(isA<ApiException>()),
+    );
+    releaseUpdateResponse.complete();
+    await updateFuture;
+
+    expect(state.hasRecommendedUpdate, isTrue);
+    expect(state.updateInfo?.latestBuild, 4);
   });
 }

@@ -340,7 +340,7 @@ class AppState extends ChangeNotifier {
           'build': _currentAppBuild,
         },
       );
-      if (!_isCurrentRequest(requestContext)) {
+      if (!_isCurrentAppUpdateRequest(requestContext)) {
         return true;
       }
       final payload = response.data;
@@ -1216,6 +1216,10 @@ class AppState extends ChangeNotifier {
         requestContext.epoch == _sessionEpoch &&
         requestContext.baseUrl == _apiBaseUrl &&
         requestContext.scope == _cacheScope;
+  }
+
+  bool _isCurrentAppUpdateRequest(_RequestContext requestContext) {
+    return !_disposed && requestContext.baseUrl == _apiBaseUrl;
   }
 
   void _notifySafely() {
