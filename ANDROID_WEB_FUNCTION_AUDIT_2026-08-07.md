@@ -52,5 +52,6 @@
 
 ## Runtime Validation Constraint
 
-- 개발 호스트에는 연결된 Android device와 AVD/system image가 없어 실제 설치·터치 플로우를 실행할 수 없다.
-- Flutter analyze/test, Debug APK, Web release, CI Release APK signing·등록은 별도로 검증한다. 실제 Android 주요 플로우는 device/AVD 연결 후 재검증이 필요하다.
+- 개발 호스트에는 물리 Android device가 없고, API 35 AVD는 설치했지만 `/dev/kvm`이 없어 `-accel off`로만 부분 부팅된다.
+- 해당 AVD는 `adb` 연결까지는 되지만 Android `package` 서비스가 올라오지 않아 APK 설치·실행을 완료하지 못했다.
+- Flutter analyze/test, Debug APK, Web release, CI Release APK signing·등록은 별도로 검증한다. 실제 Android 주요 플로우는 KVM이 활성화된 호스트 또는 물리 device에서 재검증이 필요하다.
