@@ -642,7 +642,7 @@ class _RecipeDetailScreenState extends State<RecipeDetailScreen>
                   dense: true,
                   contentPadding: EdgeInsets.zero,
                   title: Text(item.ingredientName),
-                  subtitle: Text('${item.qty} ${item.ingredientBaseUnit}'),
+                  subtitle: Text('${item.quantity} ${item.ingredientBaseUnit}'),
                   trailing: item.lineCost == null
                       ? const Text('-',
                           style: TextStyle(color: Color(0xFF94A3B8)))
@@ -767,12 +767,15 @@ class _IngredientDetailScreenState extends State<IngredientDetailScreen>
             style: const TextStyle(fontWeight: FontWeight.w700),
           ),
           subtitle: Text(
-            '적용일 ${p.effectiveDate.isEmpty ? '-' : p.effectiveDate}'
+            '구매 ${p.purchasePrice.toStringAsFixed(p.purchasePrice < 10 ? 2 : 0)}원'
+            ' · ${p.purchaseQty} ${p.purchaseUnit}'
+            ' · 적용일 ${p.effectiveFrom.isEmpty ? '-' : p.effectiveFrom}'
             '${p.supplierName.isEmpty ? '' : ' · ${p.supplierName}'}',
           ),
-          trailing: p.packageCost == null
-              ? null
-              : Text('묶음 ${p.packageCost!.toStringAsFixed(0)}원'),
+          trailing: Text(
+            '단위 ${p.unitCost.toStringAsFixed(p.unitCost < 10 ? 2 : 0)}원',
+            style: const TextStyle(fontSize: 11),
+          ),
         );
       },
     );

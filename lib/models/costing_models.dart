@@ -150,39 +150,40 @@ class Ingredient {
 class IngredientPrice {
   final int priceId;
   final int ingredientId;
+  final double purchasePrice;
+  final double purchaseQty;
+  final String purchaseUnit;
+  final double usableQty;
   final double unitCost;
-  final double? packageSize;
-  final double? packageCost;
-  final String packageUnit;
-  final String effectiveDate;
+  final String effectiveFrom;
   final String supplierName;
-  final String notes;
+  final String memo;
 
   const IngredientPrice({
     required this.priceId,
     required this.ingredientId,
+    required this.purchasePrice,
+    required this.purchaseQty,
+    required this.purchaseUnit,
+    required this.usableQty,
     required this.unitCost,
-    this.packageSize,
-    this.packageCost,
-    required this.packageUnit,
-    required this.effectiveDate,
+    required this.effectiveFrom,
     required this.supplierName,
-    required this.notes,
+    required this.memo,
   });
 
   factory IngredientPrice.fromJson(Map<String, dynamic> json) {
     return IngredientPrice(
       priceId: asInt(json['price_id']),
       ingredientId: asInt(json['ingredient_id']),
+      purchasePrice: asDouble(json['purchase_price']),
+      purchaseQty: asDouble(json['purchase_qty']),
+      purchaseUnit: asString(json['purchase_unit']),
+      usableQty: asDouble(json['usable_qty']),
       unitCost: asDouble(json['unit_cost']),
-      packageSize:
-          json['package_size'] == null ? null : asDouble(json['package_size']),
-      packageCost:
-          json['package_cost'] == null ? null : asDouble(json['package_cost']),
-      packageUnit: asString(json['package_unit']),
-      effectiveDate: asString(json['effective_date']),
+      effectiveFrom: asString(json['effective_from']),
       supplierName: asString(json['supplier_name']),
-      notes: asString(json['notes']),
+      memo: asString(json['memo']),
     );
   }
 }
@@ -193,7 +194,7 @@ class RecipeItem {
   final int ingredientId;
   final String ingredientName;
   final String ingredientBaseUnit;
-  final double qty;
+  final double quantity;
   final double? currentUnitCost;
   final double? lineCost;
   final String notes;
@@ -204,7 +205,7 @@ class RecipeItem {
     required this.ingredientId,
     required this.ingredientName,
     required this.ingredientBaseUnit,
-    required this.qty,
+    required this.quantity,
     this.currentUnitCost,
     this.lineCost,
     required this.notes,
@@ -217,7 +218,7 @@ class RecipeItem {
       ingredientId: asInt(json['ingredient_id']),
       ingredientName: asString(json['ingredient_name']),
       ingredientBaseUnit: asString(json['ingredient_base_unit']),
-      qty: asDouble(json['qty']),
+      quantity: asDouble(json['quantity']),
       currentUnitCost: json['current_unit_cost'] == null
           ? null
           : asDouble(json['current_unit_cost']),

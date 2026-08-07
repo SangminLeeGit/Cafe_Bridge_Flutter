@@ -8,6 +8,7 @@ import '../core/async_request_guard.dart';
 import '../models/api_contracts.dart';
 import '../models/dashboard_model.dart';
 import '../services/api.dart';
+import 'service_health.dart';
 import '../state/app_state.dart';
 import '../widgets/access_gate.dart';
 import '../widgets/app_update_banner.dart';
@@ -230,6 +231,14 @@ class _SettingsScreenState extends State<SettingsScreen>
             ),
           ),
         ],
+        const SizedBox(height: 12),
+        OutlinedButton.icon(
+          onPressed: () => Navigator.of(context).push(
+            MaterialPageRoute(builder: (_) => const ServiceHealthScreen()),
+          ),
+          icon: const Icon(Icons.monitor_heart_outlined),
+          label: const Text('외부 서버 상태 관리'),
+        ),
         const SizedBox(height: 32),
         const Text(
           '앱 업데이트',
@@ -1024,12 +1033,19 @@ class _AuditLogScreenState extends State<_AuditLogScreen> {
                         leading: const Icon(Icons.receipt_long_outlined,
                             size: 18, color: Color(0xFF64748B)),
                         title: Text(
-                          e.action,
+                          e.eventType.isEmpty ? '이벤트' : e.eventType,
                           style: const TextStyle(
                               fontSize: 14, fontWeight: FontWeight.w600),
                         ),
                         subtitle: Text(
-                          '${e.loginId}${e.detail != null ? '  ·  ${e.detail}' : ''}',
+                          [
+                            e.loginId,
+                            e.target,
+                            e.detailJson,
+                          ]
+                              .whereType<String>()
+                              .where((value) => value.isNotEmpty)
+                              .join('  ·  '),
                           style: const TextStyle(fontSize: 12),
                         ),
                         trailing: e.createdAt != null

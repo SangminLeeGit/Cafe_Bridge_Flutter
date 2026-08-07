@@ -343,15 +343,17 @@ class AdminUserContract {
 class AuditLogEntryContract {
   final String id;
   final String loginId;
-  final String action;
-  final String? detail;
+  final String eventType;
+  final String? target;
+  final String? detailJson;
   final String? createdAt;
 
   const AuditLogEntryContract({
     required this.id,
     required this.loginId,
-    required this.action,
-    this.detail,
+    required this.eventType,
+    this.target,
+    this.detailJson,
     this.createdAt,
   });
 
@@ -359,8 +361,9 @@ class AuditLogEntryContract {
     return AuditLogEntryContract(
       id: asString(json['id']),
       loginId: asString(json['login_id']),
-      action: asString(json['action']),
-      detail: asNullableString(json['detail']),
+      eventType: asString(json['event_type']),
+      target: asNullableString(json['target']),
+      detailJson: asNullableString(json['detail_json']),
       createdAt: asNullableString(json['created_at']),
     );
   }

@@ -23,6 +23,7 @@
 | 근무·급여 | 완료 | workforce dashboard/workplaces/calendar/shifts/presets/employees/payslips | viewer는 조회, operator만 변경 |
 | 달력 일괄등록 | 완료 | shifts POST | 날짜별 순차 호출로 부분 성공·재시도 지원 |
 | 관리자 모니터 | 조회 완료 | users/audit/deploy/daily-reports | 고위험 변경은 웹 전용 |
+| 외부 서버 상태 | 완료 | service-health GET/POST/PUT | 상태 확인·수동 재조회·admin 설정 저장을 모바일 카드 UI로 제공 |
 | APK 업데이트 | 완료 | app-update/check/download | HTTPS, size, SHA-256, build, signing 검증 |
 
 ## Intentional Web-Only Operations
@@ -44,3 +45,12 @@
 - 웹 홈은 operator/admin에게만 operator 전용 원가 요약 API를 요청한다.
 - signage API method metadata를 실제 `POST` 계약으로 정정한다.
 - Android validation job에 Debug APK 및 Web compile을 추가하고, release signing 검증은 설치된 SDK build-tools를 안전하게 탐색한다.
+- 원가 단가 이력은 backend의 `purchase_*`, `usable_qty`, `effective_from`, `memo` 필드를 사용하고, 레시피 상세는 `quantity`를 표시한다.
+- 관리자 감사 로그는 backend의 `event_type`, `target`, `detail_json` 필드를 사용한다.
+- Flutter에 `/api/service-health` 조회·수동 확인·admin 설정 저장 화면을 추가한다.
+- 웹 원가 계산 validator가 backend의 `ingredient_name` 계약을 사용하도록 정정한다.
+
+## Runtime Validation Constraint
+
+- 개발 호스트에는 연결된 Android device와 AVD/system image가 없어 실제 설치·터치 플로우를 실행할 수 없다.
+- Flutter analyze/test, Debug APK, Web release, CI Release APK signing·등록은 별도로 검증한다. 실제 Android 주요 플로우는 device/AVD 연결 후 재검증이 필요하다.
