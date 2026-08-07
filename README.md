@@ -61,6 +61,12 @@ CAFE_BRIDGE_ANDROID_KEY_PASSWORD
 
 서명값이나 keystore를 저장소에 추가하지 않습니다. APK는 CI의 보호된 변수와 전용 Android runner를 통해 생성합니다.
 
+## CI/CD
+
+Protected branch 또는 tag에 Commit/Push하면 전용 `cafe-bridge-android-release` runner에서 보안 검사,
+Flutter 검증, signed release APK build가 순서대로 실행됩니다. 성공한 APK는 GitLab artifact로 7일간 보관되며
+기존 Cafe Bridge APK release/deploy API에 등록됩니다.
+
 ## 보안
 
 - 운영 빌드는 HTTPS만 허용합니다.
