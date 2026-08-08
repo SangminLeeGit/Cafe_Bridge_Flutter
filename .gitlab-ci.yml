@@ -112,4 +112,3 @@ android_release_dry_run:
       - build/app/outputs/flutter-apk/app-release.apk
   after_script:
     - if command -v gradle >/dev/null 2>&1; then gradle --stop || true; fi
-    - pkill -u "$(id -u)" -f 'KotlinCompileDaemon' || true

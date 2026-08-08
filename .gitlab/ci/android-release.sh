@@ -293,7 +293,6 @@ export ANDROID_HOME ANDROID_SDK_ROOT
 export CAFE_BRIDGE_ANDROID_KEYSTORE_PATH="$KEYSTORE_PATH"
 cleanup_gradle() {
   if command -v gradle >/dev/null 2>&1; then gradle --stop >/dev/null 2>&1 || true; fi
-  pkill -u "$(id -u)" -f 'KotlinCompileDaemon' >/dev/null 2>&1 || true
 }
 trap cleanup_gradle EXIT INT TERM
 EXPECTED_FLUTTER_VERSION="$(tr -d '[:space:]' < .flutter-version)"
