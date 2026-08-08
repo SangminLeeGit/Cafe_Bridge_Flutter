@@ -8,6 +8,16 @@ export GITHUB_REF_NAME="${CI_COMMIT_REF_NAME}"
 export GITHUB_REPOSITORY="${CI_PROJECT_PATH}"
 export GITHUB_ACTOR="${GITLAB_USER_LOGIN:-gitlab-ci}"
 export GITHUB_WORKSPACE="${CI_PROJECT_DIR}"
+# A dry-run against a commit that already has a registered release is a new
+# CI attempt, not a mutation of the immutable release record. Track that
+# attempt with a deterministic per-pipeline SHA while release registration
+# continues to use the real commit SHA below.
+export REPORT_COMMIT_SHA="${CI_COMMIT_SHA}"
+case "${DRY_RUN:-false}" in
+  1|true|yes|y|on)
+    REPORT_COMMIT_SHA="$(printf '%s' "${CI_COMMIT_SHA}:${CI_PIPELINE_ID}" | sha256sum | cut -c1-40)"
+    ;;
+esac
 if [[ -n "${CI_COMMIT_TAG:-}" ]]; then
   export GITHUB_REF="refs/tags/${CI_COMMIT_TAG}"
 else
@@ -55,7 +65,7 @@ import os
 print(json.dumps({
     "repo_full_name": os.environ.get("REPO_FULL_NAME", ""),
     "branch": os.environ.get("BRANCH_NAME", ""),
-    "commit_sha": os.environ.get("COMMIT_SHA", ""),
+    "commit_sha": os.environ.get("REPORT_COMMIT_SHA", ""),
     "status": "failed",
     "ref": os.environ.get("GITHUB_REF", ""),
     "workflow_run_id": os.environ.get("GITHUB_RUN_ID", ""),
@@ -244,7 +254,7 @@ import os
 print(json.dumps({
     "repo_full_name": os.environ["REPO_FULL_NAME"],
     "branch": os.environ["BRANCH_NAME"],
-    "commit_sha": os.environ["COMMIT_SHA"],
+    "commit_sha": os.environ["REPORT_COMMIT_SHA"],
     "status": "building",
     "ref": os.environ.get("GITHUB_REF", ""),
     "workflow_run_id": os.environ.get("GITHUB_RUN_ID", ""),
@@ -347,7 +357,7 @@ import os
 print(json.dumps({
     "repo_full_name": os.environ["REPO_FULL_NAME"],
     "branch": os.environ["BRANCH_NAME"],
-    "commit_sha": os.environ["COMMIT_SHA"],
+    "commit_sha": os.environ["REPORT_COMMIT_SHA"],
     "status": "succeeded",
     "ref": os.environ.get("GITHUB_REF", ""),
     "workflow_run_id": os.environ.get("GITHUB_RUN_ID", ""),

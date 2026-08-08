@@ -3,6 +3,12 @@ set -Eeuo pipefail
 
 BASE_URL="${CAFE_BRIDGE_CI_BASE_URL:-}"
 SECRET="${CAFE_BRIDGE_FLUTTER_CI_CALLBACK_SECRET:-}"
+REPORT_COMMIT_SHA="${CI_COMMIT_SHA:-}"
+case "${DRY_RUN:-false}" in
+  1|true|yes|y|on)
+    REPORT_COMMIT_SHA="$(printf '%s' "${CI_COMMIT_SHA}:${CI_PIPELINE_ID}" | sha256sum | cut -c1-40)"
+    ;;
+esac
 if [[ -z "$BASE_URL" || -z "$SECRET" ]]; then
   echo "CI failure callback cannot run: callback configuration is unavailable" >&2
   exit 1
@@ -15,7 +21,7 @@ import os
 print(json.dumps({
     "repo_full_name": os.environ.get("CI_PROJECT_PATH", ""),
     "branch": os.environ.get("CI_COMMIT_REF_NAME", ""),
-    "commit_sha": os.environ.get("CI_COMMIT_SHA", ""),
+    "commit_sha": os.environ.get("REPORT_COMMIT_SHA", ""),
     "status": "failed",
     "ref": (
         f"refs/tags/{os.environ['CI_COMMIT_TAG']}"
