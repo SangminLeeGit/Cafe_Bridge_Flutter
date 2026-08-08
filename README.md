@@ -70,6 +70,7 @@ Flutter 검증, signed release APK build가 순서대로 실행됩니다. 성공
 운영 릴리스 브랜치는 `release/*` 보호 브랜치 규칙을 사용하며, 검증이 끝난
 커밋만 전용 Android runner에서 signed APK로 릴리스합니다. 일반 개발 브랜치에서는
 릴리스 파이프라인을 만들지 않습니다.
+운영 콜백 허용 목록도 같은 `release/*` 범위를 사용해 GitLab 보호 정책과 일치시킵니다.
 
 ## 보안
 
