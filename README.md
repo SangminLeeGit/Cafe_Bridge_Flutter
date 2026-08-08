@@ -67,6 +67,10 @@ Protected branch 또는 tag에 Commit/Push하면 전용 `cafe-bridge-android-rel
 Flutter 검증, signed release APK build가 순서대로 실행됩니다. 성공한 APK는 GitLab artifact로 7일간 보관되며
 기존 Cafe Bridge APK release/deploy API에 등록됩니다.
 
+운영 릴리스 브랜치는 `release/*` 보호 브랜치 규칙을 사용하며, 검증이 끝난
+커밋만 전용 Android runner에서 signed APK로 릴리스합니다. 일반 개발 브랜치에서는
+릴리스 파이프라인을 만들지 않습니다.
+
 ## 보안
 
 - 운영 빌드는 HTTPS만 허용합니다.
