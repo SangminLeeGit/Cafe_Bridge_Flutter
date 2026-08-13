@@ -20,7 +20,7 @@ ADB is native to VM900. Do not use historical remote-ADB bridges or make a histo
 
 ## Repository And Design Policy
 
-- Development occurs in `/home/sangmin/workspaces/cleanup-flutter` on VM900.
+- Development occurs in `/home/sangmin/workspaces/cafe-bridge-flutter` on VM900.
 - The checked-out task branch is the source of truth. `main`, `origin/design`, dated design commits, HTML/CSS design exports, and OpenDesign snapshots are references only and must not be merged or copied over active implementation blindly.
 - OpenDesign and its localhost preview are VM900-local tools. A `127.0.0.1` OpenDesign URL refers to VM900 and is not a CT500 endpoint or a remotely published service.
 - Product API contracts, role gates, and admin feature scope are outside topology cleanup work.

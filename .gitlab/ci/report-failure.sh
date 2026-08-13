@@ -4,11 +4,16 @@ set -Eeuo pipefail
 BASE_URL="${CAFE_BRIDGE_CI_BASE_URL:-}"
 SECRET="${CAFE_BRIDGE_FLUTTER_CI_CALLBACK_SECRET:-}"
 REPORT_COMMIT_SHA="${CI_COMMIT_SHA:-}"
-case "${DRY_RUN:-false}" in
+EFFECTIVE_DRY_RUN="${DRY_RUN:-false}"
+if [[ "${CI_PIPELINE_SOURCE:-}" == "push" ]]; then
+  EFFECTIVE_DRY_RUN=true
+fi
+case "${EFFECTIVE_DRY_RUN}" in
   1|true|yes|y|on)
     REPORT_COMMIT_SHA="$(printf '%s' "${CI_COMMIT_SHA}:${CI_PIPELINE_ID}" | sha256sum | cut -c1-40)"
     ;;
 esac
+export REPORT_COMMIT_SHA
 if [[ -z "$BASE_URL" || -z "$SECRET" ]]; then
   echo "CI failure callback cannot run: callback configuration is unavailable" >&2
   exit 1
