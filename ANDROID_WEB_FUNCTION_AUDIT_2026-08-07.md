@@ -1,5 +1,7 @@
 # Android/Web Function Audit
 
+> **Historical / superseded constraints:** 이 감사의 기능 비교 결과는 작성 당시 기록입니다. Web compile gate, 비가속 AVD, remote-ADB, 자동 release 등록 관련 제약은 현재 운영 기준이 아닙니다. Android-only VM900 validation과 release 정책은 `docs/TOPOLOGY.md`를 따릅니다.
+
 기준 저장소:
 
 - Backend: `/home/sangmin/cafe-bridge/cafe_bridge_collector/web/routers`

@@ -1,5 +1,7 @@
 # Cafe Bridge 빌드 후 업데이트 배포 구현 보고서 (비스토어 전용)
 
+> **Historical / superseded:** 이 문서는 2026-04-07 당시의 제안과 미구현 상태를 보존한 기록입니다. iOS/IPA, 수동 ADB 배포, 로컬 서명, 자동 production 등록에 관한 내용은 현재 정책이 아닙니다. Android-only VM900/CT500 topology와 CI promotion 정책은 `docs/TOPOLOGY.md`가 authoritative합니다.
+
 작성일: 2026-04-07
 대상: cafe_bridge_flutter (모바일 앱), cafe_bridge_collector (백엔드)
 전제: Play Store / App Store / TestFlight 사용 불가

@@ -1,5 +1,7 @@
 # Cafe Bridge Flutter 구조적 리팩토링 최종 보고서
 
+> **Historical validation record:** Web smoke/build, 로컬 origin, Xcode, remote-ADB 제한은 2026-08-05 당시 결과이며 현재 mandatory target 또는 topology가 아닙니다. 현재 Android-only VM900 validation 기준은 `docs/TOPOLOGY.md`를 따릅니다.
+
 ## 1. 핵심 문제
 
 - `AppState`에 인증, HTTP, 캐시, 오프라인, 업데이트, keepalive가 집중되어 있었다.

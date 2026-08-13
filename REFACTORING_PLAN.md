@@ -1,5 +1,7 @@
 # Cafe Bridge Flutter 구조적 리팩토링 계획
 
+> **Frozen historical plan:** 이 계획은 2026-08-05 작업의 설계·검증 기준을 보존합니다. Web build 관련 항목은 현재 mandatory gate가 아니며, active Android-only 기준은 `docs/TOPOLOGY.md`가 우선합니다.
+
 기준일: 2026-08-05
 
 ## 1. 기준선 분석

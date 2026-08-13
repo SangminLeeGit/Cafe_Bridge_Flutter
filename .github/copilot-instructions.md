@@ -1,5 +1,13 @@
 # Copilot instructions
 
+## Repository policy
+
+- Android is the only supported target unless a task explicitly says otherwise. Generated iOS, Web, Linux, macOS, and Windows scaffolding is unsupported and inert.
+- Work on VM900 only for development, OpenCode/OpenChamber/OpenDesign, Flutter/Gradle, and native ADB. CT500 is runtime/deployment only.
+- Follow `docs/TOPOLOGY.md`. A localhost OpenDesign URL is local to VM900.
+- Signed release APKs and production registration are CI/CD-only. Do not create an IPA, perform a local signed release, or add/read signing material or values.
+- Ordinary pushes may validate and produce APK artifacts, but production APK registration requires an explicit protected promotion/manual action.
+
 ## Build, test, and lint
 
 - Install dependencies: `flutter pub get`
@@ -7,7 +15,7 @@
 - Run the full test suite: `flutter test`
 - Run a single test file: `flutter test test/menu_workspace_models_test.dart`
 - Run a single named test: `flutter test test/menu_workspace_models_test.dart --plain-name "WorkspaceTaskHistoryEntry parses applied new-item task result"`
-- Release builds documented in `BUILD_UPDATE_DISTRIBUTION_REPORT_2026-04-07.md`: `flutter build apk --release`, `flutter build ipa --release`
+- Android debug build: `ANDROID_HOME=/opt/android-builder/android-sdk ANDROID_SDK_ROOT=/opt/android-builder/android-sdk flutter build apk --debug`
 
 ## High-level architecture
 

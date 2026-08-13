@@ -1,5 +1,7 @@
 # Cafe Bridge Android 백엔드 정합화 구현 현황
 
+> **Frozen historical implementation record:** 아래 `origin/design` commit 비교와 단계별 계획은 당시 선별 적용 근거이며 현재 branch merge 지시가 아닙니다. 현재 checkout이 구현의 source of truth이고 active branch/topology 정책은 `docs/TOPOLOGY.md`를 따릅니다.
+
 기준일: 2026-07-24
 
 백엔드 `/home/sangmin/cafe-bridge`의 현재 FastAPI 계약을 읽기 전용으로 조사하고 Android 권장 범위를 구현했습니다.
@@ -45,7 +47,7 @@
 
 세부 완료 내역과 검증 결과는 `ANDROID_BACKEND_ALIGNMENT_COMPLETION_REPORT_2026-07-24.md`에 기록했습니다.
 
-## design 브랜치 Android UI 통합 계획
+## Frozen historical: design 브랜치 Android UI 통합 계획
 
 기준일: 2026-08-05
 
@@ -91,7 +93,7 @@
 - `flutter analyze`, `flutter test`, Debug APK build, signing 환경이 없을 때도 가능한 Release APK compile을 실행합니다.
 - Android SDK/에뮬레이터 연결 여부를 확인하되 연결 장치가 없으면 실기기 검증을 가장하지 않고 정적·빌드·테스트 결과만 기록합니다.
 - 변경 diff에서 미사용 import/리소스, debug 출력, 임시 파일, 중복 shell을 확인하고 기존 사용자 변경은 되돌리지 않습니다.
-- 검증 완료 후 의도한 파일만 stage하여 명확한 커밋 메시지로 현재 원격 추적 브랜치에 push합니다.
+- 당시 계획은 검증 완료 후 의도한 파일만 stage하고 명확한 커밋 메시지로 반영하는 것이었습니다. 현재 작업의 commit/push 여부는 현재 요청을 따릅니다.
 
 ### 6. 최신 웹 명세 재검토 결과
 

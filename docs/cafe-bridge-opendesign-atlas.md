@@ -2,13 +2,15 @@
 
 실제 Flutter 구현을 기준으로 만든 OpenDesign 전체 앱 디자인 프로젝트입니다.
 
+이 atlas는 현재 checkout의 참고 자료이며 별도 디자인 브랜치의 merge 지시가 아닙니다. 구현은 현재 작업 브랜치와 `docs/TOPOLOGY.md`를 따릅니다. OpenDesign은 VM900에서만 실행하며 아래 localhost 주소도 VM900 로컬에서만 유효합니다.
+
 - **OpenDesign project:** `CafeBridge Flutter Android`
 - **Project id:** `cafebridge-flutter-android`
 - **Entry:** `index.html`
 - **Interactive flows:** `prototype/flows.html`
 - **Route/state completion:** `screens/route-state-completion.html`
 - **Viewport:** Android 412 × 915dp artboard
-- **OpenDesign preview:** `http://127.0.0.1:7457/api/projects/cafebridge-flutter-android/raw/index.html`
+- **OpenDesign preview (VM900-local):** `http://127.0.0.1:7457/api/projects/cafebridge-flutter-android/raw/index.html`
 - **Source 기준:** `lib/main.dart`, `lib/navigation`, `lib/screens`, `lib/widgets`, `lib/theme/app_theme.dart`
 
 ## 포함 범위
