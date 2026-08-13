@@ -44,7 +44,7 @@ android_validate:
 
 secret_detection:
   stage: security
-  tags: [docker-build]
+  tags: [android-release]
   timeout: 10 minutes
   interruptible: true
   retry: 1
@@ -56,7 +56,7 @@ secret_detection:
 
 sast:
   stage: security
-  tags: [docker-build]
+  tags: [android-release]
   timeout: 20 minutes
   interruptible: true
   retry: 1
@@ -67,7 +67,7 @@ sast:
 
 ci_failure_report:
   stage: .post
-  tags: [docker-build]
+  tags: [android-release]
   timeout: 5 minutes
   when: on_failure
   allow_failure: true
