@@ -120,6 +120,12 @@ if [[ -z "${CAFE_BRIDGE_CI_BASE_URL:-}" ]]; then
   echo "CAFE_BRIDGE_CI_BASE_URL secret is required" >&2
   exit 1
 fi
+case "${CAFE_BRIDGE_CI_BASE_URL,,}" in
+  http://127.0.0.1:*|https://127.0.0.1:*|http://localhost:*|https://localhost:*|http://\[::1\]:*|https://\[::1\]:*)
+    echo "CAFE_BRIDGE_CI_BASE_URL must not use a loopback host on the CT600 runner" >&2
+    exit 1
+    ;;
+esac
 if [[ -z "${CAFE_BRIDGE_FLUTTER_CI_CALLBACK_SECRET:-}" ]]; then
   echo "CAFE_BRIDGE_FLUTTER_CI_CALLBACK_SECRET secret is required" >&2
   exit 1
@@ -200,7 +206,11 @@ VERSION_RAW="$(awk '/^version:/{print $2; exit}' pubspec.yaml)"
 VERSION_NAME="${VERSION_RAW%%+*}"
 PUBSPEC_BUILD="${VERSION_RAW##*+}"
 
-CURRENT_LATEST_BUILD="$(curl -fsS "${CAFE_BRIDGE_CI_BASE_URL%/}/api/app-update/check?platform=android&channel=prod&version=0.0.0&build=0" | python3 -c 'import json,sys; data=json.load(sys.stdin); print(int(data.get("latest_build") or 0))')"
+if ! CURRENT_RELEASE_STATE="$(curl -fsS "${CAFE_BRIDGE_CI_BASE_URL%/}/api/app-update/check?platform=android&channel=prod&version=0.0.0&build=0")"; then
+  echo "failed to read current Cafe Bridge Android release state" >&2
+  exit 1
+fi
+CURRENT_LATEST_BUILD="$(python3 -c 'import json,sys; data=json.load(sys.stdin); print(int(data.get("latest_build") or 0))' <<<"$CURRENT_RELEASE_STATE")"
 EFFECTIVE_BUILD="$PUBSPEC_BUILD"
 if [[ "$CURRENT_LATEST_BUILD" =~ ^[0-9]+$ ]] && (( CURRENT_LATEST_BUILD >= EFFECTIVE_BUILD )); then
   EFFECTIVE_BUILD="$((CURRENT_LATEST_BUILD + 1))"
