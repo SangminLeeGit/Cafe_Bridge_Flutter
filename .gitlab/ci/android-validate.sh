@@ -17,6 +17,22 @@ export ANDROID_HOME="$ANDROID_SDK_ROOT"
 export ANDROID_SDK_ROOT
 export PATH="$(dirname "$FLUTTER_BIN"):$ANDROID_SDK_ROOT/platform-tools:$PATH"
 
+FLUTTER_SDK_ROOT="$(cd "$(dirname "$FLUTTER_BIN")/.." && pwd -P)"
+FLUTTER_EXTENSION="$FLUTTER_SDK_ROOT/packages/flutter_tools/gradle/src/main/kotlin/FlutterExtension.kt"
+if [[ ! -f "$FLUTTER_EXTENSION" ]]; then
+  echo "Flutter Android extension metadata is missing: $FLUTTER_EXTENSION" >&2
+  exit 1
+fi
+NDK_VERSION_LINE="$(grep -E 'val ndkVersion: String = "[0-9.]+"' "$FLUTTER_EXTENSION")"
+EXPECTED_NDK_VERSION="${NDK_VERSION_LINE#*\"}"
+EXPECTED_NDK_VERSION="${EXPECTED_NDK_VERSION%%\"*}"
+NDK_PROPERTIES="$ANDROID_SDK_ROOT/ndk/$EXPECTED_NDK_VERSION/source.properties"
+if [[ -z "$EXPECTED_NDK_VERSION" || ! -f "$NDK_PROPERTIES" ]]; then
+  echo "Host-managed Android NDK is missing: $ANDROID_SDK_ROOT/ndk/$EXPECTED_NDK_VERSION" >&2
+  exit 1
+fi
+grep -Fqx "Pkg.Revision = $EXPECTED_NDK_VERSION" "$NDK_PROPERTIES"
+
 EXPECTED_FLUTTER_VERSION="$(tr -d '[:space:]' < .flutter-version)"
 EXPECTED_FLUTTER_REVISION="$(tr -d '[:space:]' < .flutter-revision)"
 FLUTTER_VERSION_JSON="$("$FLUTTER_BIN" --version --machine)"
