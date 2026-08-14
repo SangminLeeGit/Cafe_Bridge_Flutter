@@ -44,6 +44,7 @@ Also run shell/YAML syntax checks and `git diff --check` when those files change
 ## Release And Promotion
 
 - Signed release APKs are built only by CI/CD on CT600's protected `cafe-bridge-android-release` runner. The legacy CT500 runner remains disabled.
+- The CT600 shell-runner account uses a non-interactive-safe login profile and keeps mutable build/cache data on `/mnt/sandisk`; do not restore interactive console cleanup or CT500 cache paths.
 - Signing credentials and keystore content exist only as protected CI variables/material. Never read, print, copy, synthesize, or commit them.
 - Ordinary protected pushes retain security checks, Flutter validation, and signed APK artifacts, but do not register a production APK.
 - Production APK registration requires an explicit protected API/trigger promotion or a manual protected web pipeline action.
