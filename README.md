@@ -2,7 +2,7 @@
 
 Cafe Bridge FastAPI backend의 Android 운영·분석 클라이언트입니다. Flutter 앱과 Android APK 배포 코드는 이 저장소에서 독립적으로 버전 관리합니다.
 
-지원 대상은 Android뿐입니다. 개발·OpenCode/OpenChamber/OpenDesign·Flutter/Gradle·native ADB는 VM900에서 수행하고, CT500은 runtime/deployment에만 사용합니다. authoritative 정책은 `docs/TOPOLOGY.md`를 참조하세요.
+지원 대상은 Android뿐입니다. 개발·OpenCode/OpenChamber/OpenDesign·Flutter/Gradle·native ADB는 VM900에서 수행하고, CT500은 runtime/deployment에만 사용합니다. 보안 검사와 Android release CI는 CT600의 protected runner에서 수행합니다. authoritative 정책은 `docs/TOPOLOGY.md`를 참조하세요.
 
 ## 주요 기능
 
@@ -62,8 +62,7 @@ CAFE_BRIDGE_ANDROID_KEY_PASSWORD
 ## CI/CD
 
 Protected branch 또는 tag push는 CT600의 protected `android-release` runner에서 보안 검사,
-Android 검증, APK build를 직렬 수행한다.
-Flutter 검증, signed release APK build를 실행하고 성공한 APK를 GitLab artifact로 7일간 보관합니다.
+Flutter/Android 검증, signed release APK build를 직렬 수행하고 성공한 APK를 GitLab artifact로 7일간 보관합니다.
 ordinary push는 production APK를 등록하지 않습니다. 기존 Cafe Bridge APK release/deploy API 등록은
 protected API/trigger promotion 또는 protected web pipeline의 manual action으로만 수행합니다.
 
