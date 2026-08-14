@@ -61,7 +61,7 @@ CAFE_BRIDGE_ANDROID_KEY_PASSWORD
 
 ## CI/CD
 
-Protected branch 또는 tag push는 CT600의 protected `android-release` runner에서 보안 검사,
+Protected branch 또는 tag push는 CT600의 protected `cafe-bridge-android-release` runner에서 보안 검사,
 Flutter/Android 검증, signed release APK build를 직렬 수행하고 성공한 APK를 GitLab artifact로 7일간 보관합니다.
 ordinary push는 production APK를 등록하지 않습니다. 기존 Cafe Bridge APK release/deploy API 등록은
 protected API/trigger promotion 또는 protected web pipeline의 manual action으로만 수행합니다.

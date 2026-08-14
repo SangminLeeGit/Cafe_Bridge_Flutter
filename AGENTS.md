@@ -1,7 +1,7 @@
 # Repository Guidance
 
 - This repository is Android-only unless a task explicitly expands platform scope.
-- Perform development, OpenCode/OpenChamber/OpenDesign work, Flutter commands, and native ADB on VM900. CT500 is runtime/deployment only; CT600 is the protected `android-release` CI target only.
+- Perform development, OpenCode/OpenChamber/OpenDesign work, Flutter commands, and native ADB on VM900. CT500 is runtime/deployment only; CT600 is the protected `cafe-bridge-android-release` CI target only.
 - Use `docs/TOPOLOGY.md` as the authoritative environment and release policy.
 - Keep generated `ios/`, `web/`, `linux/`, `macos/`, and `windows/` scaffolding inert; do not validate, release, or extend it by default.
 - Build signed release APKs only in CI/CD with protected variables. Never add signing material or signing values to the repository.

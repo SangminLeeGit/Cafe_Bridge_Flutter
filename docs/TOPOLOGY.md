@@ -15,7 +15,7 @@ This document is authoritative for repository platform, host, validation, and re
 | --- | --- | --- |
 | VM900 | Development and CI tooling | Repository edits, OpenCode, OpenChamber, OpenDesign, Flutter/Gradle validation, Android SDK tools, and native ADB |
 | CT500 | Runtime and deployment | Deployed service/application runtime only; no development workspace, OpenCode/OpenChamber, Flutter build, emulator, or ADB workflow |
-| CT600 | Protected release runner | Security checks, Android validation, signed APK artifacts, and explicit production promotion only; no development workspace, OpenCode/OpenChamber, emulator, or ADB workflow |
+| CT600 | Protected release runner | Security checks, Android validation, signed APK artifacts, and explicit production promotion on the project-specific `cafe-bridge-android-release` runner only; no development workspace, OpenCode/OpenChamber, emulator, or ADB workflow |
 
 ADB is native to VM900. Do not use historical remote-ADB bridges or make a historical AVD limitation a current topology requirement. Device-dependent checks may be reported as not run when no approved Android device is attached to VM900.
 
@@ -43,7 +43,7 @@ Also run shell/YAML syntax checks and `git diff --check` when those files change
 
 ## Release And Promotion
 
-- Signed release APKs are built only by CI/CD on CT600's protected `android-release` runner. The legacy CT500 runner remains disabled.
+- Signed release APKs are built only by CI/CD on CT600's protected `cafe-bridge-android-release` runner. The legacy CT500 runner remains disabled.
 - Signing credentials and keystore content exist only as protected CI variables/material. Never read, print, copy, synthesize, or commit them.
 - Ordinary protected pushes retain security checks, Flutter validation, and signed APK artifacts, but do not register a production APK.
 - Production APK registration requires an explicit protected API/trigger promotion or a manual protected web pipeline action.
