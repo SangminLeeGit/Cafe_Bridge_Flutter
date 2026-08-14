@@ -32,6 +32,27 @@ if [[ -z "$EXPECTED_NDK_VERSION" || ! -f "$NDK_PROPERTIES" ]]; then
   exit 1
 fi
 grep -Fqx "Pkg.Revision = $EXPECTED_NDK_VERSION" "$NDK_PROPERTIES"
+EXPECTED_BUILD_TOOLS_VERSION="34.0.0"
+BUILD_TOOLS_PROPERTIES="$ANDROID_SDK_ROOT/build-tools/$EXPECTED_BUILD_TOOLS_VERSION/source.properties"
+if [[ ! -f "$BUILD_TOOLS_PROPERTIES" ]]; then
+  echo "Host-managed Android Build Tools are missing: $ANDROID_SDK_ROOT/build-tools/$EXPECTED_BUILD_TOOLS_VERSION" >&2
+  exit 1
+fi
+grep -Fqx "Pkg.Revision = $EXPECTED_BUILD_TOOLS_VERSION" "$BUILD_TOOLS_PROPERTIES"
+EXPECTED_ANDROID_PLATFORM="34"
+PLATFORM_PROPERTIES="$ANDROID_SDK_ROOT/platforms/android-$EXPECTED_ANDROID_PLATFORM/source.properties"
+if [[ ! -f "$PLATFORM_PROPERTIES" ]]; then
+  echo "Host-managed Android platform is missing: $ANDROID_SDK_ROOT/platforms/android-$EXPECTED_ANDROID_PLATFORM" >&2
+  exit 1
+fi
+grep -Fqx "AndroidVersion.ApiLevel=$EXPECTED_ANDROID_PLATFORM" "$PLATFORM_PROPERTIES"
+EXPECTED_CMAKE_VERSION="3.22.1"
+CMAKE_PROPERTIES="$ANDROID_SDK_ROOT/cmake/$EXPECTED_CMAKE_VERSION/source.properties"
+if [[ ! -f "$CMAKE_PROPERTIES" ]]; then
+  echo "Host-managed Android CMake is missing: $ANDROID_SDK_ROOT/cmake/$EXPECTED_CMAKE_VERSION" >&2
+  exit 1
+fi
+grep -Fqx "Pkg.Revision = $EXPECTED_CMAKE_VERSION" "$CMAKE_PROPERTIES"
 
 EXPECTED_FLUTTER_VERSION="$(tr -d '[:space:]' < .flutter-version)"
 EXPECTED_FLUTTER_REVISION="$(tr -d '[:space:]' < .flutter-revision)"
