@@ -1,6 +1,6 @@
 # Cafe Bridge Android 백엔드 정합화 완료보고서
 
-> **Historical validation record:** 아래 원격 ADB 및 당시 서명 환경 제한은 2026-07-24 실행 결과일 뿐 현재 topology가 아닙니다. 현재 VM900 native-ADB, Android-only, CI-only signed release 정책은 `docs/TOPOLOGY.md`가 우선합니다.
+> **Historical validation record:** 아래 원격 ADB 및 당시 서명 환경 제한은 2026-07-24 실행 결과일 뿐 현재 topology가 아닙니다. 현재 WSL2 shared-ADB, Android-only, CI-only signed release 정책은 `docs/TOPOLOGY.md`가 우선합니다.
 
 작성일: 2026-07-24
 

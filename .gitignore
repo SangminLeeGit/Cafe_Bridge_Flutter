@@ -46,3 +46,8 @@ app.*.map.json
 /android/key.properties
 /android/app/*.jks
 /android/app/*.keystore
+
+# OpenDesign workspace runtime state; design artifacts remain tracked.
+/design/open-design/**/.opencode/
+/design/open-design/**/.file-versions/
+/design/open-design/**/.transcript.jsonl

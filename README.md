@@ -2,7 +2,7 @@
 
 Cafe Bridge FastAPI backend의 Android 운영·분석 클라이언트입니다. Flutter 앱과 Android APK 배포 코드는 이 저장소에서 독립적으로 버전 관리합니다.
 
-지원 대상은 Android뿐입니다. 개발·OpenCode/OpenChamber/OpenDesign·Flutter/Gradle·native ADB는 VM900에서 수행하고, CT500은 runtime/deployment에만 사용합니다. 보안 검사와 Android release CI는 CT600의 protected runner에서 수행합니다. authoritative 정책은 `docs/TOPOLOGY.md`를 참조하세요.
+지원 대상은 Android뿐입니다. 개발·OpenCode/OpenDesign·Flutter/Gradle은 WSL2에서 수행하고, 실기기 검증은 VM900이 관리하는 shared ADB server를 사용합니다. CT500은 runtime/deployment에만 사용하고, 보안 검사와 Android release CI는 CT600의 protected runner에서 수행합니다. authoritative 정책은 `docs/TOPOLOGY.md`를 참조하세요.
 
 ## 주요 기능
 
@@ -31,17 +31,17 @@ Cafe Bridge FastAPI backend의 Android 운영·분석 클라이언트입니다. 
 저장소는 `.flutter-version`과 `.flutter-revision`에 기록된 Flutter SDK를 기준으로 검증합니다.
 
 ```bash
-/home/sangmin/tools/flutter/bin/flutter pub get --enforce-lockfile
-/home/sangmin/tools/flutter/bin/flutter analyze
-/home/sangmin/tools/flutter/bin/flutter test
+/home/sangmin/dev/sdk/flutter-3.41.7/bin/flutter pub get --enforce-lockfile
+/home/sangmin/dev/sdk/flutter-3.41.7/bin/flutter analyze
+/home/sangmin/dev/sdk/flutter-3.41.7/bin/flutter test
 ```
 
 Android SDK가 기본 환경변수에 없으면 다음과 같이 지정합니다.
 
 ```bash
-ANDROID_HOME=/opt/android-builder/android-sdk \
-ANDROID_SDK_ROOT=/opt/android-builder/android-sdk \
-/home/sangmin/tools/flutter/bin/flutter build apk --debug
+ANDROID_HOME=/home/sangmin/dev/sdk/android-sdk \
+ANDROID_SDK_ROOT=/home/sangmin/dev/sdk/android-sdk \
+/home/sangmin/dev/sdk/flutter-3.41.7/bin/flutter build apk --debug
 ```
 
 `ios/`, `web/`, `linux/`, `macos/`, `windows/`는 Flutter가 생성한 unsupported/inert scaffolding입니다. 명시적인 범위 변경이 없으면 빌드·검증·배포 대상으로 취급하지 않으며, 단순히 존재한다는 이유로 삭제하지 않습니다.
@@ -74,6 +74,6 @@ protected API/trigger promotion 또는 protected web pipeline의 manual action�
 - 401/403과 서버 오류에는 stale cache를 사용하지 않습니다.
 - Android 업데이트는 HTTPS, 크기, SHA-256, application ID, build number, signing identity를 검증합니다.
 
-상세 구현 결과는 `ANDROID_BACKEND_ALIGNMENT_COMPLETION_REPORT_2026-07-24.md`를 참조하세요.
-구조 분석과 실행 기준은 `REFACTORING_PLAN.md`를, 상세 구현 결과는
-`ANDROID_BACKEND_ALIGNMENT_COMPLETION_REPORT_2026-07-24.md`를 참조하세요.
+과거 구조 분석과 검증 증거는 `REFACTORING_PLAN.md`와
+`ANDROID_BACKEND_ALIGNMENT_COMPLETION_REPORT_2026-07-24.md`에 보존되어 있습니다.
+현재 실행 기준은 `docs/TOPOLOGY.md`를 따릅니다.
