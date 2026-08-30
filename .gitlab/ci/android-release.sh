@@ -1,6 +1,9 @@
 #!/usr/bin/env bash
 set -Eeuo pipefail
 
+SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+source "${SCRIPT_DIR}/timing.sh"
+
 export GITHUB_RUN_ID="${CI_PIPELINE_ID}"
 export GITHUB_RUN_NUMBER="${CI_PIPELINE_IID}"
 export GITHUB_SHA="${CI_COMMIT_SHA}"
@@ -318,8 +321,8 @@ if [[ "$ACTUAL_FLUTTER_REVISION" != "$EXPECTED_FLUTTER_REVISION" ]]; then
   echo "Flutter revision mismatch: expected $EXPECTED_FLUTTER_REVISION, got $ACTUAL_FLUTTER_REVISION" >&2
   exit 1
 fi
-"$FLUTTER_BIN" pub get --enforce-lockfile
-"$FLUTTER_BIN" build apk --release --build-name "$VERSION_NAME" --build-number "$BUILD_NUMBER"
+ci_timing "flutter_pub_get" "$FLUTTER_BIN" pub get --enforce-lockfile
+ci_timing "flutter_build_release" "$FLUTTER_BIN" build apk --release --no-pub --build-name "$VERSION_NAME" --build-number "$BUILD_NUMBER"
 
 APKSIGNER="${ANDROID_SDK_ROOT}/build-tools/35.0.0/apksigner"
 if [[ ! -x "$APKSIGNER" ]]; then

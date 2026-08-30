@@ -12,8 +12,10 @@ workflow:
 
 variables:
   GIT_DEPTH: "0"
-  PUB_CACHE: "/var/cache/android-builder/pub"
-  GRADLE_USER_HOME: "/var/cache/android-builder/gradle"
+  # Match the persistent paths prepared by the cafe-bridge runner service.
+  PUB_CACHE: "/var/lib/flutter-runner/cache/pub"
+  GRADLE_USER_HOME: "/var/lib/flutter-runner/cache/gradle"
+  GRADLE_OPTS: "-Dorg.gradle.daemon=false -Dorg.gradle.parallel=false -Dorg.gradle.workers.max=2 -Dorg.gradle.jvmargs=-Xmx2560m -Dkotlin.compiler.execution.strategy=in-process"
   DEPLOY_TASK_ID:
     value: ""
     description: "Optional server-side deployment task ID."

@@ -1,6 +1,9 @@
 #!/usr/bin/env bash
 set -Eeuo pipefail
 
+SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+source "${SCRIPT_DIR}/timing.sh"
+
 FLUTTER_BIN="${CAFE_BRIDGE_FLUTTER_BIN:-}"
 ANDROID_SDK_ROOT="${CAFE_BRIDGE_ANDROID_SDK_ROOT:-}"
 
@@ -68,7 +71,7 @@ if [[ "$ACTUAL_FLUTTER_REVISION" != "$EXPECTED_FLUTTER_REVISION" ]]; then
   exit 1
 fi
 
-"$FLUTTER_BIN" pub get --enforce-lockfile
-"$FLUTTER_BIN" analyze
-"$FLUTTER_BIN" test
-"$FLUTTER_BIN" build apk --debug
+ci_timing "flutter_pub_get" "$FLUTTER_BIN" pub get --enforce-lockfile
+ci_timing "flutter_analyze" "$FLUTTER_BIN" analyze
+ci_timing "flutter_test" "$FLUTTER_BIN" test
+ci_timing "flutter_build_debug" "$FLUTTER_BIN" build apk --debug --no-pub
