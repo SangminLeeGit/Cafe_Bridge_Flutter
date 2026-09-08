@@ -4,6 +4,16 @@ set -Eeuo pipefail
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 source "${SCRIPT_DIR}/timing.sh"
 
+# Signing and registration must never run on a runtime or unrelated project runner.
+RUNNER_DESCRIPTION="${CI_RUNNER_DESCRIPTION:-}"
+NORMALIZED_RUNNER_DESCRIPTION="${RUNNER_DESCRIPTION,,}"
+if [[ "${NORMALIZED_RUNNER_DESCRIPTION}" != *"ct600"* ||
+      "${NORMALIZED_RUNNER_DESCRIPTION}" != *"cafe"* ||
+      "${NORMALIZED_RUNNER_DESCRIPTION}" != *"bridge"* ]]; then
+  echo "Android release requires the protected CT600 Cafe Bridge runner; got '${RUNNER_DESCRIPTION:-unknown}'." >&2
+  exit 1
+fi
+
 export GITHUB_RUN_ID="${CI_PIPELINE_ID}"
 export GITHUB_RUN_NUMBER="${CI_PIPELINE_IID}"
 export GITHUB_SHA="${CI_COMMIT_SHA}"
