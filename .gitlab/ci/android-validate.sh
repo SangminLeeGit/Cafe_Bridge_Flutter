@@ -71,6 +71,7 @@ if [[ "$ACTUAL_FLUTTER_REVISION" != "$EXPECTED_FLUTTER_REVISION" ]]; then
   exit 1
 fi
 
+./.gitlab/ci/check-release-policy.sh
 ci_timing "flutter_pub_get" "$FLUTTER_BIN" pub get --enforce-lockfile
 ci_timing "flutter_analyze" "$FLUTTER_BIN" analyze
 ci_timing "flutter_test" "$FLUTTER_BIN" test

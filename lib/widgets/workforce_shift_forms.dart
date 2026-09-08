@@ -1,9 +1,14 @@
 import 'package:flutter/material.dart';
 
 import '../models/workforce_models.dart';
+import 'responsive_wrap_grid.dart';
+import 'stat_card.dart';
 
 typedef ShiftPreviewLoader = Future<EmployeePayPreview> Function(
     WorkforceShiftDraft draft);
+typedef EmployeePayPreviewLoader = Future<EmployeePayPreviewData> Function(
+  WorkforceShiftDraft draft,
+);
 
 class WorkforceShiftFormDialog extends StatefulWidget {
   final List<Workplace> workplaces;
@@ -41,6 +46,7 @@ class _WorkforceShiftFormDialogState extends State<WorkforceShiftFormDialog> {
   String? _error;
   EmployeePayPreview? _preview;
   bool _previewing = false;
+  int _previewRequest = 0;
 
   @override
   void initState() {
@@ -87,6 +93,15 @@ class _WorkforceShiftFormDialogState extends State<WorkforceShiftFormDialog> {
     Navigator.pop(context, draft);
   }
 
+  void _updateDraft(VoidCallback update) {
+    setState(() {
+      update();
+      _previewRequest += 1;
+      _preview = null;
+      _previewing = false;
+    });
+  }
+
   Future<void> _loadPreview() async {
     final draft = _draft();
     final error = draft.validate();
@@ -94,19 +109,22 @@ class _WorkforceShiftFormDialogState extends State<WorkforceShiftFormDialog> {
       setState(() => _error = error);
       return;
     }
+    final request = ++_previewRequest;
     setState(() {
       _previewing = true;
       _error = null;
     });
     try {
       final preview = await widget.onPreview(draft);
-      if (!mounted) return;
+      if (!mounted || request != _previewRequest) return;
       setState(() => _preview = preview);
     } catch (error) {
-      if (!mounted) return;
+      if (!mounted || request != _previewRequest) return;
       setState(() => _error = error.toString());
     } finally {
-      if (mounted) setState(() => _previewing = false);
+      if (mounted && request == _previewRequest) {
+        setState(() => _previewing = false);
+      }
     }
   }
 
@@ -131,7 +149,7 @@ class _WorkforceShiftFormDialogState extends State<WorkforceShiftFormDialog> {
                     .map((item) => DropdownMenuItem(
                         value: item.id, child: Text(item.name)))
                     .toList(growable: false),
-                onChanged: (value) => setState(() {
+                onChanged: (value) => _updateDraft(() {
                   _workplaceId = value;
                   _employeeId = null;
                 }),
@@ -144,49 +162,52 @@ class _WorkforceShiftFormDialogState extends State<WorkforceShiftFormDialog> {
                     .map((item) => DropdownMenuItem(
                         value: item.id, child: Text(item.name)))
                     .toList(growable: false),
-                onChanged: (value) => setState(() => _employeeId = value),
+                onChanged: (value) => _updateDraft(() => _employeeId = value),
               ),
               TextFormField(
                 key: const Key('shift-date'),
                 initialValue: _date,
                 decoration: const InputDecoration(
                     labelText: '날짜 *', hintText: 'YYYY-MM-DD'),
-                onChanged: (value) => _date = value,
+                onChanged: (value) => _updateDraft(() => _date = value),
               ),
-              Row(children: [
-                Expanded(
-                    child: _textField(
-                        '시작 *', _startTime, (value) => _startTime = value,
-                        key: 'shift-start')),
-                const SizedBox(width: 12),
-                Expanded(
-                    child: _textField(
-                        '종료 *', _endTime, (value) => _endTime = value,
-                        key: 'shift-end')),
-              ]),
-              Row(children: [
-                Expanded(
-                    child: _numberField('휴게(분)', _breakMinutes,
-                        (value) => _breakMinutes = value)),
-                const SizedBox(width: 12),
-                Expanded(
-                    child: _numberField('추가 지급', _extraAmount,
-                        (value) => _extraAmount = value)),
-                const SizedBox(width: 12),
-                Expanded(
-                    child: _numberField('추가 차감', _deductionAmount,
-                        (value) => _deductionAmount = value)),
-              ]),
-              Row(children: [
-                Expanded(child: _leaveDropdown()),
-                const SizedBox(width: 12),
-                Expanded(child: _holidayDropdown()),
-              ]),
+              ResponsiveWrapGrid(
+                minItemWidth: 180,
+                maxColumns: 2,
+                children: [
+                  _textField('시작 *', _startTime,
+                      (value) => _updateDraft(() => _startTime = value),
+                      key: 'shift-start'),
+                  _textField('종료 *', _endTime,
+                      (value) => _updateDraft(() => _endTime = value),
+                      key: 'shift-end'),
+                ],
+              ),
+              ResponsiveWrapGrid(
+                minItemWidth: 160,
+                maxColumns: 3,
+                children: [
+                  _numberField('휴게(분)', _breakMinutes,
+                      (value) => _updateDraft(() => _breakMinutes = value)),
+                  _numberField('추가 지급', _extraAmount,
+                      (value) => _updateDraft(() => _extraAmount = value)),
+                  _numberField(
+                    '추가 차감',
+                    _deductionAmount,
+                    (value) => _updateDraft(() => _deductionAmount = value),
+                  ),
+                ],
+              ),
+              ResponsiveWrapGrid(
+                minItemWidth: 180,
+                maxColumns: 2,
+                children: [_leaveDropdown(), _holidayDropdown()],
+              ),
               TextFormField(
                 initialValue: _memo,
                 maxLines: 2,
                 decoration: const InputDecoration(labelText: '메모'),
-                onChanged: (value) => _memo = value,
+                onChanged: (value) => _updateDraft(() => _memo = value),
               ),
               if (_error != null)
                 Padding(
@@ -250,7 +271,7 @@ class _WorkforceShiftFormDialogState extends State<WorkforceShiftFormDialog> {
           DropdownMenuItem(value: 'paid_day_off', child: Text('유급휴무')),
           DropdownMenuItem(value: 'substitute', child: Text('대타')),
         ],
-        onChanged: (value) => setState(() => _leaveType = value ?? 'none'),
+        onChanged: (value) => _updateDraft(() => _leaveType = value ?? 'none'),
       );
 
   Widget _holidayDropdown() => DropdownButtonFormField<String>(
@@ -262,7 +283,246 @@ class _WorkforceShiftFormDialogState extends State<WorkforceShiftFormDialog> {
           DropdownMenuItem(value: 'public', child: Text('공휴일')),
           DropdownMenuItem(value: 'custom', child: Text('기타 휴일')),
         ],
-        onChanged: (value) => setState(() => _holidayType = value ?? 'none'),
+        onChanged: (value) =>
+            _updateDraft(() => _holidayType = value ?? 'none'),
+      );
+}
+
+class EmployeePayPreviewDialog extends StatefulWidget {
+  final Employee employee;
+  final DateTime date;
+  final EmployeePayPreviewLoader onPreview;
+
+  const EmployeePayPreviewDialog({
+    super.key,
+    required this.employee,
+    required this.date,
+    required this.onPreview,
+  });
+
+  @override
+  State<EmployeePayPreviewDialog> createState() =>
+      _EmployeePayPreviewDialogState();
+}
+
+class _EmployeePayPreviewDialogState extends State<EmployeePayPreviewDialog> {
+  String _startAt = '09:00';
+  String _endAt = '18:00';
+  int _breakMinutes = 60;
+  String _leaveType = 'none';
+  String _holidayType = 'none';
+  int _extraAmount = 0;
+  int _deductionAmount = 0;
+  EmployeePayPreviewData? _preview;
+  String? _error;
+  bool _isLoading = false;
+  int _requestGeneration = 0;
+
+  String get _date =>
+      '${widget.date.year.toString().padLeft(4, '0')}-${widget.date.month.toString().padLeft(2, '0')}-${widget.date.day.toString().padLeft(2, '0')}';
+
+  WorkforceShiftDraft _draft() => WorkforceShiftDraft(
+        workplaceId: widget.employee.workplaceId,
+        employeeId: widget.employee.id,
+        date: _date,
+        startTime: _startAt,
+        endTime: _endAt,
+        breakMinutes: _breakMinutes,
+        leaveType: _leaveType,
+        holidayType: _holidayType,
+        extraAmount: _extraAmount,
+        deductionAmount: _deductionAmount,
+      );
+
+  void _updateInputs(VoidCallback update) {
+    setState(() {
+      update();
+      _requestGeneration += 1;
+      _preview = null;
+      _error = null;
+      _isLoading = false;
+    });
+  }
+
+  Future<void> _loadPreview() async {
+    final draft = _draft();
+    final validationError = draft.validate();
+    if (validationError != null) {
+      setState(() => _error = validationError);
+      return;
+    }
+    final request = ++_requestGeneration;
+    setState(() {
+      _isLoading = true;
+      _error = null;
+    });
+    try {
+      final preview = await widget.onPreview(draft);
+      if (!mounted || request != _requestGeneration) return;
+      setState(() => _preview = preview);
+    } catch (error) {
+      if (!mounted || request != _requestGeneration) return;
+      setState(() => _error = error.toString());
+    } finally {
+      if (mounted && request == _requestGeneration) {
+        setState(() => _isLoading = false);
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: Text('${widget.employee.name} 급여 미리보기'),
+      content: SizedBox(
+        width: 520,
+        child: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              ResponsiveWrapGrid(
+                minItemWidth: 180,
+                maxColumns: 2,
+                children: [
+                  _timeField(
+                    '시작',
+                    _startAt,
+                    (value) => _updateInputs(() => _startAt = value),
+                  ),
+                  _timeField(
+                    '종료',
+                    _endAt,
+                    (value) => _updateInputs(() => _endAt = value),
+                  ),
+                ],
+              ),
+              ResponsiveWrapGrid(
+                minItemWidth: 180,
+                maxColumns: 2,
+                children: [
+                  _numberField(
+                    '휴게(분)',
+                    _breakMinutes,
+                    (value) => _updateInputs(() => _breakMinutes = value),
+                  ),
+                  _numberField(
+                    '추가 지급',
+                    _extraAmount,
+                    (value) => _updateInputs(() => _extraAmount = value),
+                  ),
+                ],
+              ),
+              ResponsiveWrapGrid(
+                minItemWidth: 180,
+                maxColumns: 2,
+                children: [
+                  _numberField(
+                    '추가 차감',
+                    _deductionAmount,
+                    (value) => _updateInputs(() => _deductionAmount = value),
+                  ),
+                  _leaveDropdown(),
+                ],
+              ),
+              _holidayDropdown(),
+              if (_error != null)
+                Padding(
+                  padding: const EdgeInsets.only(top: 8),
+                  child: Text(
+                    _error!,
+                    style: const TextStyle(color: Colors.red),
+                  ),
+                ),
+              if (_preview != null) ...[
+                const SizedBox(height: 12),
+                ResponsiveWrapGrid(
+                  minItemWidth: 140,
+                  maxColumns: 3,
+                  children: [
+                    StatCard(
+                      label: '세전',
+                      value: '${_preview!.preview.grossPay}원',
+                      accent: true,
+                    ),
+                    StatCard(
+                      label: '세금',
+                      value: '${_preview!.preview.taxEstimate}원',
+                    ),
+                    StatCard(
+                      label: '세후',
+                      value: '${_preview!.preview.netEstimate}원',
+                    ),
+                  ],
+                ),
+              ],
+            ],
+          ),
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text('닫기'),
+        ),
+        FilledButton(
+          onPressed: _isLoading ? null : _loadPreview,
+          child: Text(_isLoading ? '계산 중...' : '계산'),
+        ),
+      ],
+    );
+  }
+
+  Widget _timeField(
+    String label,
+    String value,
+    ValueChanged<String> onChanged,
+  ) {
+    return TextFormField(
+      initialValue: value,
+      decoration: InputDecoration(labelText: label),
+      onChanged: onChanged,
+    );
+  }
+
+  Widget _numberField(
+    String label,
+    int value,
+    ValueChanged<int> onChanged,
+  ) {
+    return TextFormField(
+      initialValue: value.toString(),
+      keyboardType: TextInputType.number,
+      decoration: InputDecoration(labelText: label),
+      onChanged: (text) => onChanged(int.tryParse(text) ?? value),
+    );
+  }
+
+  Widget _leaveDropdown() => DropdownButtonFormField<String>(
+        initialValue: _leaveType,
+        decoration: const InputDecoration(labelText: '휴무 타입'),
+        items: const [
+          DropdownMenuItem(value: 'none', child: Text('정상근무')),
+          DropdownMenuItem(value: 'vacation', child: Text('휴가')),
+          DropdownMenuItem(value: 'absent', child: Text('결근')),
+          DropdownMenuItem(value: 'day_off', child: Text('휴무')),
+          DropdownMenuItem(value: 'paid_day_off', child: Text('유급휴무')),
+          DropdownMenuItem(value: 'substitute', child: Text('대타')),
+        ],
+        onChanged: (value) =>
+            _updateInputs(() => _leaveType = value ?? _leaveType),
+      );
+
+  Widget _holidayDropdown() => DropdownButtonFormField<String>(
+        initialValue: _holidayType,
+        decoration: const InputDecoration(labelText: '휴일 타입'),
+        items: const [
+          DropdownMenuItem(value: 'none', child: Text('일반일')),
+          DropdownMenuItem(value: 'weekend', child: Text('주말')),
+          DropdownMenuItem(value: 'public', child: Text('공휴일')),
+          DropdownMenuItem(value: 'custom', child: Text('기타 휴일')),
+        ],
+        onChanged: (value) =>
+            _updateInputs(() => _holidayType = value ?? _holidayType),
       );
 }
 

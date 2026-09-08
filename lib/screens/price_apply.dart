@@ -6,6 +6,7 @@ import 'package:provider/provider.dart';
 import '../core/async_request_guard.dart';
 import '../models/api_contracts.dart';
 import '../models/dashboard_model.dart';
+import '../models/product_identity.dart';
 import '../services/api.dart';
 import '../services/task_poller.dart';
 import '../state/app_state.dart';
@@ -276,13 +277,8 @@ class _PriceApplyScreenState extends State<PriceApplyScreen>
     }
   }
 
-  String _normalizedProductCode() {
-    var value = _productCodeController.text.trim();
-    if (RegExp(r'^\d+$').hasMatch(value) && value.length < 6) {
-      value = value.padLeft(6, '0');
-    }
-    return value;
-  }
+  String _normalizedProductCode() =>
+      normalizeProductCode(_productCodeController.text);
 
   String _formatError(Object error) {
     if (error is ApiException) {

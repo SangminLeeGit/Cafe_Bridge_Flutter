@@ -803,6 +803,7 @@ class _RecipeCalculatorTabState extends State<_RecipeCalculatorTab>
   bool _loading = true;
   bool _calculating = false;
   String _error = '';
+  int _calculationRevision = 0;
 
   @override
   void initState() {
@@ -881,6 +882,7 @@ class _RecipeCalculatorTabState extends State<_RecipeCalculatorTab>
 
     if (!mounted) return;
     final request = beginAsyncRequest();
+    final calculationRevision = ++_calculationRevision;
     final appState = context.read<AppState>();
     setState(() {
       _calculating = true;
@@ -916,7 +918,10 @@ class _RecipeCalculatorTabState extends State<_RecipeCalculatorTab>
                   ))
               .toList(growable: false)
           : const <_CalculatedLine>[];
-      if (!isCurrentAsyncRequest(request)) return;
+      if (!isCurrentAsyncRequest(request) ||
+          calculationRevision != _calculationRevision) {
+        return;
+      }
       setState(() {
         _summary = RecipeCalculateSummary.fromJson(
           Map<String, dynamic>.from(summarySource),
@@ -925,7 +930,10 @@ class _RecipeCalculatorTabState extends State<_RecipeCalculatorTab>
         _calculating = false;
       });
     } catch (error) {
-      if (!isCurrentAsyncRequest(request)) return;
+      if (!isCurrentAsyncRequest(request) ||
+          calculationRevision != _calculationRevision) {
+        return;
+      }
       setState(() {
         _error = error.toString();
         _calculating = false;
@@ -941,11 +949,37 @@ class _RecipeCalculatorTabState extends State<_RecipeCalculatorTab>
     return null;
   }
 
-  void _addLine() => setState(() => _lines.add(_CalculatorLine()));
+  void _invalidateCalculation() {
+    _calculationRevision += 1;
+    if (_summary == null && _calculatedLines.isEmpty && !_calculating) {
+      return;
+    }
+    setState(() {
+      _summary = null;
+      _calculatedLines = const [];
+      _calculating = false;
+    });
+  }
+
+  void _addLine() {
+    setState(() {
+      _lines.add(_CalculatorLine());
+      _calculationRevision += 1;
+      _summary = null;
+      _calculatedLines = const [];
+      _calculating = false;
+    });
+  }
 
   void _removeLine(int index) {
     if (_lines.length == 1) return;
-    setState(() => _lines.removeAt(index).dispose());
+    setState(() {
+      _lines.removeAt(index).dispose();
+      _calculationRevision += 1;
+      _summary = null;
+      _calculatedLines = const [];
+      _calculating = false;
+    });
   }
 
   @override
@@ -973,6 +1007,7 @@ class _RecipeCalculatorTabState extends State<_RecipeCalculatorTab>
             children: [
               TextField(
                 controller: _menuNameController,
+                onChanged: (_) => _invalidateCalculation(),
                 decoration: const InputDecoration(labelText: '메뉴명'),
               ),
               const SizedBox(height: 12),
@@ -981,6 +1016,7 @@ class _RecipeCalculatorTabState extends State<_RecipeCalculatorTab>
                   Expanded(
                     child: TextField(
                       controller: _sellingPriceController,
+                      onChanged: (_) => _invalidateCalculation(),
                       keyboardType: TextInputType.number,
                       decoration: const InputDecoration(labelText: '판매가 (선택)'),
                     ),
@@ -989,6 +1025,7 @@ class _RecipeCalculatorTabState extends State<_RecipeCalculatorTab>
                   Expanded(
                     child: TextField(
                       controller: _targetRatioController,
+                      onChanged: (_) => _invalidateCalculation(),
                       keyboardType:
                           const TextInputType.numberWithOptions(decimal: true),
                       decoration:
@@ -1003,6 +1040,7 @@ class _RecipeCalculatorTabState extends State<_RecipeCalculatorTab>
                 final line = entry.value;
                 final ingredient = _ingredientById(line.ingredientId);
                 return Padding(
+                  key: line.key,
                   padding: const EdgeInsets.only(bottom: 12),
                   child: Row(
                     children: [
@@ -1019,8 +1057,13 @@ class _RecipeCalculatorTabState extends State<_RecipeCalculatorTab>
                                         Text('${item.name} (${item.baseUnit})'),
                                   ))
                               .toList(growable: false),
-                          onChanged: (value) =>
-                              setState(() => line.ingredientId = value),
+                          onChanged: (value) => setState(() {
+                            line.ingredientId = value;
+                            _calculationRevision += 1;
+                            _summary = null;
+                            _calculatedLines = const [];
+                            _calculating = false;
+                          }),
                         ),
                       ),
                       const SizedBox(width: 8),
@@ -1028,6 +1071,7 @@ class _RecipeCalculatorTabState extends State<_RecipeCalculatorTab>
                         flex: 2,
                         child: TextField(
                           controller: line.quantityController,
+                          onChanged: (_) => _invalidateCalculation(),
                           keyboardType: const TextInputType.numberWithOptions(
                               decimal: true),
                           decoration: InputDecoration(
@@ -1114,6 +1158,7 @@ class _RecipeCalculatorTabState extends State<_RecipeCalculatorTab>
 }
 
 class _CalculatorLine {
+  final Key key = UniqueKey();
   int? ingredientId;
   final TextEditingController quantityController = TextEditingController();
 

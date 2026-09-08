@@ -50,4 +50,23 @@ void main() {
     expect(entry.displayTitle, '콜드브루');
     expect(entry.displaySubtitle, 'preview');
   });
+
+  test('menu entry copy keeps details while applying an optimistic edit', () {
+    final entry = MenuEntry.fromJson({
+      'id': 1,
+      'kind': 'price_update',
+      'status': 'draft',
+      'item_code': '000001',
+      'item_name': '아메리카노',
+      'current_price': 3000,
+      'target_price': 3500,
+    });
+
+    final updated = entry.copyWith(status: 'ready', targetPrice: 3800);
+
+    expect(updated.status, 'ready');
+    expect(updated.targetPrice, 3800);
+    expect(updated.itemCode, entry.itemCode);
+    expect(updated.currentPrice, entry.currentPrice);
+  });
 }

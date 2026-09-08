@@ -118,6 +118,7 @@ class MainLayout extends StatefulWidget {
 
 class _MainLayoutState extends State<MainLayout> {
   int _currentIndex = 0;
+  late final List<Widget?> _visitedScreens;
 
   static const navigationItems = <_NavigationItem>[
     _NavigationItem(
@@ -125,37 +126,44 @@ class _MainLayoutState extends State<MainLayout> {
       label: '홈',
       icon: Icons.space_dashboard_outlined,
       selectedIcon: Icons.space_dashboard,
-      screen: DashboardScreen(),
+      createScreen: DashboardScreen.new,
     ),
     _NavigationItem(
       title: '인사이트',
       label: '분석',
       icon: Icons.analytics_outlined,
       selectedIcon: Icons.analytics,
-      screen: AnalyticsScreen(),
+      createScreen: AnalyticsScreen.new,
     ),
     _NavigationItem(
       title: '업무',
       label: '업무',
       icon: Icons.handyman_outlined,
       selectedIcon: Icons.handyman,
-      screen: OperationsScreen(),
+      createScreen: OperationsScreen.new,
     ),
     _NavigationItem(
       title: '인력',
       label: '인력',
       icon: Icons.people_outline,
       selectedIcon: Icons.people,
-      screen: WorkforceScreen(),
+      createScreen: WorkforceScreen.new,
     ),
     _NavigationItem(
       title: '더보기',
       label: '더보기',
       icon: Icons.widgets_outlined,
       selectedIcon: Icons.widgets,
-      screen: MoreScreen(),
+      createScreen: MoreScreen.new,
     ),
   ];
+
+  @override
+  void initState() {
+    super.initState();
+    _visitedScreens = List<Widget?>.filled(navigationItems.length, null);
+    _visitedScreens[0] = navigationItems.first.createScreen();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -241,8 +249,8 @@ class _MainLayoutState extends State<MainLayout> {
             Expanded(
               child: IndexedStack(
                 index: currentIndex,
-                children: navigationItems
-                    .map((item) => item.screen)
+                children: _visitedScreens
+                    .map((screen) => screen ?? const SizedBox.shrink())
                     .toList(growable: false),
               ),
             ),
@@ -254,6 +262,7 @@ class _MainLayoutState extends State<MainLayout> {
         onDestinationSelected: (index) {
           setState(() {
             _currentIndex = index;
+            _visitedScreens[index] ??= navigationItems[index].createScreen();
           });
         },
         backgroundColor: AppColors.surface,
@@ -277,13 +286,13 @@ class _NavigationItem {
   final String label;
   final IconData icon;
   final IconData selectedIcon;
-  final Widget screen;
+  final Widget Function() createScreen;
 
   const _NavigationItem({
     required this.title,
     required this.label,
     required this.icon,
     required this.selectedIcon,
-    required this.screen,
+    required this.createScreen,
   });
 }

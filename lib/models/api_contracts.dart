@@ -213,7 +213,7 @@ class AsyncTaskStartResponse {
   factory AsyncTaskStartResponse.fromJson(Map<String, dynamic> json) {
     return AsyncTaskStartResponse(
       taskId: asString(json['task_id']),
-      status: asString(json['status']),
+      status: asString(json['status']).trim().toLowerCase(),
     );
   }
 }
@@ -250,7 +250,7 @@ class BrowserPriceApplyTaskResult {
       currentPrice:
           json['current_price'] == null ? null : asInt(json['current_price']),
       targetPrice: asInt(json['target_price']),
-      status: asString(json['status']),
+      status: asString(json['status']).trim().toLowerCase(),
       message: asString(json['message']),
       execute: asBool(json['execute']),
       reason: asString(json['reason']),
@@ -299,7 +299,7 @@ class BrowserPriceApplyTask {
       execute: asBool(json['execute']),
       reason: asString(json['reason']),
       actor: asString(json['actor']),
-      status: asString(json['status']),
+      status: asString(json['status']).trim().toLowerCase(),
       result: rawResult is Map
           ? BrowserPriceApplyTaskResult.fromJson(
               Map<String, dynamic>.from(rawResult))

@@ -25,6 +25,8 @@ enum ApiCachePolicy {
     '/api/ci',
     '/api/app-update/metrics',
     '/api/admin/daily-reports',
+    '/api/service-health',
+    '/api/menu-engineering/touchkey-tables',
     '/api/menu-workspace',
     '/api/price/browser-apply',
     '/api/price/browser-apply-history',

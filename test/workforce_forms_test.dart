@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:cafe_bridge_flutter/models/workforce_models.dart';
 import 'package:cafe_bridge_flutter/widgets/workforce_shift_forms.dart';
 import 'package:flutter/material.dart';
@@ -5,7 +7,7 @@ import 'package:flutter_test/flutter_test.dart';
 
 void main() {
   testWidgets('shift form displays mobile validation errors', (tester) async {
-    await tester.binding.setSurfaceSize(const Size(700, 1000));
+    await tester.binding.setSurfaceSize(const Size(360, 1000));
     addTearDown(() => tester.binding.setSurfaceSize(null));
     await tester.pumpWidget(MaterialApp(
       home: Scaffold(
@@ -59,6 +61,39 @@ void main() {
     expect(find.byKey(const Key('preset-form-error')), findsOneWidget);
     expect(find.textContaining('프리셋 이름'), findsOneWidget);
   });
+
+  testWidgets('shift preview is invalidated when inputs change',
+      (tester) async {
+    final preview = Completer<EmployeePayPreview>();
+    await tester.pumpWidget(MaterialApp(
+      home: Scaffold(
+        body: WorkforceShiftFormDialog(
+          workplaces: [_workplace()],
+          employees: [_employee()],
+          initialValue: const WorkforceShiftDraft(
+            workplaceId: 1,
+            employeeId: 2,
+            date: '2026-07-24',
+            startTime: '09:00',
+            endTime: '18:00',
+            breakMinutes: 60,
+          ),
+          editing: false,
+          onPreview: (_) => preview.future,
+        ),
+      ),
+    ));
+
+    await tester.tap(find.widgetWithText(OutlinedButton, '급여 미리보기'));
+    await tester.pump();
+    await tester.enterText(find.byKey(const Key('shift-end')), '17:00');
+    await tester.pump();
+    expect(find.widgetWithText(OutlinedButton, '급여 미리보기'), findsOneWidget);
+    preview.complete(_preview());
+    await tester.pump();
+
+    expect(find.byKey(const Key('shift-preview-result')), findsNothing);
+  });
 }
 
 Workplace _workplace() => Workplace.fromJson({
@@ -88,3 +123,17 @@ Employee _employee() => Employee.fromJson({
       'memo': '',
       'is_active': true,
     });
+
+EmployeePayPreview _preview() => const EmployeePayPreview(
+      workedMinutes: 480,
+      hourlyWage: 12000,
+      regularPay: 96000,
+      nightPremium: 0,
+      overtimePremium: 0,
+      holidayPremium: 0,
+      extraAmount: 0,
+      deductionAmount: 0,
+      grossPay: 96000,
+      taxEstimate: 1000,
+      netEstimate: 95000,
+    );

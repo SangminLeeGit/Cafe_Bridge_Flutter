@@ -138,6 +138,36 @@ void main() {
     expect(state.offlineMode, isTrue);
   });
 
+  test('service-health and touchkey payloads are never persisted', () async {
+    final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+    final baseUrl = 'http://127.0.0.1:${server.port}';
+    server.listen((request) async {
+      request.response.headers.contentType = ContentType.json;
+      request.response.write(json.encode({'ok': true}));
+      await request.response.close();
+    });
+    addTearDown(() => server.close(force: true));
+
+    FlutterSecureStorage.setMockInitialValues({});
+    SharedPreferences.setMockInitialValues({'api_base_url': baseUrl});
+    final state = AppState();
+    addTearDown(state.dispose);
+    await state.loadLocal(notify: false);
+
+    for (final endpoint in const [
+      '/api/service-health',
+      '/api/menu-engineering/touchkey-tables',
+    ]) {
+      await state.fetchMapParsed<bool>(
+        endpoint,
+        parser: (json) => json['ok'] == true,
+        cacheTtl: const Duration(hours: 1),
+      );
+    }
+
+    expect(state.cacheEntryCount, 0);
+  });
+
   test('keeps update metadata when an unauthenticated session clears its epoch',
       () async {
     final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);

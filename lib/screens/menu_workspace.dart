@@ -6,6 +6,7 @@ import 'package:provider/provider.dart';
 import '../core/async_request_guard.dart';
 import '../models/api_contracts.dart';
 import '../models/menu_workspace_models.dart';
+import '../models/product_identity.dart';
 import '../services/api.dart';
 import '../services/task_poller.dart';
 import '../state/app_state.dart';
@@ -32,24 +33,21 @@ class _ProductRow {
     this.category = '',
   });
 
-  factory _ProductRow.fromRegistration(Map<String, dynamic> j) => _ProductRow(
-        raw: Map<String, dynamic>.from(j),
-        itemCode: (j['상품코드'] ?? j['item_code'] ?? '').toString(),
-        itemName: (j['상품명'] ?? j['item_name'] ?? '').toString(),
-        salePrice: _parseInt(j['판매가'] ?? j['target_price'] ?? j['sale_price']),
-        category: [
-          (j['대분류명'] ?? j['major_category'] ?? '').toString(),
-          (j['중분류명'] ?? j['middle_category'] ?? '').toString(),
-        ].where((s) => s.isNotEmpty).join(' > '),
-      );
+  factory _ProductRow.fromRegistration(Map<String, dynamic> json) {
+    final identity = ProductIdentity.fromRegistrationJson(
+      json,
+      priceFields: const ['판매가', 'target_price', 'sale_price'],
+    );
+    return _ProductRow(
+      raw: Map<String, dynamic>.from(json),
+      itemCode: identity.code,
+      itemName: identity.name,
+      salePrice: identity.salePrice,
+      category: identity.category,
+    );
+  }
 
   bool get isLikelyOption => itemName.trim().startsWith('-->');
-
-  static int? _parseInt(dynamic v) {
-    if (v == null) return null;
-    if (v is int) return v;
-    return int.tryParse(v.toString().replaceAll(',', ''));
-  }
 }
 
 class _CategoryOptionCatalog {
@@ -972,6 +970,7 @@ class _ProductBrowserTabState extends State<_ProductBrowserTab>
               prefixIcon: const Icon(Icons.search),
               suffixIcon: _searchController.text.isNotEmpty
                   ? IconButton(
+                      tooltip: '검색어 지우기',
                       icon: const Icon(Icons.clear),
                       onPressed: () {
                         _searchController.clear();
@@ -1002,6 +1001,7 @@ class _ProductBrowserTabState extends State<_ProductBrowserTab>
               summary:
                   '${_source.toUpperCase()} · ${_freshnessLabel(_syncedAt)}',
               trailing: IconButton(
+                tooltip: '상품등록 새로고침',
                 onPressed: _refreshCurrent,
                 icon: const Icon(Icons.refresh, size: 18),
                 visualDensity: VisualDensity.compact,
@@ -2395,9 +2395,17 @@ class MenuEntryDetailScreen extends StatefulWidget {
 }
 
 class _MenuEntryDetailScreenState extends State<MenuEntryDetailScreen> {
+  late MenuEntry _entry;
+
+  @override
+  void initState() {
+    super.initState();
+    _entry = widget.entry;
+  }
+
   @override
   Widget build(BuildContext context) {
-    final e = widget.entry;
+    final e = _entry;
     final appState = context.read<AppState>();
     final canEdit = appState.hasOperatorAccess;
 
@@ -2411,8 +2419,9 @@ class _MenuEntryDetailScreenState extends State<MenuEntryDetailScreen> {
         actions: [
           if (canEdit)
             IconButton(
+              tooltip: '항목 편집',
               icon: const Icon(Icons.edit_outlined),
-              onPressed: () => _showStatusSheet(context, e),
+              onPressed: () => _showStatusSheet(e),
             ),
         ],
       ),
@@ -2499,23 +2508,25 @@ class _MenuEntryDetailScreenState extends State<MenuEntryDetailScreen> {
     );
   }
 
-  void _showStatusSheet(BuildContext context, MenuEntry e) {
+  Future<void> _showStatusSheet(MenuEntry entry) async {
     final appState = context.read<AppState>();
-    Navigator.of(context).push(
+    final updated = await Navigator.of(context).push<MenuEntry>(
       MaterialPageRoute(
         builder: (_) => AccessGate(
           minimumRole: UserRole.admin,
           fullScreen: true,
           child: _StatusUpdateSheet(
-            entry: e,
+            entry: entry,
             appState: appState,
-            onUpdated: () {
-              widget.onUpdated?.call();
-            },
           ),
         ),
       ),
     );
+    if (!mounted || updated == null) {
+      return;
+    }
+    setState(() => _entry = updated);
+    widget.onUpdated?.call();
   }
 }
 
@@ -2524,12 +2535,10 @@ class _MenuEntryDetailScreenState extends State<MenuEntryDetailScreen> {
 class _StatusUpdateSheet extends StatefulWidget {
   final MenuEntry entry;
   final AppState appState;
-  final VoidCallback onUpdated;
 
   const _StatusUpdateSheet({
     required this.entry,
     required this.appState,
-    required this.onUpdated,
   });
 
   @override
@@ -2578,8 +2587,12 @@ class _StatusUpdateSheetState extends State<_StatusUpdateSheet> {
         method: 'PATCH',
       );
       if (!mounted) return;
-      Navigator.of(context).pop();
-      widget.onUpdated();
+      Navigator.of(context).pop(
+        widget.entry.copyWith(
+          status: _selectedStatus,
+          targetPrice: _newTargetPrice,
+        ),
+      );
     } catch (e) {
       if (!mounted) return;
       setState(() {
@@ -2739,12 +2752,24 @@ class _WorkspaceInfoStrip extends StatelessWidget {
         borderRadius: BorderRadius.circular(12),
         border: Border.all(color: border),
       ),
-      child: Wrap(
-        spacing: 8,
-        runSpacing: 8,
-        crossAxisAlignment: WrapCrossAlignment.center,
-        children: [
-          Container(
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final details = Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(title,
+                  style: const TextStyle(
+                      fontSize: 12, fontWeight: FontWeight.w700)),
+              const SizedBox(height: 2),
+              Text(
+                error.isNotEmpty ? error : summary,
+                style: TextStyle(fontSize: 12, color: color),
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ],
+          );
+          final indicator = Container(
             width: 8,
             height: 8,
             decoration: BoxDecoration(
@@ -2755,27 +2780,35 @@ class _WorkspaceInfoStrip extends StatelessWidget {
                       : const Color(0xFF0D9488),
               shape: BoxShape.circle,
             ),
-          ),
-          const SizedBox(width: 10),
-          Expanded(
-            child: Column(
+          );
+          if (trailing != null && constraints.maxWidth < 360) {
+            return Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(title,
-                    style: const TextStyle(
-                        fontSize: 12, fontWeight: FontWeight.w700)),
-                const SizedBox(height: 2),
-                Text(
-                  error.isNotEmpty ? error : summary,
-                  style: TextStyle(fontSize: 12, color: color),
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
+                Row(
+                  children: [
+                    indicator,
+                    const SizedBox(width: 10),
+                    Expanded(child: details),
+                  ],
                 ),
+                const SizedBox(height: 8),
+                Align(alignment: Alignment.centerRight, child: trailing!),
               ],
-            ),
-          ),
-          if (trailing != null) trailing!,
-        ],
+            );
+          }
+          return Row(
+            children: [
+              indicator,
+              const SizedBox(width: 10),
+              Expanded(child: details),
+              if (trailing != null) ...[
+                const SizedBox(width: 8),
+                trailing!,
+              ],
+            ],
+          );
+        },
       ),
     );
   }
@@ -2847,6 +2880,7 @@ class _TaskHistoryHeader extends StatelessWidget {
         ],
         const SizedBox(width: 4),
         IconButton(
+          tooltip: '$label 새로고침',
           onPressed: onRefresh,
           icon: const Icon(Icons.refresh, size: 16),
           visualDensity: VisualDensity.compact,

@@ -5,10 +5,13 @@ import 'package:provider/provider.dart';
 
 import '../core/async_request_guard.dart';
 import '../models/api_contracts.dart';
+import '../models/product_identity.dart';
 import '../state/app_state.dart';
 import '../widgets/access_gate.dart';
 import '../widgets/panel.dart';
 import 'price_apply.dart';
+
+export '../models/product_identity.dart' show normalizeProductCode;
 
 class ProductLookupItem {
   final Map<String, dynamic> raw;
@@ -26,36 +29,15 @@ class ProductLookupItem {
   });
 
   factory ProductLookupItem.fromJson(Map<String, dynamic> json) {
-    final major = (json['대분류명'] ?? json['major_category'] ?? '').toString();
-    final middle = (json['중분류명'] ?? json['middle_category'] ?? '').toString();
+    final identity = ProductIdentity.fromRegistrationJson(json);
     return ProductLookupItem(
       raw: Map<String, dynamic>.from(json),
-      code: normalizeProductCode(
-        (json['상품코드'] ?? json['item_code'] ?? '').toString(),
-      ),
-      name: (json['상품명'] ?? json['item_name'] ?? '').toString(),
-      salePrice: _parsePrice(
-        json['판매가'] ?? json['sale_price'] ?? json['target_price'],
-      ),
-      category: [major, middle]
-          .map((value) => value.trim())
-          .where((value) => value.isNotEmpty)
-          .join(' > '),
+      code: identity.code,
+      name: identity.name,
+      salePrice: identity.salePrice,
+      category: identity.category,
     );
   }
-
-  static int? _parsePrice(dynamic value) {
-    if (value is int) return value;
-    return int.tryParse((value ?? '').toString().replaceAll(',', '').trim());
-  }
-}
-
-String normalizeProductCode(String value) {
-  final code = value.trim();
-  if (code.isNotEmpty && RegExp(r'^\d+$').hasMatch(code) && code.length < 6) {
-    return code.padLeft(6, '0');
-  }
-  return code;
 }
 
 class ProductLookupScreen extends StatefulWidget {

@@ -95,4 +95,20 @@ void main() {
     expect(snapshot.targets.single.responseTimeMs, 42);
     expect(snapshot.targets.single.checks['time_server'], isA<Map>());
   });
+
+  test('browser price task normalizes terminal statuses once', () {
+    final task = BrowserPriceApplyTask.fromJson({
+      'task_id': 'task-1',
+      'product_code': '000001',
+      'target_price': 4500,
+      'target_column': '판매가',
+      'execute': true,
+      'reason': 'test',
+      'actor': 'qa',
+      'status': 'SUCCEEDED ',
+    });
+
+    expect(task.status, 'succeeded');
+    expect(task.isFinished, isTrue);
+  });
 }

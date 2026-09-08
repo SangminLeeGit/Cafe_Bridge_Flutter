@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../core/async_request_guard.dart';
 import '../models/api_contracts.dart';
 import '../models/service_health_models.dart';
 import '../state/app_state.dart';
@@ -13,7 +14,8 @@ class ServiceHealthScreen extends StatefulWidget {
   State<ServiceHealthScreen> createState() => _ServiceHealthScreenState();
 }
 
-class _ServiceHealthScreenState extends State<ServiceHealthScreen> {
+class _ServiceHealthScreenState extends State<ServiceHealthScreen>
+    with AsyncRequestGuard<ServiceHealthScreen> {
   List<ServiceHealthSetting> _settings = const [];
   Map<String, ServiceHealthTarget> _targets = const {};
   bool _loading = true;
@@ -21,6 +23,7 @@ class _ServiceHealthScreenState extends State<ServiceHealthScreen> {
   String _message = '';
   String? _checkingKey;
   bool _saving = false;
+  bool _hasUnsavedSettings = false;
 
   @override
   void initState() {
@@ -29,7 +32,8 @@ class _ServiceHealthScreenState extends State<ServiceHealthScreen> {
   }
 
   Future<void> _load({bool force = false}) async {
-    if (!mounted) return;
+    if (!mounted || _checkingKey != null || _saving) return;
+    final request = beginAsyncRequest();
     setState(() {
       _loading = true;
       _error = '';
@@ -44,11 +48,14 @@ class _ServiceHealthScreenState extends State<ServiceHealthScreen> {
                 cacheTtl: Duration.zero,
                 allowStaleOnError: false,
               );
-      if (!mounted) return;
-      _applySnapshot(result.data);
+      if (!isCurrentAsyncRequest(request)) return;
+      _applySnapshot(
+        result.data,
+        includeSettings: !_hasUnsavedSettings,
+      );
       setState(() => _loading = false);
     } catch (error) {
-      if (!mounted) return;
+      if (!isCurrentAsyncRequest(request)) return;
       setState(() {
         _loading = false;
         _error = error.toString();
@@ -56,8 +63,13 @@ class _ServiceHealthScreenState extends State<ServiceHealthScreen> {
     }
   }
 
-  void _applySnapshot(ServiceHealthSnapshot snapshot) {
-    _settings = snapshot.settings;
+  void _applySnapshot(
+    ServiceHealthSnapshot snapshot, {
+    required bool includeSettings,
+  }) {
+    if (includeSettings) {
+      _settings = snapshot.settings;
+    }
     _targets = {
       for (final target in snapshot.targets) target.key: target,
     };
@@ -69,11 +81,13 @@ class _ServiceHealthScreenState extends State<ServiceHealthScreen> {
         for (final setting in _settings)
           if (setting.key == key) next else setting,
       ];
+      _hasUnsavedSettings = true;
     });
   }
 
   Future<void> _check([String? key]) async {
-    if (_checkingKey != null) return;
+    if (_checkingKey != null || _loading || _saving) return;
+    final request = beginAsyncRequest();
     setState(() {
       _checkingKey = key ?? 'all';
       _error = '';
@@ -85,21 +99,29 @@ class _ServiceHealthScreenState extends State<ServiceHealthScreen> {
             body: key == null ? null : {'target': key},
           );
       final snapshot = ServiceHealthSnapshot.fromJson(data);
-      if (!mounted) return;
-      _applySnapshot(snapshot);
+      if (!isCurrentAsyncRequest(request)) return;
+      _applySnapshot(snapshot, includeSettings: false);
       setState(() {
         _message = key == null ? '전체 상태를 확인했습니다.' : '상태를 확인했습니다.';
       });
     } catch (error) {
-      if (!mounted) return;
+      if (!isCurrentAsyncRequest(request)) return;
       setState(() => _error = error.toString());
     } finally {
-      if (mounted) setState(() => _checkingKey = null);
+      if (isCurrentAsyncRequest(request)) {
+        setState(() => _checkingKey = null);
+      }
     }
   }
 
   Future<void> _save() async {
-    if (_saving || !context.read<AppState>().hasAdminAccess) return;
+    if (_saving ||
+        _checkingKey != null ||
+        _loading ||
+        !context.read<AppState>().hasAdminAccess) {
+      return;
+    }
+    final request = beginAsyncRequest();
     setState(() {
       _saving = true;
       _error = '';
@@ -114,17 +136,20 @@ class _ServiceHealthScreenState extends State<ServiceHealthScreen> {
         },
       );
       final rows = requireListOfMaps(data, 'settings');
-      if (!mounted) return;
+      if (!isCurrentAsyncRequest(request)) return;
       setState(() {
         _settings =
             rows.map(ServiceHealthSetting.fromJson).toList(growable: false);
+        _hasUnsavedSettings = false;
         _message = '상태 확인 설정을 저장했습니다.';
       });
     } catch (error) {
-      if (!mounted) return;
+      if (!isCurrentAsyncRequest(request)) return;
       setState(() => _error = error.toString());
     } finally {
-      if (mounted) setState(() => _saving = false);
+      if (isCurrentAsyncRequest(request)) {
+        setState(() => _saving = false);
+      }
     }
   }
 
@@ -138,7 +163,9 @@ class _ServiceHealthScreenState extends State<ServiceHealthScreen> {
         actions: [
           IconButton(
             tooltip: '새로고침',
-            onPressed: _loading ? null : () => _load(force: true),
+            onPressed: _loading || _checkingKey != null || _saving
+                ? null
+                : () => _load(force: true),
             icon: const Icon(Icons.refresh),
           ),
         ],
@@ -171,7 +198,9 @@ class _ServiceHealthScreenState extends State<ServiceHealthScreen> {
                         const SizedBox(height: 12),
                         FilledButton.icon(
                           onPressed:
-                              _checkingKey == null ? () => _check() : null,
+                              _checkingKey == null && !_loading && !_saving
+                                  ? () => _check()
+                                  : null,
                           icon: const Icon(Icons.sync),
                           label: Text(_checkingKey == 'all'
                               ? '전체 확인 중...'
@@ -192,6 +221,7 @@ class _ServiceHealthScreenState extends State<ServiceHealthScreen> {
                           Padding(
                             padding: const EdgeInsets.only(bottom: 12),
                             child: _TargetCard(
+                              key: ValueKey(setting.key),
                               setting: setting,
                               target: _targets[setting.key],
                               editable: isAdmin,
@@ -204,7 +234,10 @@ class _ServiceHealthScreenState extends State<ServiceHealthScreen> {
                         if (isAdmin) ...[
                           const SizedBox(height: 4),
                           OutlinedButton.icon(
-                            onPressed: _saving ? null : _save,
+                            onPressed:
+                                _saving || _checkingKey != null || _loading
+                                    ? null
+                                    : _save,
                             icon: const Icon(Icons.save_outlined),
                             label: Text(_saving ? '저장 중...' : '설정 저장'),
                           ),
@@ -221,7 +254,7 @@ class _ServiceHealthScreenState extends State<ServiceHealthScreen> {
   }
 }
 
-class _TargetCard extends StatelessWidget {
+class _TargetCard extends StatefulWidget {
   final ServiceHealthSetting setting;
   final ServiceHealthTarget? target;
   final bool editable;
@@ -230,6 +263,7 @@ class _TargetCard extends StatelessWidget {
   final VoidCallback onCheck;
 
   const _TargetCard({
+    super.key,
     required this.setting,
     required this.target,
     required this.editable,
@@ -237,6 +271,67 @@ class _TargetCard extends StatelessWidget {
     required this.onChanged,
     required this.onCheck,
   });
+
+  @override
+  State<_TargetCard> createState() => _TargetCardState();
+}
+
+class _TargetCardState extends State<_TargetCard> {
+  late final TextEditingController _endpointController;
+  late final TextEditingController _timeoutController;
+  late final TextEditingController _intervalController;
+
+  @override
+  void initState() {
+    super.initState();
+    _endpointController = TextEditingController(text: widget.setting.endpoint);
+    _timeoutController =
+        TextEditingController(text: widget.setting.timeoutMs.toString());
+    _intervalController =
+        TextEditingController(text: widget.setting.intervalSeconds.toString());
+  }
+
+  @override
+  void didUpdateWidget(covariant _TargetCard oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    _syncController(
+      _endpointController,
+      oldWidget.setting.endpoint,
+      widget.setting.endpoint,
+    );
+    _syncController(
+      _timeoutController,
+      oldWidget.setting.timeoutMs.toString(),
+      widget.setting.timeoutMs.toString(),
+    );
+    _syncController(
+      _intervalController,
+      oldWidget.setting.intervalSeconds.toString(),
+      widget.setting.intervalSeconds.toString(),
+    );
+  }
+
+  void _syncController(
+    TextEditingController controller,
+    String previousValue,
+    String nextValue,
+  ) {
+    if (previousValue != nextValue && controller.text == previousValue) {
+      controller.value = controller.value.copyWith(
+        text: nextValue,
+        selection: TextSelection.collapsed(offset: nextValue.length),
+        composing: TextRange.empty,
+      );
+    }
+  }
+
+  @override
+  void dispose() {
+    _endpointController.dispose();
+    _timeoutController.dispose();
+    _intervalController.dispose();
+    super.dispose();
+  }
 
   Color _stateColor(String state) {
     if (state == 'Alive') return const Color(0xFF15803D);
@@ -246,6 +341,8 @@ class _TargetCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final setting = widget.setting;
+    final target = widget.target;
     final state = target?.state ?? 'Unknown';
     final dependent = setting.componentKey != null;
     final endpoint =
@@ -280,8 +377,8 @@ class _TargetCard extends StatelessWidget {
                 ),
                 IconButton(
                   tooltip: '상태 확인',
-                  onPressed: checking ? null : onCheck,
-                  icon: checking
+                  onPressed: widget.checking ? null : widget.onCheck,
+                  icon: widget.checking
                       ? const SizedBox(
                           width: 18,
                           height: 18,
@@ -305,7 +402,7 @@ class _TargetCard extends StatelessWidget {
             const SizedBox(height: 4),
             Text(endpoint,
                 style: const TextStyle(fontSize: 12, color: Color(0xFF334155))),
-            if (editable) ...[
+            if (widget.editable) ...[
               const SizedBox(height: 6),
               SwitchListTile.adaptive(
                 contentPadding: EdgeInsets.zero,
@@ -314,28 +411,32 @@ class _TargetCard extends StatelessWidget {
                 value: setting.enabled,
                 onChanged: dependent
                     ? null
-                    : (value) => onChanged(setting.copyWith(enabled: value)),
+                    : (value) => widget.onChanged(
+                          setting.copyWith(enabled: value),
+                        ),
               ),
               if (!dependent)
                 TextFormField(
-                  initialValue: setting.endpoint,
+                  controller: _endpointController,
                   decoration: const InputDecoration(labelText: '헬스체크 URL'),
                   keyboardType: TextInputType.url,
                   onChanged: (value) =>
-                      onChanged(setting.copyWith(endpoint: value)),
+                      widget.onChanged(setting.copyWith(endpoint: value)),
                 ),
               const SizedBox(height: 8),
               Row(
                 children: [
                   Expanded(
                     child: TextFormField(
-                      initialValue: setting.timeoutMs.toString(),
+                      controller: _timeoutController,
                       decoration: const InputDecoration(labelText: '타임아웃 (ms)'),
                       keyboardType: TextInputType.number,
                       onChanged: (value) {
                         final parsed = int.tryParse(value);
                         if (parsed != null) {
-                          onChanged(setting.copyWith(timeoutMs: parsed));
+                          widget.onChanged(
+                            setting.copyWith(timeoutMs: parsed),
+                          );
                         }
                       },
                     ),
@@ -343,13 +444,15 @@ class _TargetCard extends StatelessWidget {
                   const SizedBox(width: 8),
                   Expanded(
                     child: TextFormField(
-                      initialValue: setting.intervalSeconds.toString(),
+                      controller: _intervalController,
                       decoration: const InputDecoration(labelText: '주기 (초)'),
                       keyboardType: TextInputType.number,
                       onChanged: (value) {
                         final parsed = int.tryParse(value);
                         if (parsed != null) {
-                          onChanged(setting.copyWith(intervalSeconds: parsed));
+                          widget.onChanged(
+                            setting.copyWith(intervalSeconds: parsed),
+                          );
                         }
                       },
                     ),

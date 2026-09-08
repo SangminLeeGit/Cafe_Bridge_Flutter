@@ -142,6 +142,8 @@ class AppState extends ChangeNotifier {
   bool _remoteStateLoaded = false;
   bool _cacheStoreReady = false;
   Future<void>? _localLoadInFlight;
+  Future<void> _cacheMutationQueue = Future<void>.value();
+  Future<void> _sessionCookiePersistence = Future<void>.value();
   bool _disposed = false;
   int _sessionEpoch = 0;
   int _requestSequence = 0;
@@ -626,17 +628,25 @@ class AppState extends ChangeNotifier {
         return;
       }
       final payload = response.data;
-      _setupRequired = payload['setup_required'] == true;
-      _bootstrapConfigured = payload['bootstrap_configured'] == true;
-      _lastSessionSyncAt = DateTime.now();
 
       if (response.sessionCookie != null &&
           response.sessionCookie!.isNotEmpty) {
-        await _acceptSessionCookie(
+        final accepted = await _acceptSessionCookie(
           response.sessionCookie!,
           requestSequence: requestContext.sequence,
+          requestContext: requestContext,
         );
+        if (!accepted) {
+          return;
+        }
       }
+      if (!_isCurrentRequest(requestContext)) {
+        return;
+      }
+
+      _setupRequired = payload['setup_required'] == true;
+      _bootstrapConfigured = payload['bootstrap_configured'] == true;
+      _lastSessionSyncAt = DateTime.now();
 
       final user = payload['user'];
       if (payload['authenticated'] == true && user is Map) {
@@ -644,8 +654,13 @@ class AppState extends ChangeNotifier {
         final nextRole = user['role']?.toString();
         identityChanged = _loginId != nextLoginId || _role != nextRole;
         if (identityChanged) {
-          await _cacheStore.clearScope(requestContext.scope);
+          await _enqueueCacheMutation(
+            () => _cacheStore.clearScope(requestContext.scope),
+          );
           await _activeTaskStore.removeScope(requestContext.scope);
+          if (!_isCurrentRequest(requestContext)) {
+            return;
+          }
           _sessionEpoch += 1;
         }
         _authenticated = true;
@@ -725,16 +740,28 @@ class AppState extends ChangeNotifier {
         '${nextLoginId?.trim().isNotEmpty == true ? nextLoginId!.trim() : 'guest'}@${requestContext.baseUrl}';
     if (previousScope != nextScope) {
       await _activeTaskStore.removeScope(previousScope);
-      await _cacheStore.clearScope(previousScope);
+      await _enqueueCacheMutation(
+        () => _cacheStore.clearScope(previousScope),
+      );
+    }
+    if (!_isCurrentSessionEpoch(requestEpoch, requestContext.baseUrl)) {
+      throw const ApiException('로그인 요청이 만료되었습니다. 다시 시도해 주세요.');
     }
     _authenticated = true;
     _offlineMode = false;
     _rememberMe = useRememberMe;
     await _prefs.setBool(_rememberMeKey, _rememberMe);
-    await _acceptSessionCookie(
+    if (!_isCurrentSessionEpoch(requestEpoch, requestContext.baseUrl)) {
+      throw const ApiException('로그인 요청이 만료되었습니다. 다시 시도해 주세요.');
+    }
+    final accepted = await _acceptSessionCookie(
       response.sessionCookie!,
       requestSequence: requestContext.sequence,
     );
+    if (!accepted ||
+        !_isCurrentSessionEpoch(requestEpoch, requestContext.baseUrl)) {
+      throw const ApiException('로그인 요청이 만료되었습니다. 다시 시도해 주세요.');
+    }
     _csrfToken = response.data['csrf_token']?.toString();
     _loginId = nextLoginId;
     _role = user['role']?.toString();
@@ -750,12 +777,12 @@ class AppState extends ChangeNotifier {
   Future<void> setRememberMe(bool value) async {
     if (_rememberMe == value) {
       if (value && _sessionCookie?.isNotEmpty == true) {
-        await _secureStorage.write(
-          key: _sessionCookieKey,
-          value: _sessionCookie,
+        await _persistSessionCookie(
+          _sessionCookie,
+          persist: true,
         );
       } else if (!value) {
-        await _secureStorage.delete(key: _sessionCookieKey);
+        await _persistSessionCookie(null, persist: false);
       }
       if (value && _loginId?.isNotEmpty == true) {
         await _persistAuthIdentity();
@@ -765,12 +792,12 @@ class AppState extends ChangeNotifier {
     _rememberMe = value;
     await _prefs.setBool(_rememberMeKey, value);
     if (value && _sessionCookie?.isNotEmpty == true) {
-      await _secureStorage.write(
-        key: _sessionCookieKey,
-        value: _sessionCookie,
+      await _persistSessionCookie(
+        _sessionCookie,
+        persist: true,
       );
     } else if (!value) {
-      await _secureStorage.delete(key: _sessionCookieKey);
+      await _persistSessionCookie(null, persist: false);
       await _prefs.remove(_lastLoginIdKey);
       await _prefs.remove(_lastRoleKey);
     }
@@ -782,7 +809,7 @@ class AppState extends ChangeNotifier {
 
   Future<void> logout() async {
     final previousScope = _cacheScope;
-    _sessionEpoch += 1;
+    final logoutEpoch = ++_sessionEpoch;
     _stopKeepAlive();
     try {
       await _postJsonWithAuth('/api/auth/logout');
@@ -790,6 +817,9 @@ class AppState extends ChangeNotifier {
       // Clear the local session even if the server is unreachable.
     }
 
+    if (!_isCurrentSessionEpoch(logoutEpoch, _apiBaseUrl)) {
+      return;
+    }
     await _clearAuthState(scopeToClear: previousScope);
     _refreshCacheCount();
     _notifySafely();
@@ -878,7 +908,7 @@ class AppState extends ChangeNotifier {
   }
 
   Future<int> clearCache() async {
-    final removed = await _cacheStore.clearAll();
+    final removed = await _enqueueCacheMutation(_cacheStore.clearAll);
     _refreshCacheCount();
     _notifySafely();
     return removed;
@@ -960,20 +990,35 @@ class AppState extends ChangeNotifier {
         _offlineMode = false;
         if (response.sessionCookie != null &&
             response.sessionCookie!.isNotEmpty) {
-          await _acceptSessionCookie(
+          final accepted = await _acceptSessionCookie(
             response.sessionCookie!,
             requestSequence: requestContext.sequence,
+            requestContext: requestContext,
           );
+          if (!accepted) {
+            return CachedDataResult<T>(
+              data: parsed,
+              fromCache: false,
+              cachedAt: DateTime.now(),
+            );
+          }
         }
-        await _cacheStore.write(
-          scope: requestContext.scope,
-          baseUrl: requestContext.baseUrl,
-          endpoint: endpoint,
-          params: params,
-          data: response.data,
-          policy: effectiveCachePolicy,
-        );
-        _refreshCacheCount();
+        await _enqueueCacheMutation(() {
+          if (!_isCurrentRequest(requestContext)) {
+            return Future<void>.value();
+          }
+          return _cacheStore.write(
+            scope: requestContext.scope,
+            baseUrl: requestContext.baseUrl,
+            endpoint: endpoint,
+            params: params,
+            data: response.data,
+            policy: effectiveCachePolicy,
+          );
+        });
+        if (_isCurrentRequest(requestContext)) {
+          _refreshCacheCount();
+        }
       }
       return CachedDataResult<T>(
         data: parsed,
@@ -1046,6 +1091,7 @@ class AppState extends ChangeNotifier {
         await _acceptSessionCookie(
           response.sessionCookie!,
           requestSequence: requestContext.sequence,
+          requestContext: requestContext,
         );
       }
       return response;
@@ -1094,20 +1140,22 @@ class AppState extends ChangeNotifier {
     }
   }
 
-  Future<void> _acceptSessionCookie(
+  Future<bool> _acceptSessionCookie(
     String cookie, {
     required int requestSequence,
+    _RequestContext? requestContext,
   }) async {
-    if (requestSequence < _lastCookieRequestSequence || _disposed) {
-      return;
+    if (requestSequence < _lastCookieRequestSequence ||
+        _disposed ||
+        (requestContext != null && !_isCurrentRequest(requestContext))) {
+      return false;
     }
     _lastCookieRequestSequence = requestSequence;
     _sessionCookie = cookie;
-    if (_rememberMe) {
-      await _secureStorage.write(key: _sessionCookieKey, value: cookie);
-    } else {
-      await _secureStorage.delete(key: _sessionCookieKey);
-    }
+    await _persistSessionCookie(cookie, persist: _rememberMe);
+    return !_disposed &&
+        requestSequence == _lastCookieRequestSequence &&
+        (requestContext == null || _isCurrentRequest(requestContext));
   }
 
   Future<void> _clearAuthState({
@@ -1124,11 +1172,13 @@ class AppState extends ChangeNotifier {
     _loginId = null;
     _role = null;
     _lastSessionSyncAt = null;
-    await _secureStorage.delete(key: _sessionCookieKey);
+    await _persistSessionCookie(null, persist: false);
     await _prefs.remove(_lastLoginIdKey);
     await _prefs.remove(_lastRoleKey);
     if (_localStateLoaded) {
-      await _cacheStore.clearScope(previousScope);
+      await _enqueueCacheMutation(
+        () => _cacheStore.clearScope(previousScope),
+      );
       await _activeTaskStore.removeScope(previousScope);
       _refreshCacheCount();
     }
@@ -1216,6 +1266,47 @@ class AppState extends ChangeNotifier {
         requestContext.epoch == _sessionEpoch &&
         requestContext.baseUrl == _apiBaseUrl &&
         requestContext.scope == _cacheScope;
+  }
+
+  bool _isCurrentSessionEpoch(int epoch, String baseUrl) {
+    return !_disposed && epoch == _sessionEpoch && baseUrl == _apiBaseUrl;
+  }
+
+  Future<T> _enqueueCacheMutation<T>(Future<T> Function() operation) {
+    final next = _cacheMutationQueue.then<T>(
+      (_) => operation(),
+      onError: (_, __) => operation(),
+    );
+    _cacheMutationQueue = next.then<void>(
+      (_) {},
+      onError: (_, __) {},
+    );
+    return next;
+  }
+
+  Future<void> _persistSessionCookie(
+    String? cookie, {
+    required bool persist,
+  }) {
+    final next = _sessionCookiePersistence.then<void>(
+      (_) => _writeSessionCookie(cookie, persist: persist),
+      onError: (_, __) => _writeSessionCookie(cookie, persist: persist),
+    );
+    _sessionCookiePersistence = next.then<void>(
+      (_) {},
+      onError: (_, __) {},
+    );
+    return next;
+  }
+
+  Future<void> _writeSessionCookie(
+    String? cookie, {
+    required bool persist,
+  }) {
+    if (persist && cookie?.isNotEmpty == true) {
+      return _secureStorage.write(key: _sessionCookieKey, value: cookie);
+    }
+    return _secureStorage.delete(key: _sessionCookieKey);
   }
 
   bool _isCurrentAppUpdateRequest(_RequestContext requestContext) {

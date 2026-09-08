@@ -2095,202 +2095,41 @@ class _EmployeesTabState extends State<_EmployeesTab>
   }
 
   Future<void> _openPayPreview(Employee employee) async {
+    final appState = context.read<AppState>();
+    final previewDate = ApiService.kstNow();
     await showDialog<void>(
       context: context,
-      builder: (dialogContext) {
-        String startAt = '09:00';
-        String endAt = '18:00';
-        int breakMinutes = 60;
-        String leaveType = 'none';
-        String holidayType = 'none';
-        int extraAmount = 0;
-        int deductionAmount = 0;
-        EmployeePayPreviewData? preview;
-        String? error;
-        late StateSetter setModalState;
-        return AlertDialog(
-          title: Text('${employee.name} 급여 미리보기'),
-          content: StatefulBuilder(
-            builder: (context, stateSetter) {
-              setModalState = stateSetter;
-              return SizedBox(
-                width: 520,
-                child: SingleChildScrollView(
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Row(
-                        children: [
-                          Expanded(
-                              child: TextFormField(
-                                  initialValue: startAt,
-                                  decoration:
-                                      const InputDecoration(labelText: '시작'),
-                                  onChanged: (value) => startAt = value)),
-                          const SizedBox(width: 12),
-                          Expanded(
-                              child: TextFormField(
-                                  initialValue: endAt,
-                                  decoration:
-                                      const InputDecoration(labelText: '종료'),
-                                  onChanged: (value) => endAt = value)),
-                        ],
-                      ),
-                      Row(
-                        children: [
-                          Expanded(
-                              child: TextFormField(
-                                  initialValue: breakMinutes.toString(),
-                                  keyboardType: TextInputType.number,
-                                  decoration:
-                                      const InputDecoration(labelText: '휴게(분)'),
-                                  onChanged: (value) => breakMinutes =
-                                      int.tryParse(value) ?? breakMinutes)),
-                          const SizedBox(width: 12),
-                          Expanded(
-                              child: TextFormField(
-                                  initialValue: extraAmount.toString(),
-                                  keyboardType: TextInputType.number,
-                                  decoration:
-                                      const InputDecoration(labelText: '추가 지급'),
-                                  onChanged: (value) => extraAmount =
-                                      int.tryParse(value) ?? extraAmount)),
-                        ],
-                      ),
-                      Row(
-                        children: [
-                          Expanded(
-                              child: TextFormField(
-                                  initialValue: deductionAmount.toString(),
-                                  keyboardType: TextInputType.number,
-                                  decoration:
-                                      const InputDecoration(labelText: '추가 차감'),
-                                  onChanged: (value) => deductionAmount =
-                                      int.tryParse(value) ?? deductionAmount)),
-                          const SizedBox(width: 12),
-                          Expanded(
-                            child: DropdownButtonFormField<String>(
-                              initialValue: leaveType,
-                              decoration:
-                                  const InputDecoration(labelText: '휴무 타입'),
-                              items: const [
-                                DropdownMenuItem(
-                                    value: 'none', child: Text('정상근무')),
-                                DropdownMenuItem(
-                                    value: 'vacation', child: Text('휴가')),
-                                DropdownMenuItem(
-                                    value: 'absent', child: Text('결근')),
-                                DropdownMenuItem(
-                                    value: 'day_off', child: Text('휴무')),
-                                DropdownMenuItem(
-                                    value: 'paid_day_off', child: Text('유급휴무')),
-                                DropdownMenuItem(
-                                    value: 'substitute', child: Text('대타')),
-                              ],
-                              onChanged: (value) => setModalState(
-                                  () => leaveType = value ?? leaveType),
-                            ),
-                          ),
-                        ],
-                      ),
-                      DropdownButtonFormField<String>(
-                        initialValue: holidayType,
-                        decoration: const InputDecoration(labelText: '휴일 타입'),
-                        items: const [
-                          DropdownMenuItem(value: 'none', child: Text('일반일')),
-                          DropdownMenuItem(value: 'weekend', child: Text('주말')),
-                          DropdownMenuItem(value: 'public', child: Text('공휴일')),
-                          DropdownMenuItem(
-                              value: 'custom', child: Text('기타 휴일')),
-                        ],
-                        onChanged: (value) => setModalState(
-                            () => holidayType = value ?? holidayType),
-                      ),
-                      if (error != null)
-                        Text(error!, style: const TextStyle(color: Colors.red)),
-                      if (preview != null) ...[
-                        const SizedBox(height: 12),
-                        _MetricGrid(cards: [
-                          StatCard(
-                              label: '세전',
-                              value: _won(preview!.preview.grossPay),
-                              accent: true),
-                          StatCard(
-                              label: '세금',
-                              value: _won(preview!.preview.taxEstimate)),
-                          StatCard(
-                              label: '세후',
-                              value: _won(preview!.preview.netEstimate)),
-                        ]),
-                      ],
-                    ],
-                  ),
-                ),
-              );
+      builder: (_) => EmployeePayPreviewDialog(
+        employee: employee,
+        date: previewDate,
+        onPreview: (draft) async {
+          final payload = await appState.postJson(
+            '/api/workforce/employees/${employee.id}/pay-preview',
+            body: {
+              'start_at': '${draft.date}T${draft.startTime}',
+              'end_at': '${draft.date}T${draft.endTime}',
+              'break_minutes': draft.breakMinutes,
+              'leave_type': draft.leaveType,
+              'holiday_type': draft.holidayType,
+              'adjustments': [
+                if (draft.extraAmount > 0)
+                  {
+                    'kind': 'extra',
+                    'label': '추가 지급',
+                    'amount': draft.extraAmount,
+                  },
+                if (draft.deductionAmount > 0)
+                  {
+                    'kind': 'deduction',
+                    'label': '추가 차감',
+                    'amount': draft.deductionAmount,
+                  },
+              ],
             },
-          ),
-          actions: [
-            TextButton(
-                onPressed: () => Navigator.pop(dialogContext),
-                child: const Text('닫기')),
-            FilledButton(
-              onPressed: () async {
-                try {
-                  final draft = WorkforceShiftDraft(
-                    workplaceId: employee.workplaceId,
-                    employeeId: employee.id,
-                    date: _formatDate(ApiService.kstNow()),
-                    startTime: startAt,
-                    endTime: endAt,
-                    breakMinutes: breakMinutes,
-                    leaveType: leaveType,
-                    holidayType: holidayType,
-                    extraAmount: extraAmount,
-                    deductionAmount: deductionAmount,
-                  );
-                  final validationError = draft.validate();
-                  if (validationError != null) {
-                    setModalState(() => error = validationError);
-                    return;
-                  }
-                  final payload = await context.read<AppState>().postJson(
-                    '/api/workforce/employees/${employee.id}/pay-preview',
-                    body: {
-                      'start_at':
-                          '${_formatDate(ApiService.kstNow())}T$startAt',
-                      'end_at': '${_formatDate(ApiService.kstNow())}T$endAt',
-                      'break_minutes': breakMinutes,
-                      'leave_type': leaveType,
-                      'holiday_type': holidayType,
-                      'adjustments': [
-                        if (extraAmount > 0)
-                          {
-                            'kind': 'extra',
-                            'label': '추가 지급',
-                            'amount': extraAmount
-                          },
-                        if (deductionAmount > 0)
-                          {
-                            'kind': 'deduction',
-                            'label': '추가 차감',
-                            'amount': deductionAmount
-                          },
-                      ],
-                    },
-                  );
-                  setModalState(() {
-                    preview = EmployeePayPreviewData.fromJson(payload);
-                    error = null;
-                  });
-                } catch (err) {
-                  setModalState(() => error = err.toString());
-                }
-              },
-              child: const Text('계산'),
-            ),
-          ],
-        );
-      },
+          );
+          return EmployeePayPreviewData.fromJson(payload);
+        },
+      ),
     );
   }
 

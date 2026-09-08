@@ -22,6 +22,7 @@ class _TouchkeyScreenState extends State<TouchkeyScreen>
   bool _isLoading = false;
   String _error = '';
   _TouchkeyViewMode _viewMode = _TouchkeyViewMode.map;
+  Map<String, String>? _selectedClass;
   final Map<String, TouchkeyPayload> _touchkeyCache =
       <String, TouchkeyPayload>{};
 
@@ -54,17 +55,21 @@ class _TouchkeyScreenState extends State<TouchkeyScreen>
     }
   }
 
-  Future<void> _load([
+  Future<void> _load({
     Map<String, String>? selectedClass,
-  ]) async {
+    bool force = false,
+  }) async {
     if (!mounted) return;
     final request = beginAsyncRequest();
     const nextProgram = 'touchkey';
+    final requestedClass = selectedClass ?? _selectedClass;
     final cachedPayload =
-        _touchkeyCache[_touchkeyCacheKey(nextProgram, selectedClass)];
-    if (cachedPayload != null) {
+        _touchkeyCache[_touchkeyCacheKey(nextProgram, requestedClass)];
+    if (!force && cachedPayload != null) {
       setState(() {
         _data = cachedPayload;
+        _selectedClass =
+            _classSelection(cachedPayload.selectedClass) ?? requestedClass;
         _isLoading = false;
         _error = '';
       });
@@ -81,10 +86,10 @@ class _TouchkeyScreenState extends State<TouchkeyScreen>
                 params: {
                   'program': nextProgram,
                   'row_limit': 120,
-                  if ((selectedClass?['분류코드'] ?? '').trim().isNotEmpty)
-                    'class_code': selectedClass!['분류코드']!.trim(),
-                  if ((selectedClass?['순번'] ?? '').trim().isNotEmpty)
-                    'sort_value': selectedClass!['순번']!.trim(),
+                  if ((requestedClass?['분류코드'] ?? '').trim().isNotEmpty)
+                    'class_code': requestedClass!['분류코드']!.trim(),
+                  if ((requestedClass?['순번'] ?? '').trim().isNotEmpty)
+                    'sort_value': requestedClass!['순번']!.trim(),
                 },
                 parser: TouchkeyPayload.fromJson,
                 cacheTtl: Duration.zero,
@@ -96,10 +101,12 @@ class _TouchkeyScreenState extends State<TouchkeyScreen>
       _storeTouchkeyCache(
         response.data,
         requestedProgramKey: nextProgram,
-        requestedClass: selectedClass,
+        requestedClass: requestedClass,
       );
       setState(() {
         _data = response.data;
+        _selectedClass =
+            _classSelection(response.data.selectedClass) ?? requestedClass;
       });
     } catch (error) {
       if (!isCurrentAsyncRequest(request)) {
@@ -116,6 +123,15 @@ class _TouchkeyScreenState extends State<TouchkeyScreen>
         });
       }
     }
+  }
+
+  Map<String, String>? _classSelection(Map<String, dynamic> value) {
+    final code = value['분류코드']?.toString().trim() ?? '';
+    final sortValue = value['순번']?.toString().trim() ?? '';
+    if (code.isEmpty && sortValue.isEmpty) {
+      return null;
+    }
+    return {'분류코드': code, '순번': sortValue};
   }
 
   @override
@@ -137,7 +153,9 @@ class _TouchkeyScreenState extends State<TouchkeyScreen>
             style: TextStyle(fontWeight: FontWeight.w700)),
         actions: [
           IconButton(
-            onPressed: _isLoading ? null : () => _load(),
+            onPressed: _isLoading
+                ? null
+                : () => _load(selectedClass: _selectedClass, force: true),
             icon: const Icon(Icons.refresh),
             tooltip: '새로고침',
           ),
@@ -158,7 +176,9 @@ class _TouchkeyScreenState extends State<TouchkeyScreen>
                 title: '터치키 데이터를 불러오지 못했습니다.',
                 message: _error,
                 action: FilledButton(
-                  onPressed: _isLoading ? null : () => _load(),
+                  onPressed: _isLoading
+                      ? null
+                      : () => _load(selectedClass: _selectedClass, force: true),
                   child: const Text('다시 시도'),
                 ),
               ),
@@ -198,7 +218,8 @@ class _TouchkeyScreenState extends State<TouchkeyScreen>
                 _TouchkeyMapView(
                   data: data,
                   isLoading: _isLoading,
-                  onSelectClass: (selectedClass) => _load(selectedClass),
+                  onSelectClass: (selectedClass) =>
+                      _load(selectedClass: selectedClass),
                 )
               else
                 _TouchkeyExplorerView(data: data),
@@ -942,7 +963,10 @@ class _TouchkeyExplorerViewState extends State<_TouchkeyExplorerView> {
   @override
   void didUpdateWidget(covariant _TouchkeyExplorerView oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (oldWidget.data.programKey != widget.data.programKey) {
+    final activeGridExists =
+        widget.data.tables.any((table) => table.gridKey == _activeGridKey);
+    if (oldWidget.data.programKey != widget.data.programKey ||
+        !activeGridExists) {
       _activeGridKey =
           widget.data.tables.isEmpty ? '' : widget.data.tables.first.gridKey;
       _searchController.clear();

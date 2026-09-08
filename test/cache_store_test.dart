@@ -22,6 +22,8 @@ void main() {
       '/api/ci/flutter-apk/jobs/1',
       '/api/app-update/metrics',
       '/api/admin/daily-reports/2026-07-24',
+      '/api/service-health',
+      '/api/menu-engineering/touchkey-tables?program=touchkey',
       '/api/menu-workspace/tasks/1',
       '/api/price/browser-apply/123',
       '/api/price/browser-apply-history',

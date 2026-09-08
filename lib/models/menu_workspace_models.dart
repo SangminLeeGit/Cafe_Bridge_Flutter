@@ -84,6 +84,37 @@ class MenuEntry {
     );
   }
 
+  MenuEntry copyWith({
+    String? status,
+    int? targetPrice,
+  }) {
+    return MenuEntry(
+      id: id,
+      kind: kind,
+      status: status ?? this.status,
+      itemCode: itemCode,
+      itemName: itemName,
+      currentPrice: currentPrice,
+      targetPrice: targetPrice ?? this.targetPrice,
+      categoryHint: categoryHint,
+      majorCategory: majorCategory,
+      middleCategory: middleCategory,
+      minorCategory: minorCategory,
+      unitName: unitName,
+      taxMode: taxMode,
+      useMode: useMode,
+      stockMode: stockMode,
+      barcode: barcode,
+      description: description,
+      costPrice: costPrice,
+      supplyPrice: supplyPrice,
+      notes: notes,
+      source: source,
+      createdAt: createdAt,
+      updatedAt: updatedAt,
+    );
+  }
+
   int get priceDelta => (targetPrice ?? 0) - (currentPrice ?? 0);
 }
 
