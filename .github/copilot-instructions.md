@@ -3,9 +3,9 @@
 ## Repository policy
 
 - Android is the only supported target unless a task explicitly says otherwise. Generated iOS, Web, Linux, macOS, and Windows scaffolding is unsupported and inert.
-- Work on WSL2 for development, OpenCode, OpenDesign, and Flutter/Gradle. Use the configured shared compatibility ADB server for device checks. CT500 is runtime/deployment only.
+- Work on WSL2 for development, OpenCode, OpenDesign, and manual Flutter/Gradle builds. Use the configured shared compatibility ADB server for device checks. CT500 also hosts the currently observed protected Flutter GitLab runner, but is not a general development, manual-build, or device host; see `docs/TOPOLOGY.md` for the runner/release-guard mismatch.
 - Follow `docs/TOPOLOGY.md`. A localhost OpenDesign URL is local to WSL2; use the approved LAN proxy from other clients.
-- Signed release APKs and production registration are CI/CD-only. Do not create an IPA, perform a local signed release, or add/read signing material or values.
+- Signed release APKs and production registration are CI/CD-only. The current runner registration does not establish that release jobs pass the existing CT600 description guard. Do not bypass the guard, create an IPA, perform a local signed release, or add/read signing material or values.
 - Ordinary pushes may validate and produce APK artifacts, but production APK registration requires an explicit protected promotion/manual action.
 
 ## Build, test, and lint

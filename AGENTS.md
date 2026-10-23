@@ -2,8 +2,10 @@
 
 - This repository is Android-only unless a task explicitly expands scope. Use
   WSL2 for development and the configured compatibility ADB server for devices.
-- Treat `docs/TOPOLOGY.md` as the release authority. CT500 is runtime-only and
-  CT600 is the protected `cafe-bridge-android-release` CI target only.
+- Treat `docs/TOPOLOGY.md` as the topology and release authority. Current GitLab
+  state records protected Flutter Runner 13 on CT500 alongside the application
+  runtime; CT500 is not a general development/manual-build or device host. Do
+  not assume CT600 is a currently available Flutter runner.
 - Keep non-Android platform scaffolding inert. Preserve API contracts, role
   gates, and admin scope unless explicitly requested.
 - OpenDesign project `cafebridge-flutter-android` edits
