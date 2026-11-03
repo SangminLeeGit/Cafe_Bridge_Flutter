@@ -26,6 +26,7 @@ class _SyncScreenState extends State<SyncScreen>
   bool _isLoading = true;
   bool _isSubmitting = false;
   String _error = '';
+  String _historyError = '';
   SyncTaskStatusData? _task;
   late DateTime _targetDate;
   TaskPoller<SyncTaskStatusData>? _poller;
@@ -67,7 +68,7 @@ class _SyncScreenState extends State<SyncScreen>
       }
       setState(() {
         _runs = response.data;
-        _error = response.data.error;
+        _historyError = response.data.error;
         _fromCache = response.fromCache;
         _cachedAt = response.cachedAt;
         _isLoading = false;
@@ -77,7 +78,7 @@ class _SyncScreenState extends State<SyncScreen>
         return;
       }
       setState(() {
-        _error = error.toString();
+        _historyError = error.toString();
         _isLoading = false;
       });
     }
@@ -268,10 +269,10 @@ class _SyncScreenState extends State<SyncScreen>
       return const Center(child: CircularProgressIndicator());
     }
 
-    if (_error.isNotEmpty && _runs == null) {
+    if (_historyError.isNotEmpty && _runs == null) {
       return EmptyState(
         title: '동기화 화면을 불러오지 못했습니다.',
-        message: _error,
+        message: _historyError,
         action: FilledButton(
           onPressed: _loadRuns,
           child: const Text('다시 시도'),
@@ -280,6 +281,8 @@ class _SyncScreenState extends State<SyncScreen>
     }
 
     final runs = _runs?.runs ?? const <SyncRun>[];
+    final historyError =
+        _historyError.isNotEmpty ? _historyError : (_runs?.error ?? '');
     return RefreshIndicator(
       onRefresh: _loadRuns,
       child: ListView(
@@ -298,6 +301,16 @@ class _SyncScreenState extends State<SyncScreen>
             'Cafe Bridge 백엔드에서 특정 날짜의 매출을 적재합니다.',
             style: TextStyle(color: Color(0xFF64748B)),
           ),
+          if (_runs?.today.isNotEmpty == true) ...[
+            const SizedBox(height: 4),
+            Text(
+              '서버 영업일 기준: ${_runs!.today}',
+              style: const TextStyle(
+                color: Color(0xFF64748B),
+                fontSize: 12,
+              ),
+            ),
+          ],
           if (_fromCache && _cachedAt != null) ...[
             const SizedBox(height: 8),
             CacheNotice(cachedAt: _cachedAt),
@@ -337,13 +350,34 @@ class _SyncScreenState extends State<SyncScreen>
               ],
             ),
           ),
+          if (historyError.isNotEmpty) ...[
+            const SizedBox(height: 12),
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: const Color(0xFFFFFBEB),
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: const Color(0xFFFDE68A)),
+              ),
+              child: Text(
+                '적재 이력을 불러오지 못했습니다: $historyError',
+                style: const TextStyle(
+                  color: Color(0xFF92400E),
+                  fontSize: 13,
+                ),
+              ),
+            ),
+          ],
           Panel(
             title: '최근 적재 이력',
             subtitle: '최근 15건 기준',
             child: runs.isEmpty
-                ? const Text(
-                    '적재 이력이 없습니다.',
-                    style: TextStyle(color: Color(0xFF64748B)),
+                ? Text(
+                    historyError.isNotEmpty
+                        ? '이력 정보를 확인할 수 없습니다.'
+                        : '적재 이력이 없습니다.',
+                    style: const TextStyle(color: Color(0xFF64748B)),
                   )
                 : Column(
                     children: runs.map((run) {
@@ -354,51 +388,76 @@ class _SyncScreenState extends State<SyncScreen>
                             bottom: BorderSide(color: Color(0xFFE2E8F0)),
                           ),
                         ),
-                        child: Row(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
                           children: [
-                            Expanded(
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Text(
-                                    run.targetDate,
-                                    style: const TextStyle(
-                                      fontWeight: FontWeight.w700,
-                                      color: Color(0xFF0F172A),
-                                    ),
-                                  ),
-                                  const SizedBox(height: 4),
-                                  Text(
-                                    '시작 ${UiFormat.compactDateTime(run.startedAt)} · 완료 ${UiFormat.compactDateTime(run.finishedAt)}',
-                                    style: const TextStyle(
-                                      fontSize: 12,
-                                      color: Color(0xFF64748B),
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
-                            const SizedBox(width: 12),
-                            Column(
-                              crossAxisAlignment: CrossAxisAlignment.end,
+                            Row(
                               children: [
-                                Text(
-                                  run.status,
-                                  style: TextStyle(
-                                    fontWeight: FontWeight.w700,
-                                    color: _statusColor(run.status),
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    children: [
+                                      Text(
+                                        run.targetDate,
+                                        style: const TextStyle(
+                                          fontWeight: FontWeight.w700,
+                                          color: Color(0xFF0F172A),
+                                        ),
+                                      ),
+                                      const SizedBox(height: 4),
+                                      Text(
+                                        '시작 ${UiFormat.compactDateTime(run.startedAt)} · 완료 ${UiFormat.compactDateTime(run.finishedAt)}',
+                                        style: const TextStyle(
+                                          fontSize: 12,
+                                          color: Color(0xFF64748B),
+                                        ),
+                                      ),
+                                    ],
                                   ),
                                 ),
-                                const SizedBox(height: 4),
-                                Text(
-                                  '${UiFormat.number(run.loadedCount)} / ${UiFormat.number(run.sourceCount)}',
-                                  style: const TextStyle(
-                                    fontSize: 12,
-                                    color: Color(0xFF64748B),
-                                  ),
+                                const SizedBox(width: 12),
+                                Column(
+                                  crossAxisAlignment: CrossAxisAlignment.end,
+                                  children: [
+                                    Text(
+                                      run.status,
+                                      style: TextStyle(
+                                        fontWeight: FontWeight.w700,
+                                        color: _statusColor(run.status),
+                                      ),
+                                    ),
+                                    const SizedBox(height: 4),
+                                    Text(
+                                      '${UiFormat.number(run.loadedCount)} / ${UiFormat.number(run.sourceCount)}',
+                                      style: const TextStyle(
+                                        fontSize: 12,
+                                        color: Color(0xFF64748B),
+                                      ),
+                                    ),
+                                  ],
                                 ),
                               ],
                             ),
+                            if (run.warnings.isNotEmpty) ...[
+                              const SizedBox(height: 8),
+                              Text(
+                                '경고 ${run.warnings.length}건',
+                                style: const TextStyle(
+                                  color: Color(0xFFB45309),
+                                  fontWeight: FontWeight.w700,
+                                  fontSize: 12,
+                                ),
+                              ),
+                              const SizedBox(height: 2),
+                              Text(
+                                run.warnings.join('\n'),
+                                style: const TextStyle(
+                                  color: Color(0xFF92400E),
+                                  fontSize: 12,
+                                ),
+                              ),
+                            ],
                           ],
                         ),
                       );

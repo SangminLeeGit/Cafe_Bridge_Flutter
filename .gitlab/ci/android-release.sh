@@ -5,12 +5,20 @@ SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 source "${SCRIPT_DIR}/timing.sh"
 
 # Signing and registration must never run on a runtime or unrelated project runner.
+# Only the dedicated protected Cafe Bridge Flutter release runners are allowed.
+# CT500 is the currently registered dedicated runner; CT600 remains the
+# documented fallback for a separately provisioned release host.
 RUNNER_DESCRIPTION="${CI_RUNNER_DESCRIPTION:-}"
 NORMALIZED_RUNNER_DESCRIPTION="${RUNNER_DESCRIPTION,,}"
-if [[ "${NORMALIZED_RUNNER_DESCRIPTION}" != *"ct600"* ||
-      "${NORMALIZED_RUNNER_DESCRIPTION}" != *"cafe"* ||
-      "${NORMALIZED_RUNNER_DESCRIPTION}" != *"bridge"* ]]; then
-  echo "Android release requires the protected CT600 Cafe Bridge runner; got '${RUNNER_DESCRIPTION:-unknown}'." >&2
+case "${NORMALIZED_RUNNER_DESCRIPTION}" in
+  ct500-cafebridge-flutter-release|ct600-cafebridge-flutter-release) ;;
+  *)
+    echo "Android release requires the dedicated protected CT500/CT600 Cafe Bridge Flutter runner; got '${RUNNER_DESCRIPTION:-unknown}'." >&2
+    exit 1
+    ;;
+esac
+if [[ "${CI_COMMIT_REF_PROTECTED:-false}" != "true" ]]; then
+  echo "Android release requires a protected ref." >&2
   exit 1
 fi
 
@@ -135,7 +143,7 @@ if [[ -z "${CAFE_BRIDGE_CI_BASE_URL:-}" ]]; then
 fi
 case "${CAFE_BRIDGE_CI_BASE_URL,,}" in
   http://127.0.0.1:*|https://127.0.0.1:*|http://localhost:*|https://localhost:*|http://\[::1\]:*|https://\[::1\]:*)
-    echo "CAFE_BRIDGE_CI_BASE_URL must not use a loopback host on the CT600 runner" >&2
+    echo "CAFE_BRIDGE_CI_BASE_URL must not use a loopback host on the dedicated Flutter runner" >&2
     exit 1
     ;;
 esac

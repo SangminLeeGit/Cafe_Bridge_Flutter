@@ -2521,6 +2521,12 @@ class _MenuEntryDetailScreenState extends State<MenuEntryDetailScreen> {
               icon: const Icon(Icons.edit_outlined),
               onPressed: () => _showStatusSheet(e),
             ),
+          if (canEdit)
+            IconButton(
+              tooltip: '초안 삭제',
+              icon: const Icon(Icons.delete_outline),
+              onPressed: () => _deleteEntry(e),
+            ),
         ],
       ),
       body: SafeArea(
@@ -2604,6 +2610,43 @@ class _MenuEntryDetailScreenState extends State<MenuEntryDetailScreen> {
         ),
       ),
     );
+  }
+
+  Future<void> _deleteEntry(MenuEntry entry) async {
+    final appState = context.read<AppState>();
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('메뉴 작업 항목 삭제'),
+        content: Text(
+          '"${entry.itemName}" 항목을 삭제할까요? 이미 등록이 예약된 항목은 삭제할 수 없습니다.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: const Text('취소'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(dialogContext, true),
+            child: const Text('삭제'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+    try {
+      await appState.postJson(
+        '/api/menu-workspace/entries/${entry.id}',
+        method: 'DELETE',
+      );
+      if (!mounted) return;
+      widget.onUpdated?.call();
+      Navigator.of(context).pop();
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text(error.toString())));
+    }
   }
 
   Future<void> _showStatusSheet(MenuEntry entry) async {

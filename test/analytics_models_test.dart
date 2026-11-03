@@ -82,4 +82,17 @@ void main() {
       throwsArgumentError,
     );
   });
+
+  test('keeps independently selected compare range dates', () {
+    final data = CompareAnalysisData.fromJson({
+      'a': {'from': '2026-10-01', 'to': '2026-10-07'},
+      'b': {'from': '2026-08-12', 'to': '2026-08-14'},
+      'deltas': {},
+    });
+
+    expect(data.current.from, '2026-10-01');
+    expect(data.current.to, '2026-10-07');
+    expect(data.previous.from, '2026-08-12');
+    expect(data.previous.to, '2026-08-14');
+  });
 }

@@ -164,12 +164,14 @@ class _DayDetailScreenState extends State<DayDetailScreen>
                             ),
                             Panel(
                               title: '상위 판매 품목',
-                              subtitle: '매출 상위 10개 품목',
+                              subtitle:
+                                  '매출 상위 ${data.topItems.length < 10 ? data.topItems.length : 10}개 품목',
                               child: _buildTopItems(data.topItems),
                             ),
                             Panel(
                               title: '영수증 목록',
-                              subtitle: 'POS / 결제시간 / 금액',
+                              subtitle:
+                                  '전체 ${UiFormat.number(data.summary.receiptCount)}건 중 최근 ${data.bills.length < 12 ? data.bills.length : 12}건 · POS / 결제시간 / 금액',
                               child: _buildBills(data.bills),
                             ),
                           ],

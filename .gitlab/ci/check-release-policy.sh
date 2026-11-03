@@ -4,9 +4,11 @@ set -Eeuo pipefail
 grep -Fq 'CI_PIPELINE_SOURCE:-}" == "push"' .gitlab/ci/report-failure.sh
 grep -Fq 'EFFECTIVE_DRY_RUN=true' .gitlab/ci/report-failure.sh
 grep -Fq 'export REPORT_COMMIT_SHA' .gitlab/ci/report-failure.sh
-grep -Fq 'must not use a loopback host on the CT600 runner' .gitlab/ci/android-release.sh
+grep -Fq 'must not use a loopback host on the dedicated Flutter runner' .gitlab/ci/android-release.sh
 grep -Fq 'CI_RUNNER_DESCRIPTION' .gitlab/ci/android-release.sh
-grep -Fq 'protected CT600 Cafe Bridge runner' .gitlab/ci/android-release.sh
+grep -Fq 'ct500-cafebridge-flutter-release' .gitlab/ci/android-release.sh
+grep -Fq 'ct600-cafebridge-flutter-release' .gitlab/ci/android-release.sh
+grep -Fq 'Android release requires a protected ref' .gitlab/ci/android-release.sh
 test "$(grep -c 'tags: \[cafe-bridge-android-release\]' .gitlab-ci.yml)" -eq 5
 ! grep -Fq 'tags: [android-release]' .gitlab-ci.yml
 python3 - <<'PY'

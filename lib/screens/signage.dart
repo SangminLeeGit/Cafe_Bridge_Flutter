@@ -271,6 +271,71 @@ class _PendingSignageSave {
         });
 }
 
+enum _PublicationPhase { idle, publishing, published, ambiguous, failed }
+
+class _SignagePublication {
+  final _PublicationPhase phase;
+  final String publicationId;
+  final String status;
+  final String draftRevision;
+  final String startedAt;
+  final String finishedAt;
+  final String errorCode;
+  final String errorMessage;
+  final String localMessage;
+
+  const _SignagePublication({
+    required this.phase,
+    required this.publicationId,
+    required this.status,
+    required this.draftRevision,
+    this.startedAt = '',
+    this.finishedAt = '',
+    this.errorCode = '',
+    this.errorMessage = '',
+    this.localMessage = '',
+  });
+
+  factory _SignagePublication.fromJson(
+    Map<String, dynamic> json, {
+    required String fallbackId,
+    required String fallbackRevision,
+  }) {
+    final status = (json['status'] ?? '').toString().trim().toLowerCase();
+    final phase = switch (status) {
+      'confirmed' => _PublicationPhase.published,
+      'prepared' ||
+      'dispatching' ||
+      'unknown' ||
+      'needs-review' =>
+        _PublicationPhase.ambiguous,
+      _ => _PublicationPhase.failed,
+    };
+    return _SignagePublication(
+      phase: phase,
+      publicationId: (json['publication_id'] ?? fallbackId).toString(),
+      status: status.isEmpty ? 'unknown' : status,
+      draftRevision: (json['draft_revision'] ?? fallbackRevision).toString(),
+      startedAt: (json['started_at'] ?? '').toString(),
+      finishedAt: (json['finished_at'] ?? '').toString(),
+      errorCode: (json['error_code'] ?? '').toString(),
+      errorMessage: (json['error_message'] ?? '').toString(),
+    );
+  }
+
+  _SignagePublication withLocalMessage(String message) => _SignagePublication(
+        phase: phase,
+        publicationId: publicationId,
+        status: status,
+        draftRevision: draftRevision,
+        startedAt: startedAt,
+        finishedAt: finishedAt,
+        errorCode: errorCode,
+        errorMessage: errorMessage,
+        localMessage: message,
+      );
+}
+
 // ─── 메인 화면 ────────────────────────────────────────────────────────────────
 
 class SignageScreen extends StatefulWidget {
@@ -287,6 +352,7 @@ class _SignageScreenState extends State<SignageScreen>
   _SignageMenu? _draft;
   _SignageDraftEnvelope? _conflictSnapshot;
   _PendingSignageSave? _pendingSave;
+  _SignagePublication? _publication;
   EditorContext? _editorContext;
   String _scopeId = '';
   String _baseRemoteHash = '';
@@ -348,6 +414,9 @@ class _SignageScreenState extends State<SignageScreen>
   bool get _canSaveDraft =>
       _editorContext?.capability('save_signage_draft')?.enabled ?? false;
 
+  bool get _canPublish =>
+      _editorContext?.capability('publish_signage')?.enabled ?? false;
+
   String get _saveDraftBlockReason {
     if (_capabilityError.isNotEmpty) {
       return '서버 초안 저장 권한을 확인하지 못했습니다. 저장은 차단되었습니다. $_capabilityError';
@@ -358,6 +427,42 @@ class _SignageScreenState extends State<SignageScreen>
     if (decision.message.isNotEmpty) return decision.message;
     return '서버에서 사이니지 초안 저장을 허용하지 않습니다. (${decision.reasonCode})';
   }
+
+  String get _publishBlockReason {
+    if (_capabilityError.isNotEmpty) {
+      return '서버 게시 권한을 확인하지 못했습니다. 게시가 차단되었습니다. $_capabilityError';
+    }
+    final decision = _editorContext?.capability('publish_signage');
+    if (decision == null) return '서버 게시 권한을 확인할 수 없습니다.';
+    if (!_canPublish) {
+      if (decision.message.isNotEmpty) return decision.message;
+      return '서버에서 사이니지 게시를 허용하지 않습니다. (${decision.reasonCode})';
+    }
+    if (_draft == null) return '게시할 서버 초안을 먼저 불러와야 합니다.';
+    if (_dirty) return '로컬 변경사항이 있습니다. 먼저 서버 초안에 저장해 주세요.';
+    if (_pushing) return '저장 또는 게시 요청을 처리 중입니다.';
+    if (_pendingSave != null) return '저장 결과를 확인한 뒤 게시할 수 있습니다.';
+    if (_serverRevision.isEmpty) return '서버 초안 revision을 확인할 수 없습니다.';
+    if (_baseRemoteHash.isEmpty) return '원격 게시본 기준 hash를 확인할 수 없습니다.';
+    final publication = _publication;
+    final publicationPhase = publication?.phase ?? _PublicationPhase.idle;
+    if (publicationPhase == _PublicationPhase.publishing) {
+      return '게시 요청을 처리 중입니다.';
+    }
+    if (publicationPhase == _PublicationPhase.ambiguous) {
+      return '이전 게시 결과가 확인되지 않았습니다. 먼저 게시 상태를 조회하거나 조정해 주세요.';
+    }
+    if (publicationPhase == _PublicationPhase.failed) {
+      return '이전 요청이 완료되지 않았습니다. 서버 초안을 새로고침한 뒤 다시 확인해 주세요.';
+    }
+    if (publicationPhase == _PublicationPhase.published &&
+        publication?.draftRevision == _serverRevision) {
+      return '현재 초안 revision은 이미 게시 확인되었습니다. 내용을 변경해 새 revision으로 저장한 뒤 게시해 주세요.';
+    }
+    return '';
+  }
+
+  bool get _canStartPublish => _publishBlockReason.isEmpty;
 
   Future<bool> _confirmDiscardChanges({
     required String title,
@@ -427,6 +532,9 @@ class _SignageScreenState extends State<SignageScreen>
         _serverUpdatedAt = result.updatedAt;
         _conflictSnapshot = null;
         _pendingSave = null;
+        if (_publication?.phase == _PublicationPhase.failed) {
+          _publication = null;
+        }
         _localEditRevision += 1;
         _dirty = false;
         _loading = false;
@@ -499,21 +607,306 @@ class _SignageScreenState extends State<SignageScreen>
   }
 
   _PendingSignageSave _newPendingSave(_SignageMenu draft) {
+    return _PendingSignageSave(
+      requestId: _newUuidV4(),
+      expectedRevision: _serverRevision,
+      baseRemoteHash: _baseRemoteHash.isEmpty ? null : _baseRemoteHash,
+      snapshot: draft.clone(),
+      localEditRevision: _localEditRevision,
+    );
+  }
+
+  String _newUuidV4() {
     final random = Random.secure();
     final bytes = List<int>.generate(16, (_) => random.nextInt(256));
     bytes[6] = (bytes[6] & 0x0f) | 0x40;
     bytes[8] = (bytes[8] & 0x3f) | 0x80;
     final hex =
         bytes.map((byte) => byte.toRadixString(16).padLeft(2, '0')).join();
-    final requestId = '${hex.substring(0, 8)}-${hex.substring(8, 12)}-'
-        '${hex.substring(12, 16)}-${hex.substring(16, 20)}-${hex.substring(20)}';
-    return _PendingSignageSave(
-      requestId: requestId,
-      expectedRevision: _serverRevision,
-      baseRemoteHash: _baseRemoteHash.isEmpty ? null : _baseRemoteHash,
-      snapshot: draft.clone(),
-      localEditRevision: _localEditRevision,
+    return '${hex.substring(0, 8)}-${hex.substring(8, 12)}-'
+        '${hex.substring(12, 16)}-${hex.substring(16, 20)}-'
+        '${hex.substring(20)}';
+  }
+
+  Future<void> _publishDraft() async {
+    final draft = _draft;
+    if (draft == null || !_canStartPublish) return;
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('외부 메뉴판에 게시'),
+        content: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text(
+                '게시를 진행하면 외부 메뉴판이 이 서버 초안의 내용으로 변경됩니다. '
+                '서버 초안 저장과 외부 메뉴판 게시는 별개의 작업입니다.',
+              ),
+              const SizedBox(height: 12),
+              Text('게시할 서버 초안 revision: $_serverRevision'),
+              const SizedBox(height: 6),
+              Text('가게·메뉴: ${_menuOutline(draft)}'),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: const Text('취소'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(dialogContext, true),
+            child: const Text('게시 진행'),
+          ),
+        ],
+      ),
     );
+    if (!mounted || confirmed != true) return;
+    if (!_canStartPublish) {
+      setState(() => _error = _publishBlockReason);
+      return;
+    }
+
+    setState(() {
+      _pushing = true;
+      _error = '';
+      _successMessage = '';
+    });
+    var requestId = '';
+    var requestAttempted = false;
+    var expectedRevision = _serverRevision;
+    try {
+      // Re-check the server-owned publish capability immediately before send.
+      final editorContext = await _fetchEditorContext();
+      if (!mounted) return;
+      setState(() {
+        _editorContext = editorContext;
+        _capabilityError = '';
+      });
+      if (editorContext.scopeId != _scopeId) {
+        throw const ApiException(
+          '로그인 또는 편집 범위가 바뀌었습니다. 현재 초안은 다른 범위로 게시하지 않았습니다.',
+          statusCode: 409,
+          code: 'editor_scope_changed',
+        );
+      }
+      final capability = editorContext.capability('publish_signage');
+      if (capability?.enabled != true) {
+        throw ApiException(
+          capability?.message.isNotEmpty == true
+              ? capability!.message
+              : '서버에서 사이니지 게시를 허용하지 않습니다.',
+          statusCode: 503,
+          code: capability?.reasonCode ?? 'capability_disabled',
+        );
+      }
+      if (_dirty || _pendingSave != null || _draft == null) {
+        throw const ApiException(
+          '로컬 변경사항 또는 저장 중인 요청이 있습니다. 서버 초안을 저장하고 결과를 확인한 뒤 게시해 주세요.',
+          statusCode: 409,
+          code: 'publication_precondition_required',
+        );
+      }
+      expectedRevision = _serverRevision;
+      final expectedRemoteHash = _baseRemoteHash;
+      if (expectedRevision.isEmpty || expectedRemoteHash.isEmpty) {
+        throw const ApiException(
+          '서버 초안 revision 또는 원격 게시본 기준 hash가 없어 게시할 수 없습니다.',
+          statusCode: 422,
+          code: 'publication_precondition_required',
+        );
+      }
+      requestId = _newUuidV4();
+      setState(() {
+        _publication = _SignagePublication(
+          phase: _PublicationPhase.publishing,
+          publicationId: requestId,
+          status: 'dispatching',
+          draftRevision: expectedRevision,
+        );
+      });
+      requestAttempted = true;
+      final response = await context.read<AppState>().postJson(
+        '/api/editor/signage/publish',
+        body: {
+          'request_id': requestId,
+          'expected_draft_revision': expectedRevision,
+          'expected_remote_hash': expectedRemoteHash,
+        },
+      );
+      final publication = _SignagePublication.fromJson(
+        response,
+        fallbackId: requestId,
+        fallbackRevision: expectedRevision,
+      );
+      if (!mounted) return;
+      setState(() => _publication = publication);
+      if (publication.phase == _PublicationPhase.published) {
+        await _refreshDraftAfterPublication(publication);
+      }
+    } catch (error) {
+      if (!mounted) return;
+      if (requestAttempted && requestId.isNotEmpty) {
+        final apiError = error is ApiException ? error : null;
+        // publication_in_progress means a different publication is active and
+        // this request was never accepted. It is not an ambiguous outcome of
+        // this request, so keep no publication id and require a fresh attempt
+        // after the active publication finishes.
+        final inProgress = apiError?.code == 'publication_in_progress';
+        final ambiguous = !inProgress &&
+            (apiError == null ||
+                apiError.isTransportError ||
+                (apiError.statusCode != null && apiError.statusCode! >= 500) ||
+                const {
+                  'publication_unknown',
+                  'publication_missing',
+                }.contains(apiError.code));
+        final message = _formatError(error);
+        setState(() {
+          _publication = _SignagePublication(
+            phase: inProgress
+                ? _PublicationPhase.failed
+                : ambiguous
+                    ? _PublicationPhase.ambiguous
+                    : _PublicationPhase.failed,
+            publicationId: inProgress ? '' : requestId,
+            status: inProgress
+                ? 'publication_in_progress'
+                : ambiguous
+                    ? 'unknown'
+                    : 'request_failed',
+            draftRevision: expectedRevision,
+            errorCode: apiError?.code ?? '',
+            errorMessage: message,
+            localMessage: inProgress
+                ? '다른 게시 요청이 진행 중이라 이 요청은 접수되지 않았습니다. 완료된 뒤 서버 초안을 새로고침하고 다시 시도해 주세요.'
+                : ambiguous
+                    ? '게시 요청 응답을 확정하지 못했습니다. 같은 요청 ID를 보존했습니다.'
+                    : '',
+          );
+          _error = '';
+        });
+      } else {
+        setState(() => _error = _formatError(error));
+      }
+    } finally {
+      if (mounted) setState(() => _pushing = false);
+    }
+  }
+
+  Future<void> _lookupPublication() async {
+    final publication = _publication;
+    if (publication == null ||
+        publication.phase != _PublicationPhase.ambiguous ||
+        publication.publicationId.isEmpty ||
+        _pushing) {
+      return;
+    }
+    setState(() {
+      _pushing = true;
+      _error = '';
+    });
+    try {
+      final response =
+          await context.read<AppState>().fetchMapParsed<Map<String, dynamic>>(
+                '/api/editor/signage/publications/${Uri.encodeComponent(publication.publicationId)}',
+                parser: (json) => json,
+                cacheTtl: Duration.zero,
+                allowStaleOnError: false,
+              );
+      final updated = _SignagePublication.fromJson(
+        response.data,
+        fallbackId: publication.publicationId,
+        fallbackRevision: publication.draftRevision,
+      );
+      if (!mounted) return;
+      setState(() => _publication = updated);
+      if (updated.phase == _PublicationPhase.published) {
+        await _refreshDraftAfterPublication(updated);
+      }
+    } catch (error) {
+      if (mounted) {
+        setState(() => _publication = publication.withLocalMessage(
+              '게시 상태 조회에 실패했습니다. 같은 게시 ID를 보존했습니다. ${_formatError(error)}',
+            ));
+      }
+    } finally {
+      if (mounted) setState(() => _pushing = false);
+    }
+  }
+
+  Future<void> _reconcilePublication() async {
+    final publication = _publication;
+    if (publication == null ||
+        publication.phase != _PublicationPhase.ambiguous ||
+        publication.publicationId.isEmpty ||
+        _pushing) {
+      return;
+    }
+    setState(() {
+      _pushing = true;
+      _error = '';
+    });
+    try {
+      final response = await context.read<AppState>().postJson(
+        '/api/editor/signage/publications/${Uri.encodeComponent(publication.publicationId)}/reconcile',
+        body: {'request_id': publication.publicationId},
+      );
+      final updated = _SignagePublication.fromJson(
+        response,
+        fallbackId: publication.publicationId,
+        fallbackRevision: publication.draftRevision,
+      );
+      if (!mounted) return;
+      setState(() => _publication = updated);
+      if (updated.phase == _PublicationPhase.published) {
+        await _refreshDraftAfterPublication(updated);
+      }
+    } catch (error) {
+      if (mounted) {
+        setState(() => _publication = publication.withLocalMessage(
+              '게시 상태 조정에 실패했습니다. 외부 게시 결과는 아직 확인되지 않았습니다. ${_formatError(error)}',
+            ));
+      }
+    } finally {
+      if (mounted) setState(() => _pushing = false);
+    }
+  }
+
+  Future<void> _refreshDraftAfterPublication(
+    _SignagePublication publication,
+  ) async {
+    try {
+      final latest = await _fetchDraft();
+      if (!mounted) return;
+      if (_scopeId.isNotEmpty && latest.scopeId != _scopeId) {
+        throw const FormatException('게시 후 초안의 편집 범위가 현재 화면과 다릅니다.');
+      }
+      setState(() {
+        _scopeId = latest.scopeId;
+        _baseRemoteHash = latest.baseRemoteHash ?? '';
+        _baseRemote = latest.baseMenu.clone();
+        _saved = latest.menu.clone();
+        _draft = latest.menu.clone();
+        _serverRevision = latest.revision;
+        _serverUpdatedAt = latest.updatedAt;
+        _conflictSnapshot = null;
+        _pendingSave = null;
+        _dirty = false;
+        _successMessage =
+            '외부 메뉴판 게시가 확인되었습니다. 서버 초안 revision ${publication.draftRevision}을 게시했습니다. 게시와 초안 저장은 별개입니다.';
+        _error = '';
+      });
+    } catch (error) {
+      if (!mounted) return;
+      setState(() {
+        _successMessage =
+            '외부 메뉴판 게시가 확인되었습니다. 서버 초안 기준을 새로 불러오지 못했습니다. 게시 결과는 아래 상태를 확인해 주세요.';
+        _error = '게시 후 초안 새로고침 실패: ${_formatError(error)}';
+      });
+    }
   }
 
   Future<_SignageDraftEnvelope?> _lookupWriteReceipt(
@@ -717,6 +1110,102 @@ class _SignageScreenState extends State<SignageScreen>
         : '${menu.shopName} · $categories';
   }
 
+  String _publicationStatusLabel(_SignagePublication publication) {
+    return switch (publication.status) {
+      'confirmed' => '게시 완료 확인 (confirmed)',
+      'prepared' => '게시 결과 확인 필요 (prepared)',
+      'dispatching' => '게시 결과 확인 필요 (dispatching)',
+      'unknown' => '외부 게시 결과 미확인 (unknown)',
+      'needs-review' => '게시 결과 검토 필요 (needs-review)',
+      'rejected' => '게시 거부 (rejected)',
+      'failed' => '게시 실패 (failed)',
+      'publication_in_progress' => '다른 게시 요청 진행 중',
+      'request_failed' => '게시 요청 실패',
+      _ => publication.status.isEmpty ? '상태 확인 필요' : publication.status,
+    };
+  }
+
+  String _publicationNextStep(_SignagePublication publication) {
+    return switch (publication.phase) {
+      _PublicationPhase.publishing => '게시 요청을 처리하고 있습니다.',
+      _PublicationPhase.published =>
+        '서버 상태가 confirmed로 확인되었습니다. 이것만 게시 완료로 간주합니다.',
+      _PublicationPhase.ambiguous
+          when publication.status == 'publication_in_progress' =>
+        '다른 게시 요청이 진행 중입니다. 이 요청 ID를 보존했으며, 새 요청을 만들지 말고 상태 조회 또는 조정을 진행해 주세요.',
+      _PublicationPhase.ambiguous =>
+        '외부 게시 결과는 아직 알 수 없습니다. 성공으로 간주하지 마세요. 새 게시 요청을 만들지 말고 같은 ID로 상태 조회 또는 조정을 진행해 주세요.',
+      _PublicationPhase.failed =>
+        '게시 완료로 확인되지 않았습니다. 원인을 확인하고 서버 초안을 새로고침한 뒤 다시 진행해 주세요.',
+      _ => '게시 요청을 시작하지 않았습니다.',
+    };
+  }
+
+  Widget _publicationStatusCard(_SignagePublication publication) {
+    return _SectionCard(
+      title: '게시 상태',
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text('상태: ${_publicationStatusLabel(publication)}'),
+          if (publication.publicationId.isNotEmpty) ...[
+            const SizedBox(height: 4),
+            Text('publication_id: ${publication.publicationId}'),
+          ],
+          const SizedBox(height: 4),
+          Text('게시 초안 revision: ${publication.draftRevision}'),
+          if (publication.startedAt.isNotEmpty) ...[
+            const SizedBox(height: 4),
+            Text('시작 시각: ${publication.startedAt}'),
+          ],
+          if (publication.finishedAt.isNotEmpty) ...[
+            const SizedBox(height: 4),
+            Text('종료 시각: ${publication.finishedAt}'),
+          ],
+          if (publication.errorCode.isNotEmpty) ...[
+            const SizedBox(height: 8),
+            Text('오류 코드: ${publication.errorCode}'),
+          ],
+          if (publication.errorMessage.isNotEmpty) ...[
+            const SizedBox(height: 4),
+            Text('오류 내용: ${publication.errorMessage}'),
+          ],
+          if (publication.localMessage.isNotEmpty) ...[
+            const SizedBox(height: 8),
+            Text(
+              publication.localMessage,
+              style: const TextStyle(color: Color(0xFFB45309)),
+            ),
+          ],
+          const SizedBox(height: 10),
+          Text(
+            _publicationNextStep(publication),
+            style: const TextStyle(fontSize: 13),
+          ),
+          if (publication.phase == _PublicationPhase.ambiguous) ...[
+            const SizedBox(height: 10),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: [
+                OutlinedButton.icon(
+                  onPressed: _pushing ? null : _lookupPublication,
+                  icon: const Icon(Icons.search),
+                  label: const Text('게시 상태 조회'),
+                ),
+                OutlinedButton.icon(
+                  onPressed: _pushing ? null : _reconcilePublication,
+                  icon: const Icon(Icons.sync),
+                  label: const Text('게시 상태 조정'),
+                ),
+              ],
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     if (_loading && _draft == null) {
@@ -903,6 +1392,46 @@ class _SignageScreenState extends State<SignageScreen>
                       side: const BorderSide(color: Color(0xFF0D9488)),
                     ),
                   ),
+                const SizedBox(height: 12),
+                _SectionCard(
+                  title: '외부 메뉴판 게시',
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      const Text(
+                        '게시하면 외부 메뉴판이 저장된 서버 초안으로 변경됩니다. '
+                        '서버 초안 저장만으로는 외부 메뉴판이 바뀌지 않습니다.',
+                        style: TextStyle(fontSize: 13),
+                      ),
+                      const SizedBox(height: 10),
+                      FilledButton.icon(
+                        onPressed: _canStartPublish ? _publishDraft : null,
+                        icon: const Icon(Icons.publish_outlined),
+                        label: Text(
+                          _pushing ? '게시 처리 중...' : '외부 메뉴판 게시',
+                        ),
+                        style: FilledButton.styleFrom(
+                          backgroundColor: const Color(0xFF0D9488),
+                          minimumSize: const Size(double.infinity, 44),
+                        ),
+                      ),
+                      if (!_canStartPublish) ...[
+                        const SizedBox(height: 8),
+                        Text(
+                          _publishBlockReason,
+                          style: const TextStyle(
+                            color: Color(0xFFB91C1C),
+                            fontSize: 12,
+                          ),
+                        ),
+                      ],
+                    ],
+                  ),
+                ),
+                if (_publication != null) ...[
+                  const SizedBox(height: 12),
+                  _publicationStatusCard(_publication!),
+                ],
               ],
             ),
           ),

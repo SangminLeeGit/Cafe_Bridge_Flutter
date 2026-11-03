@@ -278,7 +278,7 @@ class _MonthlyTabState extends State<_MonthlyTab>
           ),
           Panel(
             title: '상위 판매 품목',
-            subtitle: '월간 누적 매출 기준',
+            subtitle: '월간 누적 매출 기준 상위 ${data.topItems.length}개',
             child: _TopItemList(items: data.topItems),
           ),
         ],
@@ -419,7 +419,9 @@ class _ItemsTabState extends State<_ItemsTab>
           const SizedBox(height: 16),
           Panel(
             title: '품목 랭킹',
-            subtitle: '매출 기준 상위 품목과 ABC 등급',
+            subtitle: data.itemList.length > 15
+                ? '${UiFormat.number(data.itemList.length)}개 중 매출 상위 15개'
+                : '매출 기준 상위 ${data.itemList.length}개와 ABC 등급',
             child: Column(
               children: data.itemList.take(15).map((item) {
                 return ListTile(
@@ -601,7 +603,8 @@ class _HoursTabState extends State<_HoursTab>
           ),
           Panel(
             title: '핫스팟',
-            subtitle: '요일 × 시간 조합 중 매출 상위 구간',
+            subtitle:
+                '매출 기준 상위 ${data.heatmap.length < 8 ? data.heatmap.length : 8}개 조합 · 전체 ${data.heatmap.length}개 중',
             child: Column(
               children: (data.heatmap.toList()
                     ..sort((a, b) => b.totalAmount.compareTo(a.totalAmount)))
@@ -995,6 +998,8 @@ class _CompareTab extends StatefulWidget {
 class _CompareTabState extends State<_CompareTab>
     with AsyncRequestGuard<_CompareTab> {
   late DateTimeRange _range;
+  late DateTimeRange _compareRange;
+  bool _compareRangeIsAuto = true;
   CompareAnalysisData? _data;
   bool _isLoading = true;
   String _error = '';
@@ -1005,26 +1010,59 @@ class _CompareTabState extends State<_CompareTab>
   void initState() {
     super.initState();
     _range = _defaultRange(days: 6);
+    _compareRange = _previousRange(_range);
     _load();
   }
 
-  Future<void> _pickRange() async {
+  Future<void> _pickRange({required bool comparison}) async {
+    final selectedRange = comparison ? _compareRange : _range;
     final picked = await showDateRangePicker(
       context: context,
-      initialDateRange: _range,
+      initialDateRange: selectedRange,
       firstDate: DateTime(2024),
       lastDate: ApiService.kstNow(),
     );
     if (picked == null || !mounted) {
       return;
     }
-    setState(() => _range = picked);
+    setState(() {
+      if (comparison) {
+        _compareRange = picked;
+        _compareRangeIsAuto = false;
+      } else {
+        _range = picked;
+        if (_compareRangeIsAuto) {
+          _compareRange = _previousRange(picked);
+        }
+      }
+    });
+    await _load();
+  }
+
+  Future<void> _resetCompareRange() async {
+    setState(() {
+      _compareRange = _previousRange(_range);
+      _compareRangeIsAuto = true;
+    });
     await _load();
   }
 
   Future<void> _load() async {
-    final previous = _previousRange(_range);
     if (!mounted) return;
+    if (_range.start.isAfter(_range.end)) {
+      setState(() {
+        _error = '기준 기간 A의 시작일은 종료일보다 늦을 수 없습니다.';
+        _isLoading = false;
+      });
+      return;
+    }
+    if (_compareRange.start.isAfter(_compareRange.end)) {
+      setState(() {
+        _error = '비교 기간 B의 시작일은 종료일보다 늦을 수 없습니다.';
+        _isLoading = false;
+      });
+      return;
+    }
     final request = beginAsyncRequest();
     final appState = context.read<AppState>();
     setState(() {
@@ -1037,8 +1075,8 @@ class _CompareTabState extends State<_CompareTab>
         params: {
           'a_from': _formatDate(_range.start),
           'a_to': _formatDate(_range.end),
-          'b_from': _formatDate(previous.start),
-          'b_to': _formatDate(previous.end),
+          'b_from': _formatDate(_compareRange.start),
+          'b_to': _formatDate(_compareRange.end),
         },
         parser: CompareAnalysisData.fromJson,
       );
@@ -1093,9 +1131,27 @@ class _CompareTabState extends State<_CompareTab>
           _AnalyticsHeaderRow(
             title: '기간 비교',
             subtitle:
-                '${_rangeLabel(_range)} vs ${_rangeLabel(_previousRange(_range))}',
-            actionLabel: '기준 기간',
-            onAction: _pickRange,
+                '기준 기간 A ${_rangeLabel(_range)} · 비교 기간 B ${_rangeLabel(_compareRange)}',
+            actionLabel: '직전 동일 기간',
+            onAction: _resetCompareRange,
+          ),
+          const SizedBox(height: 8),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            crossAxisAlignment: WrapCrossAlignment.center,
+            children: [
+              OutlinedButton.icon(
+                onPressed: () => _pickRange(comparison: false),
+                icon: const Icon(Icons.date_range_outlined),
+                label: const Text('기준 기간 A'),
+              ),
+              OutlinedButton.icon(
+                onPressed: () => _pickRange(comparison: true),
+                icon: const Icon(Icons.date_range_outlined),
+                label: const Text('비교 기간 B'),
+              ),
+            ],
           ),
           if (_fromCache && _cachedAt != null) ...[
             const SizedBox(height: 8),
@@ -1119,23 +1175,23 @@ class _CompareTabState extends State<_CompareTab>
           const SizedBox(height: 16),
           Panel(
             title: '기간 요약',
-            subtitle: '현재 구간과 직전 동일 길이 구간 비교',
+            subtitle: '선택한 기준 기간 A와 비교 기간 B',
             child: Column(
               children: [
-                _CompareSummaryTile(label: '현재 구간', stats: data.current),
+                _CompareSummaryTile(label: '기간 A', stats: data.current),
                 const Divider(height: 24),
-                _CompareSummaryTile(label: '비교 구간', stats: data.previous),
+                _CompareSummaryTile(label: '기간 B', stats: data.previous),
               ],
             ),
           ),
           Panel(
             title: '상위 판매 품목',
-            subtitle: '현재 구간과 비교 구간의 주요 품목',
+            subtitle: '각 기간 응답 품목 중 상위 5개 표시',
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 const Text(
-                  '현재 구간',
+                  '기간 A · 상위 5개',
                   style: TextStyle(fontWeight: FontWeight.w700),
                 ),
                 const SizedBox(height: 8),
@@ -1144,7 +1200,7 @@ class _CompareTabState extends State<_CompareTab>
                         data.current.topItems.take(5).toList(growable: false)),
                 const SizedBox(height: 16),
                 const Text(
-                  '비교 구간',
+                  '기간 B · 상위 5개',
                   style: TextStyle(fontWeight: FontWeight.w700),
                 ),
                 const SizedBox(height: 8),
@@ -1288,7 +1344,8 @@ class _TrendsTabState extends State<_TrendsTab>
           const SizedBox(height: 16),
           Panel(
             title: '일별 추세',
-            subtitle: '일자별 매출, 객단가, 고객당 매출',
+            subtitle:
+                '최근 ${data.days.length < 12 ? data.days.length : 12}일 / 전체 ${data.summary.dayCount}일 · 매출, 객단가, 고객당 매출',
             child: Column(
               children: data.days.reversed.take(12).map((day) {
                 return ListTile(
@@ -1308,7 +1365,8 @@ class _TrendsTabState extends State<_TrendsTab>
           ),
           Panel(
             title: '28일 이동 평균',
-            subtitle: '백엔드 계산 MA28 시계열',
+            subtitle:
+                '최근 ${data.maSeries.length < 12 ? data.maSeries.length : 12}개 표시 / 전체 ${data.maSeries.length}개 · 백엔드 계산 MA28 시계열',
             child: Column(
               children: data.maSeries.reversed.take(12).map((point) {
                 return ListTile(
@@ -1527,6 +1585,17 @@ String _percentText(double value) {
   return '$sign${value.toStringAsFixed(1)}%';
 }
 
+String _abcLimitSubtitle({
+  required int total,
+  required int available,
+  required int limit,
+  required String detail,
+}) {
+  final visible = [total, available, limit]
+      .reduce((left, right) => left < right ? left : right);
+  return '$detail · 전체 ${UiFormat.number(total)}개 중 상위 ${UiFormat.number(visible)}개';
+}
+
 // ─── Menu Engineering Tab ─────────────────────────────────────────────────────
 
 class _MenuEngineeringTab extends StatefulWidget {
@@ -1663,11 +1732,15 @@ class _MenuEngineeringTabState extends State<_MenuEngineeringTab>
           ...quadrants.entries
               .where((e) => e.value.isNotEmpty)
               .map<Widget>((entry) {
+            final total = data.quadrantCounts[entry.key] ?? entry.value.length;
+            final visible = [total, entry.value.length, 8]
+                .reduce((left, right) => left < right ? left : right);
             return Padding(
               padding: const EdgeInsets.only(bottom: 12),
               child: Panel(
                 title: _quadrantTitle(entry.key),
-                subtitle: _quadrantSubtitle(entry.key),
+                subtitle:
+                    '${_quadrantSubtitle(entry.key)} · 전체 ${UiFormat.number(total)}개 중 상위 ${UiFormat.number(visible)}개',
                 child: Column(
                   children: entry.value.take(8).map<Widget>((item) {
                     return ListTile(
@@ -1856,7 +1929,8 @@ class _ForecastTabState extends State<_ForecastTab>
           const SizedBox(height: 16),
           Panel(
             title: '월간 진행',
-            subtitle: '실적 일자별 매출 (최신 순)',
+            subtitle:
+                '실적 ${data.days.length}일 중 최근 ${data.days.length < 15 ? data.days.length : 15}일 표시',
             child: Column(
               children: data.days.reversed.take(15).map((day) {
                 return ListTile(
@@ -2062,7 +2136,12 @@ class _AbcTabState extends State<_AbcTab> with AsyncRequestGuard<_AbcTab> {
               padding: const EdgeInsets.only(bottom: 12),
               child: Panel(
                 title: 'A등급 — 핵심 품목',
-                subtitle: '누적 매출 상위 70% 구성 품목',
+                subtitle: _abcLimitSubtitle(
+                  total: data.counts['A'] ?? gradeA.length,
+                  available: gradeA.length,
+                  limit: 10,
+                  detail: '누적 매출 상위 70% 구성',
+                ),
                 child: Column(
                   children: gradeA.take(10).map((item) {
                     return ListTile(
@@ -2086,7 +2165,12 @@ class _AbcTabState extends State<_AbcTab> with AsyncRequestGuard<_AbcTab> {
               padding: const EdgeInsets.only(bottom: 12),
               child: Panel(
                 title: 'B등급 — 보조 품목',
-                subtitle: '누적 70~90% 구간',
+                subtitle: _abcLimitSubtitle(
+                  total: data.counts['B'] ?? gradeB.length,
+                  available: gradeB.length,
+                  limit: 8,
+                  detail: '누적 70~90% 구간',
+                ),
                 child: Column(
                   children: gradeB.take(8).map((item) {
                     return ListTile(
@@ -2108,7 +2192,12 @@ class _AbcTabState extends State<_AbcTab> with AsyncRequestGuard<_AbcTab> {
           if (gradeC.isNotEmpty)
             Panel(
               title: 'C등급 — 저기여 품목',
-              subtitle: '누적 90%+ 구간',
+              subtitle: _abcLimitSubtitle(
+                total: data.counts['C'] ?? gradeC.length,
+                available: gradeC.length,
+                limit: 6,
+                detail: '누적 90%+ 구간',
+              ),
               child: Column(
                 children: gradeC.take(6).map((item) {
                   return ListTile(

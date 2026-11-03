@@ -1,11 +1,151 @@
 import 'dart:async';
 
 import 'package:cafe_bridge_flutter/models/workforce_models.dart';
+import 'package:cafe_bridge_flutter/screens/workforce_mobile.dart';
+import 'package:cafe_bridge_flutter/services/cache_store.dart';
+import 'package:cafe_bridge_flutter/state/app_state.dart';
 import 'package:cafe_bridge_flutter/widgets/workforce_shift_forms.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:provider/provider.dart';
+
+class _WorkforceFormAppState extends AppState {
+  final writes =
+      <({String endpoint, String method, Map<String, dynamic>? body})>[];
+
+  @override
+  bool get hasOperatorAccess => true;
+
+  @override
+  Future<CachedDataResult<T>> fetchMapParsed<T>(
+    String endpoint, {
+    Map<String, Object?>? params,
+    required T Function(Map<String, dynamic> json) parser,
+    Duration cacheTtl = const Duration(minutes: 30),
+    bool allowStaleOnError = true,
+    ApiCachePolicy? cachePolicy,
+  }) async {
+    final Map<String, dynamic> json = switch (endpoint) {
+      '/api/workforce/dashboard' => _dashboardJson,
+      '/api/workforce/workplaces' => {
+          'workplaces': [_formWorkplaceJson]
+        },
+      '/api/workforce/employees' => {'employees': []},
+      _ => throw StateError('unexpected GET $endpoint'),
+    };
+    return CachedDataResult<T>(
+      data: parser(json),
+      fromCache: false,
+      cachedAt: DateTime.utc(2026, 10, 1),
+    );
+  }
+
+  @override
+  Future<Map<String, dynamic>> postJson(
+    String endpoint, {
+    Map<String, dynamic>? body,
+    String method = 'POST',
+  }) async {
+    writes.add((endpoint: endpoint, method: method, body: body));
+    return const {};
+  }
+}
+
+const _formWorkplaceJson = {
+  'id': 1,
+  'name': '본점',
+  'shop_no': '1',
+  'pay_type': 'hourly',
+  'pay_cycle': 'monthly',
+  'payday': 10,
+  'is_active': true,
+};
+
+const _dashboardJson = {
+  'period': {'from_date': '2026-10-01', 'to_date': '2026-10-31'},
+  'summary': {
+    'total_gross_pay': 0,
+    'total_net_pay': 0,
+    'total_worked_hours': 0,
+    'shift_count': 0,
+    'employee_count': 0,
+    'workplace_count': 1,
+  },
+  'workplaces': [],
+  'minimum_wage': 10320,
+};
 
 void main() {
+  testWidgets('workplace creation submits full pay and tax rules',
+      (tester) async {
+    await tester.binding.setSurfaceSize(const Size(900, 1200));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    final state = _WorkforceFormAppState();
+    addTearDown(state.dispose);
+    await tester.pumpWidget(ChangeNotifierProvider<AppState>.value(
+      value: state,
+      child: const MaterialApp(home: Scaffold(body: WorkforceScreen())),
+    ));
+    await tester.pumpAndSettle();
+
+    final addWorkplace = find.text('근무지 추가');
+    await tester.ensureVisible(addWorkplace);
+    await tester.tap(addWorkplace);
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byType(TextFormField).first, '새 근무지');
+    await tester.tap(find.widgetWithText(FilledButton, '저장'));
+    await tester.pumpAndSettle();
+
+    final write = state.writes.single;
+    expect(write.endpoint, '/api/workforce/workplaces');
+    expect(write.body?['pay_rule'], containsPair('hourly_wage', null));
+    expect(write.body?['pay_rule'], containsPair('daily_wage', null));
+    expect(write.body?['pay_rule'], containsPair('monthly_salary', null));
+    expect(write.body?['pay_rule'], containsPair('night_enabled', true));
+    expect(
+        write.body?['pay_rule'], containsPair('weekly_holiday_start_dow', 0));
+    expect(write.body?['pay_rule'], contains('holiday_multiplier_over8'));
+    expect(write.body?['tax_rule'], {
+      'preset': 'none',
+      'custom_rate': 0.0,
+      'apply_unit': 'monthly',
+    });
+  });
+
+  testWidgets('employee creation submits monthly salary and calculation mode',
+      (tester) async {
+    await tester.binding.setSurfaceSize(const Size(900, 1200));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    final state = _WorkforceFormAppState();
+    addTearDown(state.dispose);
+    await tester.pumpWidget(ChangeNotifierProvider<AppState>.value(
+      value: state,
+      child: const MaterialApp(home: Scaffold(body: WorkforceScreen())),
+    ));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('직원').last);
+    await tester.pumpAndSettle();
+    final addEmployee = find.text('직원 추가');
+    await tester.ensureVisible(addEmployee);
+    await tester.tap(addEmployee);
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byType(TextFormField).first, '정산 직원');
+    await tester.enterText(find.byType(TextFormField).at(5), '3200000');
+    final dropdowns = find.byType(DropdownButtonFormField<String>);
+    await tester.tap(dropdowns.at(1));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('고정 기간급').last);
+    await tester.pumpAndSettle();
+    await tester.tap(find.widgetWithText(FilledButton, '저장'));
+    await tester.pumpAndSettle();
+
+    final write = state.writes.single;
+    expect(write.endpoint, '/api/workforce/employees');
+    expect(write.body?['monthly_salary'], 3200000);
+    expect(write.body?['monthly_salary_calculation_mode'], 'fixed_period');
+  });
+
   testWidgets('shift form displays mobile validation errors', (tester) async {
     await tester.binding.setSurfaceSize(const Size(360, 1000));
     addTearDown(() => tester.binding.setSurfaceSize(null));
@@ -34,6 +174,33 @@ void main() {
 
     expect(find.byKey(const Key('shift-form-error')), findsOneWidget);
     expect(find.textContaining('시작 시간'), findsOneWidget);
+  });
+
+  test('employee validator accepts an omitted salary and rejects negatives',
+      () {
+    expect(
+      validateEmployeeForm(
+        workplaceId: 1,
+        name: '홍길동',
+        joinedOn: '',
+        resignedOn: '',
+        hourlyWage: '',
+        taxRate: '0',
+      ),
+      isNull,
+    );
+    expect(
+      validateEmployeeForm(
+        workplaceId: 1,
+        name: '홍길동',
+        joinedOn: '',
+        resignedOn: '',
+        hourlyWage: '',
+        taxRate: '0',
+        monthlySalary: '-1',
+      ),
+      contains('월급'),
+    );
   });
 
   testWidgets('preset form requires a name', (tester) async {

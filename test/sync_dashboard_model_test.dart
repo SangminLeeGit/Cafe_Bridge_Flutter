@@ -89,6 +89,27 @@ void main() {
     expect(task.loadedCount, 1000);
   });
 
+  test('parses sync run warnings and server business date', () {
+    final data = SyncRunsData.fromJson({
+      'today': '2026-11-03',
+      'error': '',
+      'runs': [
+        {
+          'target_date': '2026-11-02',
+          'status': 'partial_failed',
+          'source_count': 12,
+          'loaded_count': 10,
+          'warnings': ['2개 품목 누락', '  ', null],
+          'started_at': '2026-11-03T01:00:00+09:00',
+          'finished_at': '2026-11-03T01:02:00+09:00',
+        },
+      ],
+    });
+
+    expect(data.today, '2026-11-03');
+    expect(data.runs.single.warnings, ['2개 품목 누락']);
+  });
+
   test('retains an error from a successful HTTP payload', () {
     final task = SyncTaskStatusData.fromJson({'error': '작업 조회 실패'});
     expect(task.responseError, '작업 조회 실패');

@@ -259,6 +259,7 @@ class SyncRun {
   final String status;
   final int sourceCount;
   final int loadedCount;
+  final List<String> warnings;
   final String startedAt;
   final String finishedAt;
 
@@ -267,16 +268,24 @@ class SyncRun {
     required this.status,
     required this.sourceCount,
     required this.loadedCount,
+    this.warnings = const [],
     required this.startedAt,
     required this.finishedAt,
   });
 
   factory SyncRun.fromJson(Map<String, dynamic> json) {
+    final rawWarnings = json['warnings'];
     return SyncRun(
       targetDate: asString(json['target_date']),
       status: asString(json['status']),
       sourceCount: asInt(json['source_count']),
       loadedCount: asInt(json['loaded_count']),
+      warnings: rawWarnings is List
+          ? rawWarnings
+              .whereType<String>()
+              .where((warning) => warning.trim().isNotEmpty)
+              .toList(growable: false)
+          : const [],
       startedAt: asString(json['started_at']),
       finishedAt: asString(json['finished_at']),
     );

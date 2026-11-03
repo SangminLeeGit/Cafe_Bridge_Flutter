@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 import '../core/async_request_guard.dart';
 import '../models/api_contracts.dart';
 import '../models/workforce_models.dart';
+import 'payroll_runs.dart';
 import '../services/api.dart';
 import '../state/app_state.dart';
 import '../widgets/cache_notice.dart';
@@ -144,6 +145,8 @@ class _DashboardTabState extends State<_DashboardTab>
     final saved = await showDialog<bool>(
       context: context,
       builder: (dialogContext) {
+        final payRule = workplace?.payRule;
+        final taxRule = workplace?.taxRule;
         String name = workplace?.name ?? '';
         String shopNo = workplace?.shopNo ?? '';
         String payType = workplace?.payType.isNotEmpty == true
@@ -154,14 +157,43 @@ class _DashboardTabState extends State<_DashboardTab>
             : 'monthly';
         int payday = workplace?.payday ?? 10;
         bool isActive = workplace?.isActive ?? true;
+        String hourlyWage = payRule?.hourlyWage?.toString() ?? '';
+        String dailyWage = payRule?.dailyWage?.toString() ?? '';
+        String monthlySalary = payRule?.monthlySalary?.toString() ?? '';
+        String defaultBreakMinutes =
+            payRule?.defaultBreakMinutes.toString() ?? '0';
+        String overtimeThreshold =
+            payRule?.overtimeDailyThresholdMinutes.toString() ?? '480';
+        bool nightEnabled = payRule?.nightEnabled ?? true;
+        bool overtimeEnabled = payRule?.overtimeEnabled ?? true;
+        bool holidayEnabled = payRule?.holidayEnabled ?? true;
+        bool weeklyHolidayEnabled = payRule?.weeklyHolidayEnabled ?? true;
+        String weeklyHolidayStartDow =
+            payRule?.weeklyHolidayStartDow.toString() ?? '0';
+        String weeklyHolidayMinMinutes =
+            payRule?.weeklyHolidayMinMinutes.toString() ?? '900';
+        String weeklyHolidayMinDays =
+            payRule?.weeklyHolidayMinDays.toString() ?? '1';
+        String nightMultiplier = payRule?.nightMultiplier.toString() ?? '0.5';
+        String overtimeMultiplier =
+            payRule?.overtimeMultiplier.toString() ?? '0.5';
+        String holidayMultiplierUnder8 =
+            payRule?.holidayMultiplierUnder8.toString() ?? '0.5';
+        String holidayMultiplierOver8 =
+            payRule?.holidayMultiplierOver8.toString() ?? '1.0';
+        String taxPreset = taxRule?.preset ?? 'none';
+        String taxRate = taxRule?.customRate.toString() ?? '0';
+        String taxApplyUnit = taxRule?.applyUnit ?? 'monthly';
         return AlertDialog(
           title: Text(workplace == null ? '근무지 추가' : '근무지 수정'),
           content: StatefulBuilder(
             builder: (context, setModalState) => SizedBox(
               width: 520,
+              height: MediaQuery.sizeOf(context).height * 0.68,
               child: SingleChildScrollView(
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
                     TextFormField(
                         initialValue: name,
@@ -233,6 +265,225 @@ class _DashboardTabState extends State<_DashboardTab>
                         ),
                       ],
                     ),
+                    const _FormSectionHeader('급여 기준'),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: TextFormField(
+                            initialValue: hourlyWage,
+                            keyboardType: TextInputType.number,
+                            decoration:
+                                const InputDecoration(labelText: '시급 (원)'),
+                            onChanged: (value) => hourlyWage = value,
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: TextFormField(
+                            initialValue: dailyWage,
+                            keyboardType: TextInputType.number,
+                            decoration:
+                                const InputDecoration(labelText: '일급 (원)'),
+                            onChanged: (value) => dailyWage = value,
+                          ),
+                        ),
+                      ],
+                    ),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: TextFormField(
+                            initialValue: monthlySalary,
+                            keyboardType: TextInputType.number,
+                            decoration:
+                                const InputDecoration(labelText: '월급 (원)'),
+                            onChanged: (value) => monthlySalary = value,
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: TextFormField(
+                            initialValue: defaultBreakMinutes,
+                            keyboardType: TextInputType.number,
+                            decoration:
+                                const InputDecoration(labelText: '기본 휴게 (분)'),
+                            onChanged: (value) => defaultBreakMinutes = value,
+                          ),
+                        ),
+                      ],
+                    ),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: TextFormField(
+                            initialValue: overtimeThreshold,
+                            keyboardType: TextInputType.number,
+                            decoration:
+                                const InputDecoration(labelText: '일 연장 기준 (분)'),
+                            onChanged: (value) => overtimeThreshold = value,
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: TextFormField(
+                            initialValue: weeklyHolidayStartDow,
+                            keyboardType: TextInputType.number,
+                            decoration: const InputDecoration(
+                                labelText: '주휴 시작요일 (0~6)'),
+                            onChanged: (value) => weeklyHolidayStartDow = value,
+                          ),
+                        ),
+                      ],
+                    ),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: TextFormField(
+                            initialValue: weeklyHolidayMinMinutes,
+                            keyboardType: TextInputType.number,
+                            decoration:
+                                const InputDecoration(labelText: '주휴 최소시간 (분)'),
+                            onChanged: (value) =>
+                                weeklyHolidayMinMinutes = value,
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: TextFormField(
+                            initialValue: weeklyHolidayMinDays,
+                            keyboardType: TextInputType.number,
+                            decoration:
+                                const InputDecoration(labelText: '주휴 최소일수'),
+                            onChanged: (value) => weeklyHolidayMinDays = value,
+                          ),
+                        ),
+                      ],
+                    ),
+                    SwitchListTile(
+                      contentPadding: EdgeInsets.zero,
+                      title: const Text('야간수당 적용'),
+                      value: nightEnabled,
+                      onChanged: (value) =>
+                          setModalState(() => nightEnabled = value),
+                    ),
+                    SwitchListTile(
+                      contentPadding: EdgeInsets.zero,
+                      title: const Text('연장수당 적용'),
+                      value: overtimeEnabled,
+                      onChanged: (value) =>
+                          setModalState(() => overtimeEnabled = value),
+                    ),
+                    SwitchListTile(
+                      contentPadding: EdgeInsets.zero,
+                      title: const Text('휴일수당 적용'),
+                      value: holidayEnabled,
+                      onChanged: (value) =>
+                          setModalState(() => holidayEnabled = value),
+                    ),
+                    SwitchListTile(
+                      contentPadding: EdgeInsets.zero,
+                      title: const Text('주휴수당 적용'),
+                      value: weeklyHolidayEnabled,
+                      onChanged: (value) =>
+                          setModalState(() => weeklyHolidayEnabled = value),
+                    ),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: TextFormField(
+                            initialValue: nightMultiplier,
+                            keyboardType: const TextInputType.numberWithOptions(
+                                decimal: true),
+                            decoration:
+                                const InputDecoration(labelText: '야간 가산율'),
+                            onChanged: (value) => nightMultiplier = value,
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: TextFormField(
+                            initialValue: overtimeMultiplier,
+                            keyboardType: const TextInputType.numberWithOptions(
+                                decimal: true),
+                            decoration:
+                                const InputDecoration(labelText: '연장 가산율'),
+                            onChanged: (value) => overtimeMultiplier = value,
+                          ),
+                        ),
+                      ],
+                    ),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: TextFormField(
+                            initialValue: holidayMultiplierUnder8,
+                            keyboardType: const TextInputType.numberWithOptions(
+                                decimal: true),
+                            decoration: const InputDecoration(
+                                labelText: '휴일 8시간 이하 가산율'),
+                            onChanged: (value) =>
+                                holidayMultiplierUnder8 = value,
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: TextFormField(
+                            initialValue: holidayMultiplierOver8,
+                            keyboardType: const TextInputType.numberWithOptions(
+                                decimal: true),
+                            decoration: const InputDecoration(
+                                labelText: '휴일 8시간 초과 가산율'),
+                            onChanged: (value) =>
+                                holidayMultiplierOver8 = value,
+                          ),
+                        ),
+                      ],
+                    ),
+                    const _FormSectionHeader('세금 기준'),
+                    DropdownButtonFormField<String>(
+                      initialValue: taxPreset,
+                      decoration: const InputDecoration(labelText: '세금 프리셋'),
+                      items: const [
+                        DropdownMenuItem(value: 'none', child: Text('없음')),
+                        DropdownMenuItem(
+                            value: 'four_insurance', child: Text('4대보험형')),
+                        DropdownMenuItem(
+                            value: 'freelancer', child: Text('프리랜서형')),
+                        DropdownMenuItem(value: 'custom', child: Text('직접입력')),
+                      ],
+                      onChanged: (value) =>
+                          setModalState(() => taxPreset = value ?? taxPreset),
+                    ),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: TextFormField(
+                            initialValue: taxRate,
+                            keyboardType: const TextInputType.numberWithOptions(
+                                decimal: true),
+                            decoration: const InputDecoration(
+                                labelText: '직접 세율 (0~100%)'),
+                            onChanged: (value) => taxRate = value,
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: DropdownButtonFormField<String>(
+                            initialValue: taxApplyUnit,
+                            decoration:
+                                const InputDecoration(labelText: '세금 적용 단위'),
+                            items: const [
+                              DropdownMenuItem(
+                                  value: 'monthly', child: Text('월별')),
+                              DropdownMenuItem(
+                                  value: 'shift', child: Text('근무별')),
+                            ],
+                            onChanged: (value) => setModalState(
+                                () => taxApplyUnit = value ?? taxApplyUnit),
+                          ),
+                        ),
+                      ],
+                    ),
                   ],
                 ),
               ),
@@ -245,6 +496,64 @@ class _DashboardTabState extends State<_DashboardTab>
             FilledButton(
               onPressed: () async {
                 try {
+                  int? parseOptionalWage(String value) =>
+                      value.trim().isEmpty ? null : int.tryParse(value.trim());
+                  final hourlyValue = parseOptionalWage(hourlyWage);
+                  final dailyValue = parseOptionalWage(dailyWage);
+                  final monthlyValue = parseOptionalWage(monthlySalary);
+                  final integerValues = <String, int?>{
+                    '기본 휴게시간': int.tryParse(defaultBreakMinutes.trim()),
+                    '일 연장 기준': int.tryParse(overtimeThreshold.trim()),
+                    '주휴 시작요일': int.tryParse(weeklyHolidayStartDow.trim()),
+                    '주휴 최소시간': int.tryParse(weeklyHolidayMinMinutes.trim()),
+                    '주휴 최소일수': int.tryParse(weeklyHolidayMinDays.trim()),
+                  };
+                  final decimalValues = <String, double?>{
+                    '야간 가산율': double.tryParse(nightMultiplier.trim()),
+                    '연장 가산율': double.tryParse(overtimeMultiplier.trim()),
+                    '휴일 8시간 이하 가산율':
+                        double.tryParse(holidayMultiplierUnder8.trim()),
+                    '휴일 8시간 초과 가산율':
+                        double.tryParse(holidayMultiplierOver8.trim()),
+                  };
+                  final parsedTaxRate = double.tryParse(taxRate.trim());
+                  String? validationError;
+                  if (name.trim().isEmpty) {
+                    validationError = '근무지명을 입력하세요.';
+                  } else if ((hourlyWage.trim().isNotEmpty &&
+                          (hourlyValue == null || hourlyValue < 0)) ||
+                      (dailyWage.trim().isNotEmpty &&
+                          (dailyValue == null || dailyValue < 0)) ||
+                      (monthlySalary.trim().isNotEmpty &&
+                          (monthlyValue == null || monthlyValue < 0))) {
+                    validationError = '급여 금액은 0원 이상 정수로 입력하세요.';
+                  } else if (integerValues.values
+                      .any((value) => value == null || value < 0)) {
+                    validationError = '급여 기준은 0 이상의 정수로 입력하세요.';
+                  } else if ((int.tryParse(weeklyHolidayStartDow.trim()) ??
+                          -1) >
+                      6) {
+                    validationError = '주휴 시작요일은 0~6으로 입력하세요.';
+                  } else if (decimalValues.values.any((value) =>
+                      value == null || !value.isFinite || value < 0)) {
+                    validationError = '가산율은 0 이상의 숫자로 입력하세요.';
+                  } else if (parsedTaxRate == null ||
+                      !parsedTaxRate.isFinite ||
+                      parsedTaxRate < 0 ||
+                      parsedTaxRate > 100) {
+                    validationError = '세율은 0~100 사이로 입력하세요.';
+                  }
+                  if (validationError != null) {
+                    if (dialogContext.mounted) {
+                      ScaffoldMessenger.of(dialogContext).showSnackBar(
+                          SnackBar(content: Text(validationError)));
+                    }
+                    return;
+                  }
+                  final numbers =
+                      integerValues.map((key, value) => MapEntry(key, value!));
+                  final multipliers =
+                      decimalValues.map((key, value) => MapEntry(key, value!));
                   final body = <String, dynamic>{
                     'name': name.trim(),
                     'shop_no': shopNo.trim(),
@@ -252,14 +561,28 @@ class _DashboardTabState extends State<_DashboardTab>
                     'pay_cycle': payCycle,
                     'payday': payday,
                     'is_active': isActive,
-                    'pay_rule': {
-                      'default_break_minutes':
-                          workplace?.payRule?.defaultBreakMinutes ?? 0
+                    'pay_rule': <String, dynamic>{
+                      'hourly_wage': hourlyValue,
+                      'daily_wage': dailyValue,
+                      'monthly_salary': monthlyValue,
+                      'default_break_minutes': numbers['기본 휴게시간'],
+                      'overtime_daily_threshold_minutes': numbers['일 연장 기준'],
+                      'night_enabled': nightEnabled,
+                      'overtime_enabled': overtimeEnabled,
+                      'holiday_enabled': holidayEnabled,
+                      'weekly_holiday_enabled': weeklyHolidayEnabled,
+                      'weekly_holiday_start_dow': numbers['주휴 시작요일'],
+                      'weekly_holiday_min_minutes': numbers['주휴 최소시간'],
+                      'weekly_holiday_min_days': numbers['주휴 최소일수'],
+                      'night_multiplier': multipliers['야간 가산율'],
+                      'overtime_multiplier': multipliers['연장 가산율'],
+                      'holiday_multiplier_under8': multipliers['휴일 8시간 이하 가산율'],
+                      'holiday_multiplier_over8': multipliers['휴일 8시간 초과 가산율'],
                     },
                     'tax_rule': {
-                      'preset': workplace?.taxRule?.preset ?? 'none',
-                      'custom_rate': workplace?.taxRule?.customRate ?? 0,
-                      'apply_unit': workplace?.taxRule?.applyUnit ?? 'monthly',
+                      'preset': taxPreset,
+                      'custom_rate': parsedTaxRate,
+                      'apply_unit': taxApplyUnit,
                     },
                   };
                   final appState = context.read<AppState>();
@@ -609,41 +932,34 @@ class _CalendarTabState extends State<_CalendarTab>
       _bulkMessage = '';
       _bulkError = '';
     });
-    final completedDates = <String>[];
-    Object? failedError;
-    String? failedDate;
     try {
-      for (final date in sortedDates) {
-        try {
-          await appState.postJson(
-            '/api/workforce/shifts',
-            body: values.toDraft(date).toPayload(),
-          );
-          completedDates.add(date);
-          if (mounted) {
-            setState(() {
-              _bulkMessage =
-                  '${completedDates.length}/${sortedDates.length}일 등록 중...';
-            });
-          }
-        } catch (error) {
-          failedDate = date;
-          failedError = error;
-          break;
-        }
-      }
+      // Use the backend bulk contract so duplicate dates are skipped
+      // atomically (skip_existing) instead of failing partway through a
+      // client-side loop.
+      final result = await appState.postJson(
+        '/api/workforce/shifts/bulk',
+        body: values.toBulkPayload(sortedDates),
+      );
       if (!mounted) return;
+      final createdCount = asInt(result['created_count']);
+      final skippedDates = (result['skipped_dates'] as List? ?? const [])
+          .map((value) => value.toString())
+          .where((value) => value.isNotEmpty)
+          .toList(growable: false);
       setState(() {
-        _selectedDates.removeAll(completedDates);
-        if (failedDate == null) {
-          _bulkMessage = '${completedDates.length}건을 등록했습니다.';
-        } else {
-          _bulkError = '$failedDate 등록 실패: $failedError';
-          _bulkMessage =
-              '${completedDates.length}건 등록 완료. 남은 날짜를 다시 시도할 수 있습니다.';
-        }
+        _selectedDates.clear();
+        _bulkMessage = createdCount == 0
+            ? '이미 등록된 근무만 있어 새로 추가하지 않았습니다.'
+            : '$createdCount건을 등록했습니다.';
+        _bulkError = skippedDates.isEmpty
+            ? ''
+            : '이미 같은 시간의 근무가 있어 ${skippedDates.length}일을 건너뛰었습니다: ${skippedDates.join(', ')}';
       });
       await _load();
+    } catch (error) {
+      if (mounted) {
+        setState(() => _bulkError = '일괄등록 실패: $error');
+      }
     } finally {
       if (mounted) setState(() => _bulkSubmitting = false);
     }
@@ -1100,6 +1416,95 @@ class _ShiftsTabState extends State<_ShiftsTab>
     }
   }
 
+  Future<void> _confirmFilteredShifts(bool confirmed) async {
+    if (!context.read<AppState>().hasOperatorAccess) return;
+    final actionLabel = confirmed ? '확정' : '확정 해제';
+    final accepted = await _confirmShiftAction(
+      title: '기간 근무 $actionLabel',
+      message:
+          '${_formatDate(_fromDate)} ~ ${_formatDate(_toDate)} 기간의 현재 필터 근무를 $actionLabel합니다. 확정된 근무만 급여 정산서에 포함됩니다.',
+      confirmLabel: actionLabel,
+    );
+    if (!accepted || !mounted) return;
+    try {
+      final result = await context.read<AppState>().postJson(
+        '/api/workforce/shifts/confirm',
+        body: {
+          'from_date': _formatDate(_fromDate),
+          'to_date': _formatDate(_toDate),
+          if (_workplaceId != null) 'workplace_id': _workplaceId,
+          if (_employeeId != null) 'employee_id': _employeeId,
+          'confirmed': confirmed,
+        },
+      );
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text(
+              '${asInt(result['updated_count'])}건의 근무를 $actionLabel했습니다.')));
+      await _load();
+    } catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text(error.toString())));
+      }
+    }
+  }
+
+  Future<void> _confirmSingleShift(ShiftRecord shift) async {
+    if (!context.read<AppState>().hasOperatorAccess) return;
+    final confirmed = shift.confirmedAt == null;
+    final actionLabel = confirmed ? '확정' : '확정 해제';
+    final accepted = await _confirmShiftAction(
+      title: '근무 $actionLabel',
+      message:
+          '${_formatWeekday(shift.shiftDate)} ${timePart(shift.startAt)}-${timePart(shift.endAt)} 근무를 $actionLabel할까요? 확정된 근무만 급여 정산서에 포함됩니다.',
+      confirmLabel: actionLabel,
+    );
+    if (!accepted || !mounted) return;
+    try {
+      final result = await context.read<AppState>().postJson(
+        '/api/workforce/shifts/confirm',
+        body: {
+          'shift_ids': [shift.id],
+          'confirmed': confirmed,
+        },
+      );
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text(
+              '${asInt(result['updated_count'])}건의 근무를 $actionLabel했습니다.')));
+      await _load();
+    } catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text(error.toString())));
+      }
+    }
+  }
+
+  Future<bool> _confirmShiftAction({
+    required String title,
+    required String message,
+    required String confirmLabel,
+  }) async {
+    return await showDialog<bool>(
+          context: context,
+          builder: (dialogContext) => AlertDialog(
+            title: Text(title),
+            content: Text(message),
+            actions: [
+              TextButton(
+                  onPressed: () => Navigator.pop(dialogContext, false),
+                  child: const Text('취소')),
+              FilledButton(
+                  onPressed: () => Navigator.pop(dialogContext, true),
+                  child: Text(confirmLabel)),
+            ],
+          ),
+        ) ??
+        false;
+  }
+
   Future<void> _editPreset({ShiftPreset? preset}) async {
     if (!context.read<AppState>().hasOperatorAccess) return;
     if (_workplaces.isEmpty) {
@@ -1210,6 +1615,8 @@ class _ShiftsTabState extends State<_ShiftsTab>
     }
     final totalMinutes =
         _shifts.fold<int>(0, (sum, shift) => sum + _workedMinutes(shift));
+    final confirmedCount =
+        _shifts.where((shift) => shift.confirmedAt != null).length;
     return RefreshIndicator(
       onRefresh: _load,
       child: ListView(
@@ -1298,9 +1705,36 @@ class _ShiftsTabState extends State<_ShiftsTab>
             const SizedBox(height: 12),
             const _WorkforceReadOnlyHint(),
           ],
+          const SizedBox(height: 8),
+          const Text('확정된 근무만 급여 정산서에 포함됩니다.',
+              style: TextStyle(color: Color(0xFF64748B), fontSize: 12)),
+          if (canOperate) ...[
+            const SizedBox(height: 8),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: [
+                OutlinedButton.icon(
+                  onPressed: _shifts.isEmpty
+                      ? null
+                      : () => _confirmFilteredShifts(true),
+                  icon: const Icon(Icons.check_circle_outline, size: 16),
+                  label: const Text('필터 기간 근무 확정'),
+                ),
+                OutlinedButton.icon(
+                  onPressed: confirmedCount == 0
+                      ? null
+                      : () => _confirmFilteredShifts(false),
+                  icon: const Icon(Icons.undo_outlined, size: 16),
+                  label: const Text('필터 기간 확정 해제'),
+                ),
+              ],
+            ),
+          ],
           const SizedBox(height: 12),
           _MetricGrid(cards: [
             StatCard(label: '근무 건수', value: '${_shifts.length}건', accent: true),
+            StatCard(label: '확정 근무', value: '$confirmedCount건'),
             StatCard(
                 label: '총 근무시간',
                 value: '${(totalMinutes / 60).toStringAsFixed(1)}h'),
@@ -1325,6 +1759,17 @@ class _ShiftsTabState extends State<_ShiftsTab>
                                   '${_formatWeekday(shift.shiftDate)} · ${timePart(shift.startAt)}-${timePart(shift.endAt)}'),
                               subtitle: Text(
                                   '${shift.workplaceName}${shift.employeeName?.isNotEmpty == true ? ' · ${shift.employeeName}' : ''}'),
+                              leading: Chip(
+                                avatar: Icon(
+                                  shift.confirmedAt == null
+                                      ? Icons.schedule_outlined
+                                      : Icons.check_circle_outline,
+                                  size: 16,
+                                ),
+                                label: Text(
+                                    shift.confirmedAt == null ? '미확정' : '확정'),
+                                visualDensity: VisualDensity.compact,
+                              ),
                               trailing: canOperate
                                   ? PopupMenuButton<String>(
                                       onSelected: (value) {
@@ -1334,11 +1779,20 @@ class _ShiftsTabState extends State<_ShiftsTab>
                                         if (value == 'delete') {
                                           _deleteShift(shift);
                                         }
+                                        if (value == 'toggle-confirm') {
+                                          _confirmSingleShift(shift);
+                                        }
                                       },
-                                      itemBuilder: (_) => const [
-                                        PopupMenuItem(
+                                      itemBuilder: (_) => [
+                                        const PopupMenuItem(
                                             value: 'edit', child: Text('수정')),
                                         PopupMenuItem(
+                                            value: 'toggle-confirm',
+                                            child: Text(
+                                                shift.confirmedAt == null
+                                                    ? '근무 확정'
+                                                    : '확정 해제')),
+                                        const PopupMenuItem(
                                             value: 'delete', child: Text('삭제')),
                                       ],
                                     )
@@ -1513,6 +1967,28 @@ class _PayslipsTabState extends State<_PayslipsTab>
         children: [
           const Text('급여 명세',
               style: TextStyle(fontWeight: FontWeight.w700, fontSize: 16)),
+          const SizedBox(height: 8),
+          Panel(
+            title: '급여 정산서',
+            subtitle: '확정 근무만 포함하는 정산 초안·검토·확정 흐름',
+            child: Row(
+              children: [
+                const Expanded(
+                  child: Text('근무 확정 상태와 정산 이슈를 확인하고 단계별로 처리합니다.',
+                      style: TextStyle(color: Color(0xFF64748B), fontSize: 12)),
+                ),
+                const SizedBox(width: 8),
+                FilledButton.icon(
+                  onPressed: () => Navigator.of(context).push<void>(
+                    MaterialPageRoute<void>(
+                        builder: (_) => const PayrollRunsScreen()),
+                  ),
+                  icon: const Icon(Icons.receipt_long_outlined, size: 16),
+                  label: const Text('열기'),
+                ),
+              ],
+            ),
+          ),
           const SizedBox(height: 8),
           Wrap(
             spacing: 8,
@@ -1726,6 +2202,11 @@ class _EmployeesTabState extends State<_EmployeesTab>
         String resignedOn = employee?.resignedOn ?? '';
         String phone = employee?.phone ?? '';
         String hourlyWage = employee?.hourlyWage?.toString() ?? '';
+        String monthlySalary = employee?.monthlySalary?.toString() ?? '';
+        String monthlySalaryMode =
+            employee?.monthlySalaryCalculationMode == 'fixed_period'
+                ? 'fixed_period'
+                : 'prorated_hours';
         String taxPreset = employee?.taxPreset.isNotEmpty == true
             ? employee!.taxPreset
             : 'inherit';
@@ -1792,6 +2273,36 @@ class _EmployeesTabState extends State<_EmployeesTab>
                                 decoration:
                                     const InputDecoration(labelText: '퇴사일'),
                                 onChanged: (value) => resignedOn = value)),
+                      ],
+                    ),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: TextFormField(
+                            initialValue: monthlySalary,
+                            keyboardType: TextInputType.number,
+                            decoration:
+                                const InputDecoration(labelText: '월급 (원)'),
+                            onChanged: (value) => monthlySalary = value,
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: DropdownButtonFormField<String>(
+                            initialValue: monthlySalaryMode,
+                            decoration:
+                                const InputDecoration(labelText: '월급 계산 방식'),
+                            items: const [
+                              DropdownMenuItem(
+                                  value: 'prorated_hours',
+                                  child: Text('근무시간 비례')),
+                              DropdownMenuItem(
+                                  value: 'fixed_period', child: Text('고정 기간급')),
+                            ],
+                            onChanged: (value) => setModalState(() =>
+                                monthlySalaryMode = value ?? monthlySalaryMode),
+                          ),
+                        ),
                       ],
                     ),
                     Row(
@@ -1885,6 +2396,7 @@ class _EmployeesTabState extends State<_EmployeesTab>
                     resignedOn: resignedOn,
                     hourlyWage: hourlyWage,
                     taxRate: taxRate,
+                    monthlySalary: monthlySalary,
                   );
                   if (validationError != null) {
                     ScaffoldMessenger.of(dialogContext)
@@ -1903,12 +2415,10 @@ class _EmployeesTabState extends State<_EmployeesTab>
                     'hourly_wage': hourlyWage.trim().isEmpty
                         ? null
                         : int.parse(hourlyWage.trim()),
-                    'monthly_salary': employee?.monthlySalary,
-                    'monthly_salary_calculation_mode':
-                        employee?.monthlySalaryCalculationMode.isNotEmpty ==
-                                true
-                            ? employee!.monthlySalaryCalculationMode
-                            : 'prorated_hours',
+                    'monthly_salary': monthlySalary.trim().isEmpty
+                        ? null
+                        : int.parse(monthlySalary.trim()),
+                    'monthly_salary_calculation_mode': monthlySalaryMode,
                     'tax_preset': taxPreset,
                     'tax_custom_rate': double.parse(taxRate.trim()),
                     'memo': memo.trim(),
@@ -2342,6 +2852,21 @@ class _BulkShiftValues {
         extraAmount: extraAmount,
         deductionAmount: deductionAmount,
       );
+
+  Map<String, dynamic> toBulkPayload(List<String> dates) => {
+        'workplace_id': workplaceId,
+        'employee_id': employeeId,
+        'dates': dates,
+        'start_time': normalizeWorkforceTime(startTime),
+        'end_time': normalizeWorkforceTime(endTime),
+        'break_minutes': breakMinutes,
+        'leave_type': leaveType,
+        'holiday_type': holidayType,
+        'memo': memo.trim(),
+        'extra_amount': extraAmount,
+        'deduction_amount': deductionAmount,
+        'skip_existing': true,
+      };
 }
 
 class _BulkShiftFormDialog extends StatefulWidget {
@@ -2668,6 +3193,25 @@ class _Tag extends StatelessWidget {
               color: color, fontSize: 11, fontWeight: FontWeight.w700)),
     );
   }
+}
+
+class _FormSectionHeader extends StatelessWidget {
+  final String title;
+
+  const _FormSectionHeader(this.title);
+
+  @override
+  Widget build(BuildContext context) => Padding(
+        padding: const EdgeInsets.only(top: 16, bottom: 4),
+        child: Align(
+          alignment: Alignment.centerLeft,
+          child: Text(title,
+              style: const TextStyle(
+                  fontSize: 14,
+                  fontWeight: FontWeight.w700,
+                  color: Color(0xFF334155))),
+        ),
+      );
 }
 
 List<Workplace> _parseWorkplaces(Map<String, dynamic> json) {

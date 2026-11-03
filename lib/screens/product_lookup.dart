@@ -42,6 +42,52 @@ class ProductLookupItem {
   }
 }
 
+class ProductLookupData {
+  final List<ProductLookupItem> rows;
+  final int totalCount;
+  final int filteredCount;
+  final int limit;
+  final bool complete;
+  final String lastVerifiedAt;
+  final String lastFullSnapshotAt;
+  final String lastChangedAt;
+  final int? generation;
+  final String source;
+  final String syncedAt;
+
+  const ProductLookupData({
+    required this.rows,
+    required this.totalCount,
+    required this.filteredCount,
+    required this.limit,
+    required this.complete,
+    required this.lastVerifiedAt,
+    required this.lastFullSnapshotAt,
+    required this.lastChangedAt,
+    required this.generation,
+    required this.source,
+    required this.syncedAt,
+  });
+
+  factory ProductLookupData.fromJson(Map<String, dynamic> json) {
+    return ProductLookupData(
+      rows: requireListOfMaps(json, 'rows')
+          .map(ProductLookupItem.fromJson)
+          .toList(growable: false),
+      totalCount: asInt(json['total_count']),
+      filteredCount: asInt(json['filtered_count']),
+      limit: asInt(json['limit']),
+      complete: json['complete'] == true,
+      lastVerifiedAt: asString(json['last_verified_at']),
+      lastFullSnapshotAt: asString(json['last_full_snapshot_at']),
+      lastChangedAt: asString(json['last_changed_at']),
+      generation: asNullableInt(json['generation']),
+      source: asString(json['source']),
+      syncedAt: asString(json['synced_at']),
+    );
+  }
+}
+
 class ProductLookupScreen extends StatefulWidget {
   const ProductLookupScreen({super.key});
 
@@ -52,11 +98,9 @@ class ProductLookupScreen extends StatefulWidget {
 class _ProductLookupScreenState extends State<ProductLookupScreen>
     with AsyncRequestGuard<ProductLookupScreen> {
   final _searchController = TextEditingController();
-  List<ProductLookupItem> _items = const [];
+  ProductLookupData? _data;
   bool _loading = true;
   String _error = '';
-  String _source = '';
-  String _syncedAt = '';
   int _limit = 100;
 
   @override
@@ -93,13 +137,8 @@ class _ProductLookupScreenState extends State<ProductLookupScreen>
                 cacheTtl: refresh ? Duration.zero : const Duration(minutes: 10),
               );
       if (!isCurrentAsyncRequest(request)) return;
-      final rows = requireListOfMaps(response.data, 'rows')
-          .map(ProductLookupItem.fromJson)
-          .toList(growable: false);
       setState(() {
-        _items = rows;
-        _source = (response.data['source'] ?? '').toString();
-        _syncedAt = (response.data['synced_at'] ?? '').toString();
+        _data = ProductLookupData.fromJson(response.data);
         _loading = false;
       });
     } catch (error) {
@@ -140,9 +179,20 @@ class _ProductLookupScreenState extends State<ProductLookupScreen>
     );
   }
 
+  void _openCatalog() {
+    AppNavigation.pushGuarded(
+      context,
+      minimumRole: UserRole.viewer,
+      child: const EditorProductCatalogScreen(),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final canChangePrice = context.watch<AppState>().hasOperatorAccess;
+    final data = _data;
+    final items = data?.rows ?? const <ProductLookupItem>[];
+    final isTruncated = data != null && data.filteredCount > items.length;
     return AccessGate(
       minimumRole: UserRole.viewer,
       child: Column(
@@ -210,11 +260,7 @@ class _ProductLookupScreenState extends State<ProductLookupScreen>
             child: Align(
               alignment: Alignment.centerRight,
               child: TextButton.icon(
-                onPressed: () => AppNavigation.pushGuarded(
-                  context,
-                  minimumRole: UserRole.viewer,
-                  child: const EditorProductCatalogScreen(),
-                ),
+                onPressed: _openCatalog,
                 icon: const Icon(Icons.manage_search),
                 label: const Text('페이지형 카탈로그 탐색'),
               ),
@@ -222,21 +268,122 @@ class _ProductLookupScreenState extends State<ProductLookupScreen>
           ),
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-            child: Row(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                Expanded(
-                  child: Text(
-                    '${_items.length}개${_source.isEmpty ? '' : ' · ${_source.toUpperCase()}'}${_syncedAt.isEmpty ? '' : ' · $_syncedAt'}',
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(color: Color(0xFF64748B)),
+                Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        '표시 ${_formatNumber(items.length)} / 검색 ${_formatNumber(data?.filteredCount ?? 0)} / 전체 ${_formatNumber(data?.totalCount ?? 0)}',
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          color: Color(0xFF475569),
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    ),
+                    IconButton(
+                      onPressed: _loading ? null : () => _load(refresh: true),
+                      tooltip: '새로고침',
+                      icon: const Icon(Icons.refresh),
+                    ),
+                  ],
+                ),
+                if (data != null) ...[
+                  Text(
+                    '${data.source.isEmpty ? '' : '${data.source.toUpperCase()} · '}${data.syncedAt.isEmpty ? '동기화 시각 미제공' : '동기화 $data.syncedAt'} · 조회 한도 ${_formatNumber(data.limit)}개',
+                    style: const TextStyle(
+                      color: Color(0xFF64748B),
+                      fontSize: 12,
+                    ),
                   ),
-                ),
-                IconButton(
-                  onPressed: _loading ? null : () => _load(refresh: true),
-                  tooltip: '새로고침',
-                  icon: const Icon(Icons.refresh),
-                ),
+                  const SizedBox(height: 4),
+                  Wrap(
+                    spacing: 12,
+                    runSpacing: 4,
+                    children: [
+                      Text(
+                        data.complete ? '전체 스냅샷 완료' : '전체 스냅샷 불완전',
+                        style: TextStyle(
+                          color: data.complete
+                              ? const Color(0xFF15803D)
+                              : const Color(0xFFB45309),
+                          fontWeight: FontWeight.w700,
+                          fontSize: 12,
+                        ),
+                      ),
+                      Text(
+                        'generation ${data.generation == null ? '-' : _formatNumber(data.generation!)}',
+                        style: const TextStyle(
+                          color: Color(0xFF64748B),
+                          fontSize: 12,
+                        ),
+                      ),
+                    ],
+                  ),
+                  Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        '최종 검증 ${_metadataValue(data.lastVerifiedAt)}',
+                        style: const TextStyle(
+                          color: Color(0xFF64748B),
+                          fontSize: 12,
+                        ),
+                      ),
+                      Text(
+                        '전체 스냅샷 ${_metadataValue(data.lastFullSnapshotAt)}',
+                        style: const TextStyle(
+                          color: Color(0xFF64748B),
+                          fontSize: 12,
+                        ),
+                      ),
+                      Text(
+                        '최종 변경 ${_metadataValue(data.lastChangedAt)}',
+                        style: const TextStyle(
+                          color: Color(0xFF64748B),
+                          fontSize: 12,
+                        ),
+                      ),
+                    ],
+                  ),
+                  if (isTruncated) ...[
+                    const SizedBox(height: 8),
+                    Container(
+                      padding: const EdgeInsets.all(10),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFFFFBEB),
+                        borderRadius: BorderRadius.circular(10),
+                        border: Border.all(color: const Color(0xFFFDE68A)),
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            '검색 결과 ${_formatNumber(data.filteredCount)}개 중 ${_formatNumber(items.length)}개만 표시 중입니다.',
+                            style: const TextStyle(
+                              color: Color(0xFF92400E),
+                              fontSize: 12,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                          TextButton.icon(
+                            onPressed: _openCatalog,
+                            icon: const Icon(Icons.manage_search),
+                            label: const Text('페이지형 카탈로그로 전체 탐색'),
+                            style: TextButton.styleFrom(
+                              visualDensity: VisualDensity.compact,
+                              padding: EdgeInsets.zero,
+                              alignment: Alignment.centerLeft,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ],
               ],
             ),
           ),
@@ -248,15 +395,15 @@ class _ProductLookupScreenState extends State<ProductLookupScreen>
                         message: _error,
                         action: () => _load(),
                       )
-                    : _items.isEmpty
+                    : items.isEmpty
                         ? const _LookupMessage(message: '검색 결과가 없습니다.')
                         : ListView.separated(
                             padding: const EdgeInsets.fromLTRB(16, 4, 16, 24),
-                            itemCount: _items.length,
+                            itemCount: items.length,
                             separatorBuilder: (_, __) =>
                                 const SizedBox(height: 8),
                             itemBuilder: (context, index) {
-                              final item = _items[index];
+                              final item = items[index];
                               return Card(
                                 margin: EdgeInsets.zero,
                                 child: InkWell(
@@ -539,3 +686,5 @@ String _formatNumber(int value) {
     (_) => ',',
   );
 }
+
+String _metadataValue(String value) => value.isEmpty ? '미기록' : value;

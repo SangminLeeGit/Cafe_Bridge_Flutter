@@ -241,6 +241,10 @@ class _LoginScreenState extends State<LoginScreen> {
           return error.message.isNotEmpty
               ? error.message
               : '로그인 시도가 너무 많습니다. 잠시 후 다시 시도하세요.';
+        case 503:
+          return error.message.isNotEmpty
+              ? error.message
+              : '서버의 보안 설정 때문에 로그인할 수 없습니다. HTTPS/API 주소 설정을 확인하세요.';
         case 504:
           return '로그인 요청 시간이 초과되었습니다. 서버 연결을 확인하세요.';
         default:

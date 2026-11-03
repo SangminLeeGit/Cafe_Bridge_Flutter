@@ -918,20 +918,21 @@ class AppState extends ChangeNotifier {
     required String currentPassword,
     required String newPassword,
   }) async {
-    final trimmedCurrent = currentPassword.trim();
-    final trimmedNext = newPassword.trim();
-    if (trimmedCurrent.isEmpty || trimmedNext.isEmpty) {
+    // Passwords are opaque credentials: never trim or otherwise normalize
+    // them before sending. Leading/trailing spaces are significant, and the
+    // backend applies the authoritative length/strength policy.
+    if (currentPassword.isEmpty || newPassword.isEmpty) {
       throw const ApiException('현재 비밀번호와 새 비밀번호를 모두 입력하세요.');
     }
-    if (trimmedNext.length < 12) {
+    if (newPassword.length < 12) {
       throw const ApiException('새 비밀번호는 최소 12자 이상이어야 합니다.');
     }
 
     await _postJsonWithAuth(
       '/api/auth/change-password',
       body: {
-        'current_password': trimmedCurrent,
-        'new_password': trimmedNext,
+        'current_password': currentPassword,
+        'new_password': newPassword,
       },
     );
     await _clearAuthState();

@@ -207,21 +207,39 @@ class WorkplacePayRule {
       hourlyWage: asNullableInt(json['hourly_wage']),
       dailyWage: asNullableInt(json['daily_wage']),
       monthlySalary: asNullableInt(json['monthly_salary']),
-      defaultBreakMinutes: asInt(json['default_break_minutes']),
+      defaultBreakMinutes: json['default_break_minutes'] == null
+          ? 0
+          : asInt(json['default_break_minutes']),
       overtimeDailyThresholdMinutes:
-          asInt(json['overtime_daily_threshold_minutes']),
+          json['overtime_daily_threshold_minutes'] == null
+              ? 480
+              : asInt(json['overtime_daily_threshold_minutes']),
       nightEnabled: asBool(json['night_enabled'], defaultValue: true),
       overtimeEnabled: asBool(json['overtime_enabled'], defaultValue: true),
       holidayEnabled: asBool(json['holiday_enabled'], defaultValue: true),
       weeklyHolidayEnabled:
           asBool(json['weekly_holiday_enabled'], defaultValue: true),
-      weeklyHolidayStartDow: asInt(json['weekly_holiday_start_dow']),
-      weeklyHolidayMinMinutes: asInt(json['weekly_holiday_min_minutes']),
-      weeklyHolidayMinDays: asInt(json['weekly_holiday_min_days']),
-      nightMultiplier: asDouble(json['night_multiplier']),
-      overtimeMultiplier: asDouble(json['overtime_multiplier']),
-      holidayMultiplierUnder8: asDouble(json['holiday_multiplier_under8']),
-      holidayMultiplierOver8: asDouble(json['holiday_multiplier_over8']),
+      weeklyHolidayStartDow: json['weekly_holiday_start_dow'] == null
+          ? 0
+          : asInt(json['weekly_holiday_start_dow']),
+      weeklyHolidayMinMinutes: json['weekly_holiday_min_minutes'] == null
+          ? 900
+          : asInt(json['weekly_holiday_min_minutes']),
+      weeklyHolidayMinDays: json['weekly_holiday_min_days'] == null
+          ? 1
+          : asInt(json['weekly_holiday_min_days']),
+      nightMultiplier: json['night_multiplier'] == null
+          ? 0.5
+          : asDouble(json['night_multiplier']),
+      overtimeMultiplier: json['overtime_multiplier'] == null
+          ? 0.5
+          : asDouble(json['overtime_multiplier']),
+      holidayMultiplierUnder8: json['holiday_multiplier_under8'] == null
+          ? 0.5
+          : asDouble(json['holiday_multiplier_under8']),
+      holidayMultiplierOver8: json['holiday_multiplier_over8'] == null
+          ? 1.0
+          : asDouble(json['holiday_multiplier_over8']),
     );
   }
 }
@@ -239,9 +257,12 @@ class WorkplaceTaxRule {
 
   factory WorkplaceTaxRule.fromJson(Map<String, dynamic> json) {
     return WorkplaceTaxRule(
-      preset: asString(json['preset']),
+      preset:
+          asString(json['preset']).isEmpty ? 'none' : asString(json['preset']),
       customRate: asDouble(json['custom_rate']),
-      applyUnit: asString(json['apply_unit']),
+      applyUnit: asString(json['apply_unit']).isEmpty
+          ? 'monthly'
+          : asString(json['apply_unit']),
     );
   }
 }
@@ -330,6 +351,7 @@ class ShiftRecord {
   final String leaveType;
   final String holidayType;
   final String memo;
+  final DateTime? confirmedAt;
   final DateTime? createdAt;
   final DateTime? updatedAt;
   final List<ShiftAdjustment> adjustments;
@@ -347,6 +369,7 @@ class ShiftRecord {
     required this.leaveType,
     required this.holidayType,
     required this.memo,
+    required this.confirmedAt,
     required this.createdAt,
     required this.updatedAt,
     required this.adjustments,
@@ -366,6 +389,7 @@ class ShiftRecord {
       leaveType: asString(json['leave_type']),
       holidayType: asString(json['holiday_type']),
       memo: asString(json['memo']),
+      confirmedAt: asDateTime(json['confirmed_at']),
       createdAt: asDateTime(json['created_at']),
       updatedAt: asDateTime(json['updated_at']),
       adjustments: asListOfMaps(json['adjustments'])
@@ -977,6 +1001,7 @@ String? validateEmployeeForm({
   required String resignedOn,
   required String hourlyWage,
   required String taxRate,
+  String monthlySalary = '',
 }) {
   if (workplaceId == null) return '근무지를 선택하세요.';
   if (name.trim().isEmpty) return '직원 이름을 입력하세요.';
@@ -994,6 +1019,11 @@ String? validateEmployeeForm({
       hourlyWage.trim().isEmpty ? null : int.tryParse(hourlyWage.trim());
   if (hourlyWage.trim().isNotEmpty && (wage == null || wage < 0)) {
     return '시급은 0원 이상이어야 합니다.';
+  }
+  final salary =
+      monthlySalary.trim().isEmpty ? null : int.tryParse(monthlySalary.trim());
+  if (monthlySalary.trim().isNotEmpty && (salary == null || salary < 0)) {
+    return '월급은 0원 이상이어야 합니다.';
   }
   final rate = double.tryParse(taxRate.trim());
   if (rate == null || rate < 0) return '세율은 0 이상이어야 합니다.';
