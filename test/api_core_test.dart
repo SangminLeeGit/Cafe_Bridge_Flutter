@@ -79,6 +79,89 @@ void main() {
     );
   });
 
+  test('preserves structured backend error codes, messages, fields and IDs',
+      () async {
+    final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+    addTearDown(() => server.close(force: true));
+    server.listen((request) async {
+      request.response.statusCode = HttpStatus.conflict;
+      request.response.headers.contentType = ContentType.json;
+      switch (request.uri.path) {
+        case '/code':
+          request.response.headers.set('x-request-id', 'req-code-7');
+          request.response.write(json.encode({
+            'detail': {
+              'code': 'legacy_mutation_disabled',
+              'message': 'Preview only',
+            },
+          }));
+        case '/reason':
+          request.response.write(json.encode({
+            'detail': {
+              'reason_code': 'snapshot_changed',
+              'message': 'Reload before saving',
+            },
+          }));
+        case '/fields':
+          request.response.statusCode = HttpStatus.unprocessableEntity;
+          request.response.write(json.encode({
+            'detail': [
+              {
+                'loc': ['body', 'items', 0, 'quantity'],
+                'msg': 'must be positive',
+              },
+            ],
+          }));
+        default:
+          request.response.write(json.encode({'detail': 'plain detail'}));
+      }
+      await request.response.close();
+    });
+    final baseUrl = 'http://127.0.0.1:${server.port}';
+
+    await expectLater(
+      ApiService.fetchJson(baseUrl, '/code'),
+      throwsA(
+        isA<ApiException>()
+            .having((error) => error.statusCode, 'statusCode', 409)
+            .having((error) => error.code, 'code', 'legacy_mutation_disabled')
+            .having((error) => error.message, 'message', 'Preview only')
+            .having((error) => error.requestId, 'requestId', 'req-code-7'),
+      ),
+    );
+    await expectLater(
+      ApiService.fetchJson(baseUrl, '/reason'),
+      throwsA(
+        isA<ApiException>()
+            .having((error) => error.code, 'code', 'snapshot_changed')
+            .having(
+                (error) => error.message, 'message', 'Reload before saving'),
+      ),
+    );
+    await expectLater(
+      ApiService.fetchJson(baseUrl, '/fields'),
+      throwsA(
+        isA<ApiException>()
+            .having((error) => error.statusCode, 'statusCode', 422)
+            .having(
+          (error) => error.fieldErrors,
+          'fieldErrors',
+          const {'items.0.quantity': 'must be positive'},
+        ),
+      ),
+    );
+    await expectLater(
+      ApiService.fetchJson(baseUrl, '/plain'),
+      throwsA(
+        isA<ApiException>().having(
+          (error) => error.message,
+          'message',
+          'plain detail',
+        ),
+      ),
+    );
+  });
+
   test('required list parsing rejects missing and malformed response fields',
       () {
     expect(

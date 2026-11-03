@@ -5,6 +5,7 @@ import 'package:provider/provider.dart';
 
 import '../core/async_request_guard.dart';
 import '../models/api_contracts.dart';
+import '../models/editor_context.dart';
 import '../models/menu_workspace_models.dart';
 import '../models/product_identity.dart';
 import '../services/api.dart';
@@ -2063,7 +2064,16 @@ class _QuickPriceChangeSheetState extends State<_QuickPriceChangeSheet> {
   final _notesController = TextEditingController();
   bool _isDirectApplying = false;
   String _error = '';
+  EditorContext? _editorContext;
+  bool _isLoadingPriceCapability = true;
+  String _priceCapabilityError = '';
   TaskPoller<BrowserPriceApplyTask>? _poller;
+
+  @override
+  void initState() {
+    super.initState();
+    unawaited(_loadPriceCapability());
+  }
 
   @override
   void dispose() {
@@ -2106,7 +2116,70 @@ class _QuickPriceChangeSheetState extends State<_QuickPriceChangeSheet> {
     }
   }
 
+  bool get _canApplyPrice => _editorContext?.canApplyPrice('판매가') ?? false;
+
+  String get _priceApplyBlockReason {
+    if (_isLoadingPriceCapability) return '서버에서 가격 반영 권한을 확인하고 있습니다.';
+    if (_priceCapabilityError.isNotEmpty) {
+      return '가격 실제 반영 상태를 확인하지 못해 실행이 차단되었습니다. $_priceCapabilityError';
+    }
+    return _editorContext?.priceApplyBlockReason('판매가') ??
+        '서버에서 가격 반영 기능 상태를 확인할 수 없어 실행이 차단되었습니다.';
+  }
+
+  Future<EditorContext> _refreshPriceCapability() async {
+    try {
+      final response = await widget.appState.fetchMapParsed<EditorContext>(
+        '/api/editor/context',
+        parser: EditorContext.fromJson,
+        cacheTtl: Duration.zero,
+        allowStaleOnError: false,
+      );
+      if (mounted) {
+        setState(() {
+          _editorContext = response.data;
+          _priceCapabilityError = '';
+          _isLoadingPriceCapability = false;
+        });
+      }
+      return response.data;
+    } catch (error) {
+      if (mounted) {
+        setState(() {
+          _editorContext = null;
+          _priceCapabilityError = error.toString();
+          _isLoadingPriceCapability = false;
+        });
+      }
+      rethrow;
+    }
+  }
+
+  Future<void> _loadPriceCapability() async {
+    try {
+      await _refreshPriceCapability();
+    } catch (_) {
+      // The disabled action and inline explanation are the fail-closed state.
+    }
+  }
+
+  Future<void> _requirePriceApplyCapability() async {
+    final editorContext = await _refreshPriceCapability();
+    if (!editorContext.canApplyPrice('판매가')) {
+      throw ApiException(
+        editorContext.priceApplyBlockReason('판매가'),
+        statusCode: 503,
+        code: editorContext.capability('apply_price')?.reasonCode ??
+            'capability_disabled',
+      );
+    }
+  }
+
   Future<void> _applyDirectly() async {
+    if (!_canApplyPrice) {
+      setState(() => _error = _priceApplyBlockReason);
+      return;
+    }
     final itemCode = widget.product.itemCode.trim();
     if (itemCode.isEmpty) {
       setState(() => _error = '상품코드가 없어 POS 즉시 적용을 실행할 수 없습니다.');
@@ -2153,6 +2226,9 @@ class _QuickPriceChangeSheetState extends State<_QuickPriceChangeSheet> {
               : '가격 변경 미리보기에 실패했습니다.',
         );
       }
+      // A successful preview is not permission to mutate. Re-check the
+      // server-owned capability before showing the POS confirmation.
+      await _requirePriceApplyCapability();
       if (!mounted) return;
       final confirmed = await showDialog<bool>(
         context: context,
@@ -2174,6 +2250,9 @@ class _QuickPriceChangeSheetState extends State<_QuickPriceChangeSheet> {
         ),
       );
       if (confirmed != true || !mounted) return;
+      // Confirmations may remain open while the backend feature gate changes.
+      // Refresh again immediately before sending execute=true.
+      await _requirePriceApplyCapability();
       final started = await widget.appState.postJson(
         '/api/price/browser-apply',
         body: {
@@ -2315,6 +2394,16 @@ class _QuickPriceChangeSheetState extends State<_QuickPriceChangeSheet> {
                     '옵션/부가 항목처럼 보여 POS 직접 적용이 실패할 수 있습니다. 웹과 같은 Selenium 경로로 요청해도 POS 검색 결과에 없으면 적용되지 않습니다.',
               ),
             ],
+            if (!_canApplyPrice) ...[
+              const SizedBox(height: 10),
+              _InlineNotice(
+                backgroundColor: const Color(0xFFFFF7ED),
+                borderColor: const Color(0xFFF59E0B),
+                textColor: const Color(0xFF9A3412),
+                icon: Icons.lock_outline,
+                message: _priceApplyBlockReason,
+              ),
+            ],
             const SizedBox(height: 16),
             TextField(
               controller: _targetController,
@@ -2366,9 +2455,18 @@ class _QuickPriceChangeSheetState extends State<_QuickPriceChangeSheet> {
             mainAxisSize: MainAxisSize.min,
             children: [
               FilledButton.icon(
-                onPressed: isBusy || p.itemCode.isEmpty ? null : _applyDirectly,
+                onPressed: isBusy ||
+                        _isLoadingPriceCapability ||
+                        !_canApplyPrice ||
+                        p.itemCode.isEmpty
+                    ? null
+                    : _applyDirectly,
                 icon: const Icon(Icons.rocket_launch_outlined),
-                label: Text(_isDirectApplying ? 'POS 적용 중...' : 'POS에 즉시 적용'),
+                label: Text(_isDirectApplying
+                    ? 'POS 적용 중...'
+                    : _canApplyPrice
+                        ? 'POS에 즉시 적용'
+                        : '현재 실제 반영 불가'),
                 style: FilledButton.styleFrom(
                   backgroundColor: const Color(0xFF1D4ED8),
                   minimumSize: const Size(double.infinity, 50),

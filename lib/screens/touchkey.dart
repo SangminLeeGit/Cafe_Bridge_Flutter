@@ -2,12 +2,14 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../core/async_request_guard.dart';
+import '../navigation/app_navigation.dart';
 import '../models/touchkey_models.dart';
 import '../state/app_state.dart';
 import '../widgets/empty_state.dart';
 import '../widgets/panel.dart';
 import '../widgets/responsive_wrap_grid.dart';
 import '../widgets/stat_card.dart';
+import 'touchkey_layout_editor.dart';
 
 class TouchkeyScreen extends StatefulWidget {
   const TouchkeyScreen({super.key});
@@ -333,6 +335,13 @@ class _TouchkeyMapViewState extends State<_TouchkeyMapView> {
             ? widget.data.selectedClass['분류코드'].toString().trim()
             : (classItems.isEmpty ? '' : (classItems.first['분류코드'] ?? ''));
     final loadedClass = _findClassRow(classItems, loadedCode);
+    final selectedSortValue =
+        (widget.data.selectedClass['순번']?.toString().trim().isNotEmpty == true)
+            ? widget.data.selectedClass['순번'].toString().trim()
+            : (loadedClass?['순번']?.trim() ?? '');
+    final canOpenDraft = context.select<AppState, bool>(
+      (appState) => appState.hasOperatorAccess,
+    );
     final scopedProductItems =
         _filterProductItemsByLoadedClass(productItems, loadedCode);
     final slotGrid = _buildSlotGrid(slotTable);
@@ -597,6 +606,28 @@ class _TouchkeyMapViewState extends State<_TouchkeyMapView> {
                   ),
                 ],
               ),
+              if (loadedCode.isNotEmpty && canOpenDraft) ...[
+                const SizedBox(height: 8),
+                Align(
+                  alignment: Alignment.centerRight,
+                  child: OutlinedButton.icon(
+                    onPressed: () => AppNavigation.pushGuarded(
+                      context,
+                      minimumRole: UserRole.operator,
+                      child: TouchkeyLayoutEditorScreen(
+                        classCode: loadedCode,
+                        sortValue: selectedSortValue.isEmpty
+                            ? loadedCode
+                            : selectedSortValue,
+                        className: loadedClass?['분류명'] ?? loadedCode,
+                        page: activePage,
+                      ),
+                    ),
+                    icon: const Icon(Icons.edit_outlined),
+                    label: const Text('서버 초안 편집'),
+                  ),
+                ),
+              ],
             ],
           ),
         ),

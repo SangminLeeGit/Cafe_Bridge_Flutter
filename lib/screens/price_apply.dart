@@ -6,6 +6,7 @@ import 'package:provider/provider.dart';
 import '../core/async_request_guard.dart';
 import '../models/api_contracts.dart';
 import '../models/dashboard_model.dart';
+import '../models/editor_context.dart';
 import '../models/product_identity.dart';
 import '../services/api.dart';
 import '../services/task_poller.dart';
@@ -65,6 +66,9 @@ class _PriceApplyScreenState extends State<PriceApplyScreen>
   TaskPoller<BrowserPriceApplyTask>? _poller;
   int _pollGeneration = 0;
   String? _lastPreviewSignature;
+  EditorContext? _editorContext;
+  bool _isLoadingEditorContext = true;
+  String _editorContextError = '';
 
   bool get _requiresMenuSelection => widget.initialProductCode.trim().isEmpty;
 
@@ -82,6 +86,7 @@ class _PriceApplyScreenState extends State<PriceApplyScreen>
     } else {
       unawaited(_loadHistory());
       unawaited(_restoreActiveTask());
+      unawaited(_loadEditorContext());
     }
   }
 
@@ -129,6 +134,48 @@ class _PriceApplyScreenState extends State<PriceApplyScreen>
         _isLoadingHistory = false;
       });
     }
+  }
+
+  Future<EditorContext> _fetchEditorContext() async {
+    final response =
+        await context.read<AppState>().fetchMapParsed<EditorContext>(
+              '/api/editor/context',
+              parser: EditorContext.fromJson,
+              cacheTtl: Duration.zero,
+              allowStaleOnError: false,
+            );
+    return response.data;
+  }
+
+  Future<void> _loadEditorContext() async {
+    try {
+      final editorContext = await _fetchEditorContext();
+      if (!mounted) return;
+      setState(() {
+        _editorContext = editorContext;
+        _editorContextError = '';
+        _isLoadingEditorContext = false;
+      });
+    } catch (error) {
+      if (!mounted) return;
+      setState(() {
+        _editorContext = null;
+        _editorContextError = _formatError(error);
+        _isLoadingEditorContext = false;
+      });
+    }
+  }
+
+  bool get _canApplyPrice =>
+      _editorContext?.canApplyPrice(_targetColumn) ?? false;
+
+  String get _priceApplyBlockReason {
+    if (_isLoadingEditorContext) return '서버에서 가격 반영 권한을 확인하고 있습니다.';
+    if (_editorContextError.isNotEmpty) {
+      return '가격 실제 반영 상태를 확인할 수 없어 실행이 차단되었습니다. $_editorContextError';
+    }
+    return _editorContext?.priceApplyBlockReason(_targetColumn) ??
+        '서버에서 가격 반영 기능 상태를 확인할 수 없어 실행이 차단되었습니다.';
   }
 
   Future<void> _restoreActiveTask() async {
@@ -231,6 +278,21 @@ class _PriceApplyScreenState extends State<PriceApplyScreen>
     });
 
     try {
+      if (execute) {
+        // A previously loaded or cached capability is not sufficient authority
+        // for a POS mutation. Refresh it immediately before any execute request.
+        final editorContext = await _fetchEditorContext();
+        if (!mounted) return;
+        setState(() => _editorContext = editorContext);
+        if (!editorContext.canApplyPrice(_targetColumn)) {
+          throw ApiException(
+            editorContext.priceApplyBlockReason(_targetColumn),
+            statusCode: 503,
+            code: editorContext.capability('apply_price')?.reasonCode ??
+                'capability_disabled',
+          );
+        }
+      }
       final response = await appState.postJson(
         '/api/price/browser-apply',
         body: {
@@ -288,11 +350,26 @@ class _PriceApplyScreenState extends State<PriceApplyScreen>
       if (error.statusCode == 403) {
         return '권한이 없습니다. operator 이상 계정으로 시도해 주세요.';
       }
-      if (error.statusCode == 409) {
+      if (error.code == 'legacy_mutation_disabled' ||
+          error.code == 'capability_disabled') {
+        return '서버가 가격 실제 반영을 차단했습니다. 미리보기만 이용할 수 있습니다. ${error.message}';
+      }
+      if (error.code == 'upgrade_required') {
+        return '서버가 새 편집 계약을 요구합니다. 구형 실행 경로로 우회하지 않습니다. ${error.message}';
+      }
+      if (error.statusCode == 409 &&
+          const {'operation_in_progress', 'price_apply_busy'}
+              .contains(error.code)) {
         return '이미 가격 변경 작업이 실행 중입니다. 완료 후 다시 시도하세요.';
       }
       if (error.statusCode == 422) {
-        return '입력 값을 다시 확인해 주세요.';
+        return error.message;
+      }
+      if (error.statusCode == 428) {
+        return '요청에 필요한 서버 버전 또는 식별자 정보가 없습니다. 앱/서버 계약을 확인해 주세요. ${error.message}';
+      }
+      if (error.requestId?.isNotEmpty == true) {
+        return '${error.message} (요청 ID: ${error.requestId})';
       }
       return error.message;
     }
@@ -418,6 +495,16 @@ class _PriceApplyScreenState extends State<PriceApplyScreen>
                               : '다른 화면에서 선택한 상품코드로 연동되었습니다.',
                         ),
                       ),
+                    if (!_canApplyPrice) ...[
+                      _InlineNotice(
+                        backgroundColor: const Color(0xFFFFF7ED),
+                        borderColor: const Color(0xFFF59E0B),
+                        textColor: const Color(0xFF9A3412),
+                        icon: Icons.lock_outline,
+                        message: _priceApplyBlockReason,
+                      ),
+                      const SizedBox(height: 12),
+                    ],
                     TextField(
                       controller: _productCodeController,
                       readOnly: widget.lockProductCode,
@@ -525,41 +612,42 @@ class _PriceApplyScreenState extends State<PriceApplyScreen>
                           label: const Text('미리보기'),
                         );
                         final apply = FilledButton.icon(
-                          onPressed:
-                              _isSubmitting || _lastPreviewSignature == null
-                                  ? null
-                                  : () async {
-                                      final confirmed = await showDialog<bool>(
-                                        context: context,
-                                        builder: (dialogContext) => AlertDialog(
-                                          title: const Text('가격 변경 실행'),
-                                          content: Text(
-                                            '${widget.initialItemName.isEmpty ? productCodeLabel(_productCodeController.text) : widget.initialItemName}의 가격을 실제 POS에 반영할까요?',
+                          onPressed: _isSubmitting ||
+                                  _lastPreviewSignature == null ||
+                                  !_canApplyPrice
+                              ? null
+                              : () async {
+                                  final confirmed = await showDialog<bool>(
+                                    context: context,
+                                    builder: (dialogContext) => AlertDialog(
+                                      title: const Text('가격 변경 실행'),
+                                      content: Text(
+                                        '${widget.initialItemName.isEmpty ? productCodeLabel(_productCodeController.text) : widget.initialItemName}의 가격을 실제 POS에 반영할까요?',
+                                      ),
+                                      actions: [
+                                        TextButton(
+                                          onPressed: () => Navigator.pop(
+                                            dialogContext,
+                                            false,
                                           ),
-                                          actions: [
-                                            TextButton(
-                                              onPressed: () => Navigator.pop(
-                                                dialogContext,
-                                                false,
-                                              ),
-                                              child: const Text('취소'),
-                                            ),
-                                            FilledButton(
-                                              onPressed: () => Navigator.pop(
-                                                dialogContext,
-                                                true,
-                                              ),
-                                              child: const Text('실제 반영'),
-                                            ),
-                                          ],
+                                          child: const Text('취소'),
                                         ),
-                                      );
-                                      if (confirmed == true && mounted) {
-                                        await _submit(execute: true);
-                                      }
-                                    },
+                                        FilledButton(
+                                          onPressed: () => Navigator.pop(
+                                            dialogContext,
+                                            true,
+                                          ),
+                                          child: const Text('실제 반영'),
+                                        ),
+                                      ],
+                                    ),
+                                  );
+                                  if (confirmed == true && mounted) {
+                                    await _submit(execute: true);
+                                  }
+                                },
                           icon: const Icon(Icons.rocket_launch_outlined),
-                          label: const Text('실제 반영'),
+                          label: Text(_canApplyPrice ? '실제 반영' : '미리보기만 가능'),
                         );
                         if (constraints.maxWidth < 420) {
                           return Column(

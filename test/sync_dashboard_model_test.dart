@@ -9,6 +9,70 @@ void main() {
       '07-24 09:30',
     );
   });
+
+  test(
+      'labels latest sales and comparison dates by their actual business dates',
+      () {
+    final now = DateTime.utc(2026, 10, 2, 16); // 2026-10-03 01:00 KST
+    expect(
+      UiFormat.latestSalesLabel('2026-10-03', now: now),
+      '오늘 매출',
+    );
+    expect(
+      UiFormat.latestSalesLabel('2026-10-02', now: now),
+      '최근 영업일 매출',
+    );
+    expect(
+      UiFormat.previousBusinessDayLabel('2026-10-03', '2026-10-02'),
+      '전일 대비',
+    );
+    expect(
+      UiFormat.previousBusinessDayLabel('2026-10-03', '2026-09-30'),
+      '직전 수집 영업일 대비',
+    );
+    expect(
+      UiFormat.previousBusinessDayLabel('2026-10-03', null),
+      '비교 데이터 없음',
+    );
+  });
+
+  test('distinguishes an ungenerated owner report from zero-valued data', () {
+    expect(OwnerBriefingResponse.fromJson({'report': null}).report, isNull);
+
+    final response = OwnerBriefingResponse.fromJson({
+      'report': {
+        'title': '일일보고서',
+        'structured': {
+          'owner_report': {
+            'business_date': '2026-10-02',
+            'generated_at': '2026-10-03T00:30:00+09:00',
+            'data_as_of': '2026-10-02T23:50:00+09:00',
+            'status_label': '주의',
+            'data_status_label': '일부 데이터 미수집',
+            'data_status_reason': '일부 원본 수집이 지연되었습니다.',
+            'briefing': '보고서 요약',
+            'data_note': '데이터 품질 안내',
+            'kpis': [
+              {'label': '매출', 'display_value': '0원'},
+            ],
+            'actions': [
+              {
+                'priority': 1,
+                'title': '수집 상태 확인',
+                'reason': '원본 일부 미수집',
+                'decision': '다음 단계 검토',
+              },
+            ],
+          },
+        },
+      },
+    });
+
+    expect(response.report?.businessDate, '2026-10-02');
+    expect(response.report?.kpis.single.displayValue, '0원');
+    expect(response.report?.actions.single.title, '수집 상태 확인');
+  });
+
   test('treats partial_failed as terminal and parses overdue', () {
     final task = SyncTaskStatusData.fromJson({
       'task': {

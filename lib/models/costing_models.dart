@@ -2,6 +2,137 @@
 
 import 'api_contracts.dart';
 
+class CostingCalculationItem {
+  final int ingredientId;
+  final double quantity;
+  final String unit;
+
+  const CostingCalculationItem({
+    required this.ingredientId,
+    required this.quantity,
+    required this.unit,
+  });
+
+  Map<String, dynamic> toJson({required int sortOrder}) => {
+        'ingredient_id': ingredientId,
+        'quantity': quantity,
+        'unit': unit,
+        'sort_order': sortOrder,
+      };
+}
+
+/// Serializes calculation and recipe item inputs in their displayed order.
+/// The backend requires sort_order to be the contiguous range 0..n-1.
+List<Map<String, dynamic>> buildCostingItemsPayload(
+  Iterable<CostingCalculationItem> items,
+) {
+  final orderedItems = items.toList(growable: false);
+  return List<Map<String, dynamic>>.generate(
+    orderedItems.length,
+    (index) => orderedItems[index].toJson(sortOrder: index),
+    growable: false,
+  );
+}
+
+Map<String, dynamic> buildCostingIngredientCreatePayload({
+  required String name,
+  required String category,
+  required String baseUnit,
+  required String supplierName,
+  required String notes,
+  required String requestId,
+}) =>
+    {
+      'name': name.trim(),
+      'category': category.trim().isEmpty ? 'other' : category.trim(),
+      'base_unit': baseUnit,
+      if (supplierName.trim().isNotEmpty) 'supplier_name': supplierName.trim(),
+      if (notes.trim().isNotEmpty) 'notes': notes.trim(),
+      'is_active': true,
+      'request_id': requestId,
+    };
+
+Map<String, dynamic> buildCostingIngredientPricePayload({
+  required double purchasePrice,
+  required double purchaseQty,
+  required String purchaseUnit,
+  required int expectedEditRevision,
+  required String requestId,
+  double? usableQty,
+  String effectiveFrom = '',
+  String supplierName = '',
+  String memo = '',
+}) =>
+    {
+      'purchase_price': purchasePrice,
+      'purchase_qty': purchaseQty,
+      'purchase_unit': purchaseUnit,
+      if (usableQty != null) 'usable_qty': usableQty,
+      if (effectiveFrom.trim().isNotEmpty)
+        'effective_from': effectiveFrom.trim(),
+      if (supplierName.trim().isNotEmpty) 'supplier_name': supplierName.trim(),
+      if (memo.trim().isNotEmpty) 'memo': memo.trim(),
+      'expected_edit_revision': expectedEditRevision,
+      'request_id': requestId,
+    };
+
+Map<String, dynamic> buildCostingIngredientUpdatePayload({
+  required String name,
+  required String category,
+  required String baseUnit,
+  required String supplierName,
+  required String notes,
+  required bool isActive,
+  required int expectedEditRevision,
+  required String requestId,
+}) =>
+    {
+      'name': name.trim(),
+      'category': category.trim(),
+      'base_unit': baseUnit,
+      'supplier_name': supplierName.trim(),
+      'notes': notes.trim(),
+      'is_active': isActive,
+      'expected_edit_revision': expectedEditRevision,
+      'request_id': requestId,
+    };
+
+Map<String, dynamic> buildCostingRecipePayload({
+  required String menuName,
+  required String menuCode,
+  required String sizeCode,
+  required String temperatureCode,
+  required int? sellingPrice,
+  required double targetCostRatio,
+  required String status,
+  required String notes,
+  required Iterable<CostingCalculationItem> items,
+  required String requestId,
+  int? expectedVersionNo,
+}) =>
+    {
+      'menu_name': menuName.trim(),
+      'menu_code': menuCode.trim(),
+      'size_code': sizeCode.trim(),
+      'temperature_code': temperatureCode.trim(),
+      if (sellingPrice != null) 'selling_price': sellingPrice,
+      'target_cost_ratio': targetCostRatio,
+      'status': status,
+      'notes': notes.trim(),
+      'items': buildCostingItemsPayload(items),
+      if (expectedVersionNo != null) 'expected_version_no': expectedVersionNo,
+      'request_id': requestId,
+    };
+
+Map<String, dynamic> buildCostingRecipeDeletePayload({
+  required int expectedVersionNo,
+  required String requestId,
+}) =>
+    {
+      'expected_version_no': expectedVersionNo,
+      'request_id': requestId,
+    };
+
 class CostingDashboardSummary {
   final int ingredientCount;
   final int pricedIngredientCount;
@@ -43,7 +174,9 @@ class RecipeSummaryRow {
   final double costRatio;
   final int marginAmount;
   final String status;
+  final String notes;
   final int itemCount;
+  final int? versionNo;
 
   const RecipeSummaryRow({
     required this.recipeId,
@@ -57,7 +190,9 @@ class RecipeSummaryRow {
     required this.costRatio,
     required this.marginAmount,
     required this.status,
+    this.notes = '',
     required this.itemCount,
+    this.versionNo,
   });
 
   factory RecipeSummaryRow.fromJson(Map<String, dynamic> json) {
@@ -73,7 +208,9 @@ class RecipeSummaryRow {
       costRatio: asDouble(json['cost_ratio']),
       marginAmount: asInt(json['margin_amount']),
       status: asString(json['status']),
+      notes: asString(json['notes']),
       itemCount: asInt(json['item_count']),
+      versionNo: asNullableInt(json['version_no']),
     );
   }
 
@@ -118,6 +255,7 @@ class Ingredient {
   final String notes;
   final int priceCount;
   final double? currentUnitCost;
+  final int? editRevision;
 
   const Ingredient({
     required this.ingredientId,
@@ -129,6 +267,7 @@ class Ingredient {
     required this.notes,
     required this.priceCount,
     this.currentUnitCost,
+    this.editRevision,
   });
 
   factory Ingredient.fromJson(Map<String, dynamic> json) {
@@ -143,6 +282,7 @@ class Ingredient {
       notes: asString(json['notes']),
       priceCount: asInt(json['price_count']),
       currentUnitCost: rawCost == null ? null : asDouble(rawCost),
+      editRevision: asNullableInt(json['edit_revision']),
     );
   }
 }
@@ -188,6 +328,34 @@ class IngredientPrice {
   }
 }
 
+class IngredientPriceHistoryData {
+  final Ingredient ingredient;
+  final List<IngredientPrice> prices;
+
+  const IngredientPriceHistoryData({
+    required this.ingredient,
+    required this.prices,
+  });
+
+  factory IngredientPriceHistoryData.fromJson(Map<String, dynamic> json) {
+    final rawIngredient = json['ingredient'];
+    if (rawIngredient is! Map) {
+      throw const FormatException('재료 단가 응답에 재료 편집 revision이 없습니다.');
+    }
+    final ingredient =
+        Ingredient.fromJson(Map<String, dynamic>.from(rawIngredient));
+    final rawPrices = json['prices'];
+    final prices = rawPrices is List
+        ? rawPrices
+            .whereType<Map>()
+            .map((item) =>
+                IngredientPrice.fromJson(Map<String, dynamic>.from(item)))
+            .toList(growable: false)
+        : const <IngredientPrice>[];
+    return IngredientPriceHistoryData(ingredient: ingredient, prices: prices);
+  }
+}
+
 class RecipeItem {
   final int recipeItemId;
   final int recipeId;
@@ -198,6 +366,7 @@ class RecipeItem {
   final double? currentUnitCost;
   final double? lineCost;
   final String notes;
+  final bool ingredientActive;
 
   const RecipeItem({
     required this.recipeItemId,
@@ -209,6 +378,7 @@ class RecipeItem {
     this.currentUnitCost,
     this.lineCost,
     required this.notes,
+    this.ingredientActive = true,
   });
 
   factory RecipeItem.fromJson(Map<String, dynamic> json) {
@@ -224,6 +394,7 @@ class RecipeItem {
           : asDouble(json['current_unit_cost']),
       lineCost: json['line_cost'] == null ? null : asDouble(json['line_cost']),
       notes: asString(json['notes']),
+      ingredientActive: json['ingredient_active'] == true,
     );
   }
 }

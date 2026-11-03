@@ -6,9 +6,11 @@ import 'package:provider/provider.dart';
 import '../core/async_request_guard.dart';
 import '../models/api_contracts.dart';
 import '../models/product_identity.dart';
+import '../navigation/app_navigation.dart';
 import '../state/app_state.dart';
 import '../widgets/access_gate.dart';
 import '../widgets/panel.dart';
+import 'editor_product_catalog.dart';
 import 'price_apply.dart';
 
 export '../models/product_identity.dart' show normalizeProductCode;
@@ -201,6 +203,21 @@ class _ProductLookupScreenState extends State<ProductLookupScreen>
                   ],
                 );
               },
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 0, 16, 4),
+            child: Align(
+              alignment: Alignment.centerRight,
+              child: TextButton.icon(
+                onPressed: () => AppNavigation.pushGuarded(
+                  context,
+                  minimumRole: UserRole.viewer,
+                  child: const EditorProductCatalogScreen(),
+                ),
+                icon: const Icon(Icons.manage_search),
+                label: const Text('페이지형 카탈로그 탐색'),
+              ),
             ),
           ),
           Padding(

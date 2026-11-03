@@ -149,6 +149,73 @@ void main() {
     expect(find.text('시도 1'), findsOneWidget);
   });
 
+  testWidgets('refreshes selected run detail once after it becomes terminal',
+      (tester) async {
+    tester.view.physicalSize = const Size(360, 1400);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    var runListCalls = 0;
+    var detailCalls = 0;
+    Future<Map<String, dynamic>> fetch(
+      String endpoint, {
+      Map<String, Object?>? params,
+    }) async {
+      if (endpoint.endsWith('/settings')) {
+        return {'settings': <String, dynamic>{}};
+      }
+      if (endpoint.endsWith('/audits')) return {'audits': <dynamic>[]};
+      if (endpoint.endsWith('/runs')) {
+        runListCalls += 1;
+        return {
+          'runs': [
+            {
+              'id': 'run-terminal',
+              'target_date': '2026-07-24',
+              'status': runListCalls == 1 ? 'running' : 'succeeded',
+            },
+          ],
+        };
+      }
+      if (endpoint.endsWith('/runs/run-terminal')) {
+        detailCalls += 1;
+        return {
+          'run': {
+            'id': 'run-terminal',
+            'target_date': '2026-07-24',
+            'status': detailCalls == 1 ? 'running' : 'succeeded',
+            'report': {
+              'title': 'Report detail $detailCalls',
+              'content': detailCalls == 1 ? 'Earlier detail' : 'Final detail',
+            },
+          },
+        };
+      }
+      throw StateError('unexpected endpoint: $endpoint');
+    }
+
+    await tester.pumpWidget(MaterialApp(
+      home: DailyReportMonitorScreen(
+        fetchJson: fetch,
+        pollingInterval: const Duration(seconds: 60),
+      ),
+    ));
+    await tester.pumpAndSettle();
+    await tester.ensureVisible(find.text('2026-07-24'));
+    await tester.tap(find.text('2026-07-24'));
+    await tester.pumpAndSettle();
+    expect(detailCalls, 1);
+    expect(find.text('Earlier detail'), findsOneWidget);
+
+    await tester.pump(const Duration(seconds: 60));
+    await tester.pumpAndSettle();
+
+    expect(runListCalls, 2);
+    expect(detailCalls, 2);
+    expect(find.text('Final detail'), findsOneWidget);
+  });
+
   testWidgets('active run polling stays sequential and stops on dispose',
       (tester) async {
     var runCalls = 0;

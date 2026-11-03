@@ -94,6 +94,74 @@ void main() {
 
     expect(find.byKey(const Key('shift-preview-result')), findsNothing);
   });
+
+  testWidgets(
+      'employee pay preview ignores an outstanding response after close',
+      (tester) async {
+    final preview = Completer<EmployeePayPreviewData>();
+    var calls = 0;
+    await tester.pumpWidget(MaterialApp(
+      home: Scaffold(
+        body: Builder(
+          builder: (context) => FilledButton(
+            onPressed: () => showDialog<void>(
+              context: context,
+              builder: (_) => EmployeePayPreviewDialog(
+                employee: _employee(),
+                date: DateTime(2026, 10, 3),
+                onPreview: (_) {
+                  calls++;
+                  return preview.future;
+                },
+              ),
+            ),
+            child: const Text('열기'),
+          ),
+        ),
+      ),
+    ));
+
+    await tester.tap(find.text('열기'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('계산'));
+    await tester.pump();
+    expect(calls, 1);
+    expect(find.text('계산 중...'), findsOneWidget);
+    final busyButton = tester.widget<FilledButton>(
+      find.widgetWithText(FilledButton, '계산 중...'),
+    );
+    expect(busyButton.onPressed, isNull);
+
+    await tester.tap(find.text('닫기'));
+    await tester.pumpAndSettle();
+    preview.complete(_previewData());
+    await tester.pump();
+
+    expect(find.text('홍길동 급여 미리보기'), findsNothing);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('employee pay preview result clears when its inputs change',
+      (tester) async {
+    await tester.pumpWidget(MaterialApp(
+      home: Scaffold(
+        body: EmployeePayPreviewDialog(
+          employee: _employee(),
+          date: DateTime(2026, 10, 3),
+          onPreview: (_) async => _previewData(),
+        ),
+      ),
+    ));
+
+    await tester.tap(find.text('계산'));
+    await tester.pumpAndSettle();
+    expect(find.text('96000원'), findsOneWidget);
+    final startField = find.byType(TextFormField).first;
+    await tester.enterText(startField, '10:00');
+    await tester.pump();
+
+    expect(find.text('96000원'), findsNothing);
+  });
 }
 
 Workplace _workplace() => Workplace.fromJson({
@@ -136,4 +204,10 @@ EmployeePayPreview _preview() => const EmployeePayPreview(
       grossPay: 96000,
       taxEstimate: 1000,
       netEstimate: 95000,
+    );
+
+EmployeePayPreviewData _previewData() => EmployeePayPreviewData(
+      employee: _employee(),
+      workplace: _workplace(),
+      preview: _preview(),
     );

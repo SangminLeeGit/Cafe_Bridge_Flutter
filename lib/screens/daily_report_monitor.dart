@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../state/app_state.dart';
+import '../widgets/app_screen.dart';
 import '../widgets/panel.dart';
 
 typedef DailyReportJsonFetcher = Future<Map<String, dynamic>> Function(
@@ -26,7 +27,8 @@ class DailyReportMonitorScreen extends StatefulWidget {
       _DailyReportMonitorScreenState();
 }
 
-class _DailyReportMonitorScreenState extends State<DailyReportMonitorScreen> {
+class _DailyReportMonitorScreenState extends State<DailyReportMonitorScreen>
+    with WidgetsBindingObserver {
   DailyReportSettingsSummary? _settings;
   List<DailyReportRun> _runs = const [];
   List<DailyReportAudit> _audits = const [];
@@ -43,16 +45,26 @@ class _DailyReportMonitorScreenState extends State<DailyReportMonitorScreen> {
   bool _detailInFlight = false;
   bool _showAudits = false;
   int _detailRequest = 0;
+  String? _pendingTerminalDetailId;
   Timer? _pollingTimer;
 
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _loadAll();
   }
 
   @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      unawaited(_refreshAll());
+    }
+  }
+
+  @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _detailRequest += 1;
     _pollingTimer?.cancel();
     super.dispose();
@@ -127,16 +139,32 @@ class _DailyReportMonitorScreenState extends State<DailyReportMonitorScreen> {
       );
       final parsed = DailyReportRun.parseList(json);
       if (!mounted) return;
+      final selectedId = _selectedRunId;
+      final selectedWasActive = selectedId != null &&
+          _runs.any((run) => run.id == selectedId && run.isActive);
       setState(() {
         _runs = parsed;
         _runsError = '';
       });
       _syncPolling();
 
-      final selectedId = _selectedRunId;
-      if (selectedId != null &&
-          parsed.any((run) => run.id == selectedId && run.isActive)) {
-        await _loadRunDetail(selectedId, preserveSelection: true);
+      if (selectedId != null) {
+        DailyReportRun? selectedRun;
+        for (final run in parsed) {
+          if (run.id == selectedId) {
+            selectedRun = run;
+            break;
+          }
+        }
+        final becameTerminal =
+            selectedWasActive && selectedRun != null && selectedRun.isTerminal;
+        if (selectedRun != null && (selectedRun.isActive || becameTerminal)) {
+          if (_detailInFlight && becameTerminal) {
+            _pendingTerminalDetailId = selectedId;
+          } else {
+            await _loadRunDetail(selectedId, preserveSelection: true);
+          }
+        }
       }
     } catch (error) {
       if (!mounted) return;
@@ -206,8 +234,15 @@ class _DailyReportMonitorScreenState extends State<DailyReportMonitorScreen> {
       if (!mounted || request != _detailRequest) return;
       setState(() => _detailError = error.toString());
     } finally {
+      final refreshTerminalDetail = request == _detailRequest &&
+          _pendingTerminalDetailId == id &&
+          mounted;
       if (request == _detailRequest) {
         _detailInFlight = false;
+      }
+      if (refreshTerminalDetail) {
+        _pendingTerminalDetailId = null;
+        unawaited(_loadRunDetail(id, preserveSelection: true));
       }
     }
   }
@@ -215,80 +250,60 @@ class _DailyReportMonitorScreenState extends State<DailyReportMonitorScreen> {
   @override
   Widget build(BuildContext context) {
     if (_initialLoading && _settings == null && _runs.isEmpty) {
-      return const Center(child: CircularProgressIndicator());
+      return const AppScreen(
+        title: '일일보고서 모니터',
+        subtitle: '설정과 최근 처리 상태를 읽기 전용으로 확인합니다.',
+        body: Center(child: CircularProgressIndicator()),
+      );
     }
 
-    return RefreshIndicator(
-      onRefresh: _refreshAll,
-      child: ListView(
-        physics: const AlwaysScrollableScrollPhysics(),
-        padding: const EdgeInsets.all(16),
-        children: [
-          _buildHeader(),
-          const SizedBox(height: 16),
-          _buildSettings(),
-          _buildReadOnlyNotice(),
-          Row(
-            children: [
-              Expanded(
-                child: SegmentedButton<bool>(
-                  segments: const [
-                    ButtonSegment(
-                      value: false,
-                      icon: Icon(Icons.receipt_long_outlined),
-                      label: Text('실행 이력'),
-                    ),
-                    ButtonSegment(
-                      value: true,
-                      icon: Icon(Icons.history_outlined),
-                      label: Text('감사 이력'),
-                    ),
-                  ],
-                  selected: {_showAudits},
-                  onSelectionChanged: (values) {
-                    setState(() => _showAudits = values.first);
-                  },
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 16),
-          if (_showAudits) _buildAudits() else _buildRuns(),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildHeader() {
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                '일일보고서 모니터',
-                style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                      fontWeight: FontWeight.w800,
-                      color: const Color(0xFF0F172A),
-                    ),
-              ),
-              const SizedBox(height: 4),
-              const Text(
-                '자동 보고서 설정과 최근 처리 상태를 읽기 전용으로 확인합니다.',
-                style: TextStyle(color: Color(0xFF64748B)),
-              ),
-            ],
-          ),
-        ),
-        const SizedBox(width: 8),
-        IconButton.filledTonal(
+    return AppScreen(
+      title: '일일보고서 모니터',
+      subtitle: '설정과 최근 처리 상태를 읽기 전용으로 확인합니다.',
+      actions: [
+        IconButton(
           tooltip: '새로고침',
           onPressed: _refreshAll,
           icon: const Icon(Icons.refresh),
         ),
       ],
+      body: RefreshIndicator(
+        onRefresh: _refreshAll,
+        child: ListView(
+          physics: const AlwaysScrollableScrollPhysics(),
+          padding: const EdgeInsets.all(16),
+          children: [
+            _buildSettings(),
+            _buildReadOnlyNotice(),
+            Row(
+              children: [
+                Expanded(
+                  child: SegmentedButton<bool>(
+                    segments: const [
+                      ButtonSegment(
+                        value: false,
+                        icon: Icon(Icons.receipt_long_outlined),
+                        label: Text('실행 이력'),
+                      ),
+                      ButtonSegment(
+                        value: true,
+                        icon: Icon(Icons.history_outlined),
+                        label: Text('감사 이력'),
+                      ),
+                    ],
+                    selected: {_showAudits},
+                    onSelectionChanged: (values) {
+                      setState(() => _showAudits = values.first);
+                    },
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 16),
+            if (_showAudits) _buildAudits() else _buildRuns(),
+          ],
+        ),
+      ),
     );
   }
 
@@ -960,8 +975,19 @@ class DailyReportRun {
 
   bool get isActive {
     final normalized = status?.toLowerCase();
-    return normalized == 'pending' || normalized == 'running';
+    return normalized == 'pending' ||
+        normalized == 'running' ||
+        normalized == 'retry_wait';
   }
+
+  bool get isTerminal => const {
+        'succeeded',
+        'partial_failed',
+        'failed',
+        'skipped',
+        'cancelled',
+        'ambiguous',
+      }.contains(status?.toLowerCase());
 }
 
 class DailyReportAudit {

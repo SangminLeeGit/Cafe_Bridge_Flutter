@@ -227,10 +227,7 @@ class ApiClient {
         sessionCookie: sessionCookie,
       );
       if (response.statusCode < 200 || response.statusCode >= 300) {
-        throw ApiException(
-          'HTTP ${response.statusCode}: ${_decodeErrorMessage(response)}',
-          statusCode: response.statusCode,
-        );
+        throw _exceptionFromResponse(response);
       }
       if (response.statusCode == 204) {
         return ApiResponse(
@@ -323,10 +320,7 @@ class ApiClient {
 
   static Map<String, dynamic> _decodeMap(http.Response response) {
     if (response.statusCode < 200 || response.statusCode >= 300) {
-      throw ApiException(
-        'HTTP ${response.statusCode}: ${_decodeErrorMessage(response)}',
-        statusCode: response.statusCode,
-      );
+      throw _exceptionFromResponse(response);
     }
     if (response.statusCode == 204) {
       return const <String, dynamic>{};
@@ -338,24 +332,94 @@ class ApiClient {
     throw const ApiException('예상과 다른 응답 형식입니다.');
   }
 
-  static String _decodeErrorMessage(http.Response response) {
+  static ApiException _exceptionFromResponse(http.Response response) {
+    Object? payload;
     try {
-      final decoded = json.decode(utf8.decode(response.bodyBytes));
-      if (decoded is Map<String, dynamic>) {
-        final detail = _normalizeErrorDetail(decoded['detail']);
-        if (detail.isNotEmpty) {
-          return detail;
-        }
-        final error = _normalizeErrorDetail(decoded['error']);
-        if (error.isNotEmpty) {
-          return error;
-        }
-        return response.reasonPhrase ?? '오류';
-      }
+      payload = json.decode(utf8.decode(response.bodyBytes));
     } catch (_) {
-      // Use the HTTP reason phrase when an error body is not JSON.
+      // Fall back to the HTTP reason phrase when the error body is not JSON.
     }
-    return response.reasonPhrase ?? '오류';
+
+    final root = payload is Map ? Map<String, dynamic>.from(payload) : null;
+    final detail = root?['detail'];
+    final error = root?['error'];
+    final detailMessage = _normalizeErrorDetail(detail);
+    final errorMessage = _normalizeErrorDetail(error);
+    final rootMessage = _normalizeErrorDetail(root?['message']);
+    final message = detailMessage.isNotEmpty
+        ? detailMessage
+        : errorMessage.isNotEmpty
+            ? errorMessage
+            : rootMessage.isNotEmpty
+                ? rootMessage
+                : response.reasonPhrase ?? '오류';
+
+    final detailMap = detail is Map ? Map<String, dynamic>.from(detail) : null;
+    final errorMap = error is Map ? Map<String, dynamic>.from(error) : null;
+    final code = _firstNonEmpty([
+      detailMap?['code'],
+      detailMap?['reason_code'],
+      errorMap?['code'],
+      errorMap?['reason_code'],
+      root?['code'],
+      root?['reason_code'],
+    ]);
+    final requestId = _firstNonEmpty([
+      response.headers['x-request-id'],
+      response.headers['request-id'],
+      response.headers['x-correlation-id'],
+      root?['request_id'],
+      root?['requestId'],
+      detailMap?['request_id'],
+      errorMap?['request_id'],
+    ]);
+
+    return ApiException(
+      message,
+      statusCode: response.statusCode,
+      code: code,
+      requestId: requestId,
+      fieldErrors: _collectFieldErrors(detail),
+    );
+  }
+
+  static String? _firstNonEmpty(Iterable<Object?> values) {
+    for (final value in values) {
+      final text = value?.toString().trim() ?? '';
+      if (text.isNotEmpty) return text;
+    }
+    return null;
+  }
+
+  static Map<String, String> _collectFieldErrors(Object? value) {
+    final result = <String, String>{};
+    void collect(Object? current) {
+      if (current is List) {
+        for (final item in current) {
+          collect(item);
+        }
+        return;
+      }
+      if (current is! Map) return;
+      final map = Map<String, dynamic>.from(current);
+      final location = map['loc'];
+      final field = location is List
+          ? location
+              .map((part) => part.toString())
+              .where(
+                  (part) => part != 'body' && part != 'query' && part != 'path')
+              .join('.')
+          : '';
+      final message = _normalizeErrorDetail(map['msg']);
+      if (field.isNotEmpty && message.isNotEmpty) {
+        result[field] = message;
+      }
+      collect(map['detail']);
+      collect(map['errors']);
+    }
+
+    collect(value);
+    return result;
   }
 
   static String _normalizeErrorDetail(Object? detail) {
@@ -377,14 +441,20 @@ class ApiClient {
       final locationLabel = location is List
           ? location.map((item) => item.toString()).join('.')
           : '';
-      final message = _normalizeErrorDetail(nested['msg']);
+      final message = _firstNonEmpty([
+            nested['message'],
+            nested['msg'],
+          ]) ??
+          '';
       if (locationLabel.isNotEmpty && message.isNotEmpty) {
         return '$locationLabel: $message';
       }
       if (message.isNotEmpty) {
         return message;
       }
-      return _normalizeErrorDetail(nested['detail']);
+      final nestedDetail = _normalizeErrorDetail(nested['detail']);
+      if (nestedDetail.isNotEmpty) return nestedDetail;
+      return _normalizeErrorDetail(nested['errors']);
     }
     return detail.toString().trim();
   }
@@ -405,11 +475,17 @@ class ApiClient {
 class ApiException implements Exception {
   final String message;
   final int? statusCode;
+  final String? code;
+  final String? requestId;
+  final Map<String, String> fieldErrors;
   final bool isTransportError;
 
   const ApiException(
     this.message, {
     this.statusCode,
+    this.code,
+    this.requestId,
+    this.fieldErrors = const <String, String>{},
     this.isTransportError = false,
   });
 

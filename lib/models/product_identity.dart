@@ -21,7 +21,8 @@ class ProductIdentity {
         (json['중분류명'] ?? json['middle_category'] ?? '').toString().trim();
     return ProductIdentity(
       code: normalizeProductCode(
-        (json['상품코드'] ?? json['item_code'] ?? '').toString(),
+        (json['상품코드'] ?? json['product_code'] ?? json['item_code'] ?? '')
+            .toString(),
       ),
       name: (json['상품명'] ?? json['item_name'] ?? '').toString(),
       salePrice: parseProductPrice(_firstPresentValue(json, priceFields)),
@@ -52,5 +53,19 @@ int? parseProductPrice(Object? value) {
   if (value is int) {
     return value;
   }
-  return int.tryParse((value ?? '').toString().replaceAll(',', '').trim());
+  if (value is num) {
+    final price = value.toDouble();
+    if (!price.isFinite || price != price.roundToDouble()) return null;
+    return price.toInt();
+  }
+  final normalized = (value ?? '').toString().replaceAll(',', '').trim();
+  final integer = int.tryParse(normalized);
+  if (integer != null) return integer;
+  final decimal = double.tryParse(normalized);
+  if (decimal == null ||
+      !decimal.isFinite ||
+      decimal != decimal.roundToDouble()) {
+    return null;
+  }
+  return decimal.toInt();
 }

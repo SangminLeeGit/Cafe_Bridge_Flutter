@@ -41,6 +41,27 @@ class UiFormat {
     return '$sign ${pct.abs().toStringAsFixed(1)}%';
   }
 
+  static String latestSalesLabel(String? businessDate, {DateTime? now}) {
+    final latest = businessDate?.trim() ?? '';
+    final currentKst = (now ?? DateTime.now()).toUtc().add(
+          const Duration(hours: 9),
+        );
+    final today = '${currentKst.year.toString().padLeft(4, '0')}-'
+        '${currentKst.month.toString().padLeft(2, '0')}-'
+        '${currentKst.day.toString().padLeft(2, '0')}';
+    return latest == today ? '오늘 매출' : '최근 영업일 매출';
+  }
+
+  static String previousBusinessDayLabel(
+    String? latestBusinessDate,
+    String? previousBusinessDate,
+  ) {
+    final latest = _strictDate(latestBusinessDate?.trim() ?? '');
+    final previous = _strictDate(previousBusinessDate?.trim() ?? '');
+    if (latest == null || previous == null) return '비교 데이터 없음';
+    return latest.difference(previous).inDays == 1 ? '전일 대비' : '직전 수집 영업일 대비';
+  }
+
   static String compactDateTime(String? value) {
     if (value == null || value.isEmpty) {
       return '-';
@@ -325,6 +346,117 @@ class DashboardSnapshot {
       prevAvgTicket: asInt(json['prev_avg_ticket']),
     );
   }
+}
+
+class OwnerBriefingResponse {
+  final OwnerBriefingReport? report;
+
+  const OwnerBriefingResponse({required this.report});
+
+  factory OwnerBriefingResponse.fromJson(Map<String, dynamic> json) {
+    final rawReport = json['report'];
+    if (rawReport is! Map) {
+      return const OwnerBriefingResponse(report: null);
+    }
+    final reportJson = Map<String, dynamic>.from(rawReport);
+    final structured = asMap(reportJson['structured']);
+    final ownerReport = structured['owner_report'];
+    if (ownerReport is! Map) {
+      return const OwnerBriefingResponse(report: null);
+    }
+    return OwnerBriefingResponse(
+      report: OwnerBriefingReport.fromJson(
+        Map<String, dynamic>.from(ownerReport),
+        title: asString(reportJson['title']),
+      ),
+    );
+  }
+}
+
+class OwnerBriefingReport {
+  final String title;
+  final String businessDate;
+  final String generatedAt;
+  final String dataAsOf;
+  final String statusLabel;
+  final String dataStatusLabel;
+  final String dataStatusReason;
+  final String briefing;
+  final String dataNote;
+  final List<OwnerBriefingKpi> kpis;
+  final List<OwnerBriefingAction> actions;
+
+  const OwnerBriefingReport({
+    required this.title,
+    required this.businessDate,
+    required this.generatedAt,
+    required this.dataAsOf,
+    required this.statusLabel,
+    required this.dataStatusLabel,
+    required this.dataStatusReason,
+    required this.briefing,
+    required this.dataNote,
+    required this.kpis,
+    required this.actions,
+  });
+
+  factory OwnerBriefingReport.fromJson(
+    Map<String, dynamic> json, {
+    required String title,
+  }) {
+    return OwnerBriefingReport(
+      title: title,
+      businessDate: asString(json['business_date']),
+      generatedAt: asString(json['generated_at']),
+      dataAsOf: asString(json['data_as_of']),
+      statusLabel: asString(json['status_label']),
+      dataStatusLabel: asString(json['data_status_label']),
+      dataStatusReason: asString(json['data_status_reason']),
+      briefing: asString(json['briefing']),
+      dataNote: asString(json['data_note']),
+      kpis: asListOfMaps(json['kpis'])
+          .map(OwnerBriefingKpi.fromJson)
+          .toList(growable: false),
+      actions: asListOfMaps(json['actions'])
+          .map(OwnerBriefingAction.fromJson)
+          .toList(growable: false),
+    );
+  }
+}
+
+class OwnerBriefingKpi {
+  final String label;
+  final String displayValue;
+
+  const OwnerBriefingKpi({required this.label, required this.displayValue});
+
+  factory OwnerBriefingKpi.fromJson(Map<String, dynamic> json) =>
+      OwnerBriefingKpi(
+        label: asString(json['label']),
+        displayValue: asString(json['display_value']),
+      );
+}
+
+class OwnerBriefingAction {
+  final int priority;
+  final String title;
+  final String reason;
+  final String decision;
+
+  const OwnerBriefingAction({
+    required this.priority,
+    required this.title,
+    required this.reason,
+    required this.decision,
+  });
+
+  factory OwnerBriefingAction.fromJson(Map<String, dynamic> json) =>
+      OwnerBriefingAction(
+        priority: asInt(json['priority']),
+        title: asString(json['title']),
+        reason: asString(json['reason']),
+        decision: asString(json['decision']),
+      );
 }
 
 class DaySummary {

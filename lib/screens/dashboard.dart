@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
@@ -28,6 +30,11 @@ class _DashboardScreenState extends State<DashboardScreen>
   bool _isNetworkError = false;
   bool _fromCache = false;
   DateTime? _cachedAt;
+  OwnerBriefingResponse? _ownerBriefing;
+  bool _isLoadingOwnerBriefing = true;
+  String _ownerBriefingError = '';
+  String? _ownerBriefingRequestedDate;
+  int _ownerBriefingGeneration = 0;
 
   @override
   void initState() {
@@ -40,7 +47,7 @@ class _DashboardScreenState extends State<DashboardScreen>
     final request = beginAsyncRequest();
     final appState = context.read<AppState>();
     setState(() {
-      _isLoading = true;
+      _isLoading = _data == null;
       _error = '';
       _isNetworkError = false;
     });
@@ -59,6 +66,7 @@ class _DashboardScreenState extends State<DashboardScreen>
         _cachedAt = response.cachedAt;
         _isLoading = false;
       });
+      unawaited(_fetchOwnerBriefing(response.data.latestDay));
     } catch (error) {
       if (!isCurrentAsyncRequest(request)) {
         return;
@@ -71,13 +79,49 @@ class _DashboardScreenState extends State<DashboardScreen>
     }
   }
 
+  Future<void> _fetchOwnerBriefing(String? businessDate) async {
+    if (!mounted) return;
+    final generation = ++_ownerBriefingGeneration;
+    final requestedDate = businessDate?.trim();
+    setState(() {
+      if (_ownerBriefingRequestedDate != requestedDate) {
+        _ownerBriefing = null;
+      }
+      _ownerBriefingRequestedDate = requestedDate;
+      _isLoadingOwnerBriefing = true;
+      _ownerBriefingError = '';
+    });
+    try {
+      final response =
+          await context.read<AppState>().fetchMapParsed<OwnerBriefingResponse>(
+                '/api/daily-report',
+                params: {'business_date': requestedDate},
+                parser: OwnerBriefingResponse.fromJson,
+                cacheTtl: Duration.zero,
+                allowStaleOnError: false,
+              );
+      if (!mounted || generation != _ownerBriefingGeneration) return;
+      setState(() {
+        _ownerBriefing = response.data;
+        _isLoadingOwnerBriefing = false;
+      });
+    } catch (error) {
+      if (!mounted || generation != _ownerBriefingGeneration) return;
+      setState(() {
+        _ownerBriefing = null;
+        _ownerBriefingError = error.toString();
+        _isLoadingOwnerBriefing = false;
+      });
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
-    if (_isLoading) {
+    if (_data == null && _isLoading) {
       return const LoadingState(message: '대시보드를 불러오는 중입니다.');
     }
 
-    if (_error.isNotEmpty) {
+    if (_data == null && _error.isNotEmpty) {
       if (_isNetworkError) {
         return NetworkState(message: _error, onRetry: _fetchData);
       }
@@ -105,8 +149,15 @@ class _DashboardScreenState extends State<DashboardScreen>
 
     final data = _data!;
     final latest = data.latestMetrics;
-    final previousDayAmount =
-        data.recentDays.length > 1 ? data.recentDays[1].grossAmount : 0;
+    final previousDay = data.recentDays.length > 1 ? data.recentDays[1] : null;
+    final hasLatestDay = data.latestDay?.trim().isNotEmpty == true;
+    final comparisonLabel = UiFormat.previousBusinessDayLabel(
+      data.latestDay,
+      previousDay?.businessDate,
+    );
+    final salesSubtext = previousDay == null || !hasLatestDay
+        ? '비교 데이터 없음'
+        : '$comparisonLabel ${UiFormat.delta(latest.grossAmount, previousDay.grossAmount)}';
 
     return RefreshIndicator(
       onRefresh: _fetchData,
@@ -115,23 +166,44 @@ class _DashboardScreenState extends State<DashboardScreen>
         physics: const AlwaysScrollableScrollPhysics(),
         padding: const EdgeInsets.all(16),
         children: [
+          if (_isLoading) ...[
+            const LinearProgressIndicator(minHeight: 2),
+            const SizedBox(height: 8),
+          ],
+          if (_error.isNotEmpty) ...[
+            _DashboardNotice(
+              message: '최신 매출 요약 갱신에 실패했습니다. 현재 표시 중인 데이터는 유지됩니다. $_error',
+              isError: true,
+              onRetry: _fetchData,
+            ),
+            const SizedBox(height: 12),
+          ],
           if (_fromCache && _cachedAt != null) ...[
             const SizedBox(height: 4),
             CacheNotice(cachedAt: _cachedAt),
             const SizedBox(height: 12),
           ],
           _DashboardSection(
-            title: '실시간 요약',
+            title: '일일 브리핑',
+            initiallyExpanded: true,
+            subtitle: _ownerBriefingRequestedDate == null
+                ? '최신 생성 보고서'
+                : '영업일 ${UiFormat.weekday(_ownerBriefingRequestedDate!)}',
+            child: _buildOwnerBriefing(),
+          ),
+          _DashboardSection(
+            title: '최신 영업일 요약',
             initiallyExpanded: true,
             subtitle: data.latestDay != null
                 ? '기준일 ${UiFormat.weekday(data.latestDay!)}'
                 : '기준일 정보 없음',
             child: _buildCardGrid([
               StatCard(
-                label: '오늘 매출',
-                value: UiFormat.won(latest.grossAmount),
-                sub:
-                    '전일 대비 ${UiFormat.delta(latest.grossAmount, previousDayAmount)}',
+                label: hasLatestDay
+                    ? UiFormat.latestSalesLabel(data.latestDay)
+                    : '최근 영업일 매출',
+                value: hasLatestDay ? UiFormat.won(latest.grossAmount) : '-',
+                sub: hasLatestDay ? salesSubtext : '수집된 영업일이 없습니다.',
                 accent: true,
               ),
               StatCard(
@@ -181,6 +253,108 @@ class _DashboardScreenState extends State<DashboardScreen>
           ),
         ],
       ),
+    );
+  }
+
+  Widget _buildOwnerBriefing() {
+    if (_isLoadingOwnerBriefing && _ownerBriefing == null) {
+      return const Text('일일 브리핑을 확인하고 있습니다.');
+    }
+    if (_ownerBriefingError.isNotEmpty) {
+      return _DashboardNotice(
+        message:
+            '보고서를 불러오지 못했습니다. 매출 0원 또는 미생성 상태와는 별개입니다. $_ownerBriefingError',
+        isError: true,
+        onRetry: () => _fetchOwnerBriefing(_ownerBriefingRequestedDate),
+      );
+    }
+    final report = _ownerBriefing?.report;
+    if (report == null) {
+      return const Text(
+        '해당 영업일의 일일보고서가 아직 생성되지 않았습니다.',
+        style: TextStyle(color: Color(0xFF64748B)),
+      );
+    }
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Wrap(
+          spacing: 8,
+          runSpacing: 8,
+          children: [
+            Chip(
+                label: Text(
+                    report.statusLabel.isEmpty ? '보고서' : report.statusLabel)),
+            Chip(
+              avatar: const Icon(Icons.storage_outlined, size: 16),
+              label: Text(report.dataStatusLabel.isEmpty
+                  ? '데이터 상태 미상'
+                  : report.dataStatusLabel),
+            ),
+          ],
+        ),
+        if (report.businessDate.isNotEmpty)
+          Text('기준 영업일 ${UiFormat.weekday(report.businessDate)}'),
+        if (report.dataAsOf.isNotEmpty)
+          Text('원본 데이터 기준 ${UiFormat.compactDateTime(report.dataAsOf)}'),
+        if (report.generatedAt.isNotEmpty)
+          Text('보고서 생성 ${UiFormat.compactDateTime(report.generatedAt)}'),
+        const SizedBox(height: 10),
+        Text(
+          report.briefing.isEmpty ? '요약 내용이 없습니다.' : report.briefing,
+          style: const TextStyle(height: 1.45),
+        ),
+        if (report.kpis.isNotEmpty) ...[
+          const SizedBox(height: 12),
+          ...report.kpis.take(4).map(
+                (kpi) => Padding(
+                  padding: const EdgeInsets.only(bottom: 6),
+                  child: Row(
+                    children: [
+                      Expanded(child: Text(kpi.label)),
+                      Text(kpi.displayValue,
+                          style: const TextStyle(fontWeight: FontWeight.w700)),
+                    ],
+                  ),
+                ),
+              ),
+        ],
+        if (report.actions.isNotEmpty) ...[
+          const SizedBox(height: 8),
+          const Text('핵심 조치', style: TextStyle(fontWeight: FontWeight.w700)),
+          const SizedBox(height: 4),
+          ...report.actions.take(3).map(
+                (action) => ListTile(
+                  contentPadding: EdgeInsets.zero,
+                  dense: true,
+                  leading: CircleAvatar(
+                    radius: 12,
+                    child: Text('${action.priority}'),
+                  ),
+                  title: Text(action.title),
+                  subtitle: Text([
+                    action.reason,
+                    action.decision,
+                  ].where((value) => value.isNotEmpty).join('\n')),
+                ),
+              ),
+        ],
+        if (report.dataStatusReason.isNotEmpty ||
+            report.dataNote.isNotEmpty) ...[
+          const SizedBox(height: 8),
+          Text(
+            [report.dataStatusReason, report.dataNote]
+                .where((value) => value.isNotEmpty)
+                .join('\n'),
+            style: const TextStyle(color: Color(0xFF64748B), fontSize: 12),
+          ),
+        ],
+        if (_isLoadingOwnerBriefing) ...[
+          const SizedBox(height: 8),
+          const LinearProgressIndicator(minHeight: 2),
+        ],
+      ],
     );
   }
 
@@ -400,6 +574,50 @@ class _DashboardScreenState extends State<DashboardScreen>
           ),
         );
       }).toList(growable: false),
+    );
+  }
+}
+
+class _DashboardNotice extends StatelessWidget {
+  final String message;
+  final bool isError;
+  final VoidCallback? onRetry;
+
+  const _DashboardNotice({
+    required this.message,
+    required this.isError,
+    this.onRetry,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final foreground =
+        isError ? const Color(0xFF991B1B) : const Color(0xFF155E75);
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: isError ? const Color(0xFFFEF2F2) : const Color(0xFFF0FDFA),
+        border: Border.all(
+          color: isError ? const Color(0xFFFCA5A5) : const Color(0xFF99F6E4),
+        ),
+        borderRadius: BorderRadius.circular(10),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(
+            isError ? Icons.error_outline : Icons.info_outline,
+            size: 18,
+            color: foreground,
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(message, style: TextStyle(color: foreground)),
+          ),
+          if (onRetry != null)
+            TextButton(onPressed: onRetry, child: const Text('다시 시도')),
+        ],
+      ),
     );
   }
 }

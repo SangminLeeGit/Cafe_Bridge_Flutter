@@ -40,6 +40,17 @@ void main() {
       expect(normalizeProductCode('ABC-1'), 'ABC-1');
     });
 
+    test('accepts integral numeric prices without accepting fractions', () {
+      expect(
+        ProductIdentity.fromRegistrationJson(
+          {'product_code': '42', 'editor_price': 4500.0},
+          priceFields: const ['editor_price'],
+        ).salePrice,
+        4500,
+      );
+      expect(parseProductPrice('4500.25'), isNull);
+    });
+
     test('registration rows parse Korean API fields', () {
       final item = ProductLookupItem.fromJson({
         '상품코드': '42',

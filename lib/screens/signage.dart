@@ -1,8 +1,12 @@
+import 'dart:math';
+
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../core/async_request_guard.dart';
+import '../models/editor_context.dart';
 import '../navigation/app_navigation.dart';
+import '../services/api.dart';
 import '../state/app_state.dart';
 import '../widgets/empty_state.dart';
 
@@ -206,6 +210,67 @@ class _SignageMenu {
       );
 }
 
+class _SignageDraftEnvelope {
+  final String scopeId;
+  final String? baseRemoteHash;
+  final _SignageMenu baseMenu;
+  final _SignageMenu menu;
+  final String revision;
+  final String updatedAt;
+
+  const _SignageDraftEnvelope({
+    required this.scopeId,
+    required this.baseRemoteHash,
+    required this.baseMenu,
+    required this.menu,
+    required this.revision,
+    required this.updatedAt,
+  });
+
+  factory _SignageDraftEnvelope.fromJson(Map<String, dynamic> json) {
+    final rawBaseMenu = json['base_menu'];
+    final rawMenu = json['menu'];
+    final revision = json['revision']?.toString().trim() ?? '';
+    final scopeId = json['scope_id']?.toString().trim() ?? '';
+    if (rawBaseMenu is! Map || rawMenu is! Map || revision.isEmpty) {
+      throw const FormatException('사이니지 초안 응답의 버전 또는 메뉴 데이터가 없습니다.');
+    }
+    if (scopeId.isEmpty) {
+      throw const FormatException('사이니지 초안 응답에 편집 범위가 없습니다.');
+    }
+    return _SignageDraftEnvelope(
+      scopeId: scopeId,
+      baseRemoteHash: json['base_remote_hash']?.toString(),
+      baseMenu: _SignageMenu.fromJson(Map<String, dynamic>.from(rawBaseMenu)),
+      menu: _SignageMenu.fromJson(Map<String, dynamic>.from(rawMenu)),
+      revision: revision,
+      updatedAt: json['updated_at']?.toString() ?? '',
+    );
+  }
+}
+
+class _PendingSignageSave {
+  final String requestId;
+  final String expectedRevision;
+  final String? baseRemoteHash;
+  final _SignageMenu snapshot;
+  final int localEditRevision;
+  final Map<String, dynamic> body;
+
+  _PendingSignageSave({
+    required this.requestId,
+    required this.expectedRevision,
+    required this.baseRemoteHash,
+    required this.snapshot,
+    required this.localEditRevision,
+  }) : body = Map<String, dynamic>.unmodifiable({
+          'request_id': requestId,
+          'expected_revision': expectedRevision,
+          'base_remote_hash': baseRemoteHash,
+          'menu': snapshot.toJson(),
+        });
+}
+
 // ─── 메인 화면 ────────────────────────────────────────────────────────────────
 
 class SignageScreen extends StatefulWidget {
@@ -218,38 +283,151 @@ class SignageScreen extends StatefulWidget {
 class _SignageScreenState extends State<SignageScreen>
     with AsyncRequestGuard<SignageScreen> {
   _SignageMenu? _saved;
+  _SignageMenu? _baseRemote;
   _SignageMenu? _draft;
+  _SignageDraftEnvelope? _conflictSnapshot;
+  _PendingSignageSave? _pendingSave;
+  EditorContext? _editorContext;
+  String _scopeId = '';
+  String _baseRemoteHash = '';
+  String _serverRevision = '';
+  String _serverUpdatedAt = '';
   bool _loading = true;
   String _error = '';
   bool _pushing = false;
   bool _dirty = false;
   String _successMessage = '';
+  String _capabilityError = '';
+  int _localEditRevision = 0;
 
   @override
   void initState() {
     super.initState();
     _load();
+    _loadEditorContext();
   }
 
-  Future<void> _load() async {
-    if (!mounted) return;
+  Future<_SignageDraftEnvelope> _fetchDraft() async {
+    final result =
+        await context.read<AppState>().fetchMapParsed<_SignageDraftEnvelope>(
+              '/api/editor/signage/draft',
+              parser: _SignageDraftEnvelope.fromJson,
+              cacheTtl: Duration.zero,
+              allowStaleOnError: false,
+            );
+    return result.data;
+  }
+
+  Future<EditorContext> _fetchEditorContext() async {
+    final result = await context.read<AppState>().fetchMapParsed<EditorContext>(
+          '/api/editor/context',
+          parser: EditorContext.fromJson,
+          cacheTtl: Duration.zero,
+          allowStaleOnError: false,
+        );
+    return result.data;
+  }
+
+  Future<void> _loadEditorContext() async {
+    try {
+      final editor = await _fetchEditorContext();
+      if (!mounted) return;
+      setState(() {
+        _editorContext = editor;
+        _capabilityError = '';
+      });
+    } catch (error) {
+      if (!mounted) return;
+      setState(() {
+        _editorContext = null;
+        _capabilityError = error.toString();
+      });
+    }
+  }
+
+  bool get _canSaveDraft =>
+      _editorContext?.capability('save_signage_draft')?.enabled ?? false;
+
+  String get _saveDraftBlockReason {
+    if (_capabilityError.isNotEmpty) {
+      return '서버 초안 저장 권한을 확인하지 못했습니다. 저장은 차단되었습니다. $_capabilityError';
+    }
+    final decision = _editorContext?.capability('save_signage_draft');
+    if (decision == null) return '서버 초안 저장 권한을 확인할 수 없습니다.';
+    if (decision.enabled) return '';
+    if (decision.message.isNotEmpty) return decision.message;
+    return '서버에서 사이니지 초안 저장을 허용하지 않습니다. (${decision.reasonCode})';
+  }
+
+  Future<bool> _confirmDiscardChanges({
+    required String title,
+    required String message,
+    required String actionLabel,
+  }) async {
+    final discard = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text(title),
+        content: Text(message),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('계속 편집'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: Text(actionLabel),
+          ),
+        ],
+      ),
+    );
+    return discard == true;
+  }
+
+  Future<void> _load({bool discardDirty = false}) async {
+    if (!mounted || _pushing) return;
+    if (_pendingSave != null) {
+      setState(() {
+        _error = '저장 결과 확인 전에는 새로고침할 수 없습니다. 같은 요청으로 결과를 먼저 확인해 주세요.';
+      });
+      return;
+    }
+    if (_dirty && !discardDirty) {
+      final discard = await _confirmDiscardChanges(
+        title: '로컬 변경사항 새로고침',
+        message: '새로고침하면 저장되지 않은 로컬 편집이 사라집니다. 계속하시겠습니까?',
+        actionLabel: '새로고침',
+      );
+      if (!discard || !mounted) return;
+    }
     final request = beginAsyncRequest();
-    final appState = context.read<AppState>();
+    final revisionBeforeLoad = _localEditRevision;
     setState(() {
       _loading = true;
       _error = '';
       _successMessage = '';
     });
     try {
-      final result = await appState.fetchMapParsed<_SignageMenu>(
-        '/api/signage/menu',
-        parser: _SignageMenu.fromJson,
-        cacheTtl: Duration.zero,
-      );
+      final result = await _fetchDraft();
       if (!isCurrentAsyncRequest(request)) return;
+      if (_draft != null && _localEditRevision != revisionBeforeLoad) {
+        setState(() {
+          _loading = false;
+          _error = '새로고침 중 편집 내용이 바뀌어 로컬 초안을 유지했습니다.';
+        });
+        return;
+      }
       setState(() {
-        _saved = result.data;
-        _draft = result.data.clone();
+        _scopeId = result.scopeId;
+        _baseRemoteHash = result.baseRemoteHash ?? '';
+        _baseRemote = result.baseMenu.clone();
+        _saved = result.menu.clone();
+        _draft = result.menu.clone();
+        _serverRevision = result.revision;
+        _serverUpdatedAt = result.updatedAt;
+        _conflictSnapshot = null;
+        _pendingSave = null;
+        _localEditRevision += 1;
         _dirty = false;
         _loading = false;
       });
@@ -263,64 +441,139 @@ class _SignageScreenState extends State<SignageScreen>
   }
 
   void _markDirty() {
-    if (!_dirty) setState(() => _dirty = true);
-    if (_successMessage.isNotEmpty) setState(() => _successMessage = '');
-  }
-
-  void _resetDraft() {
-    if (_saved == null) return;
     setState(() {
-      _draft = _saved!.clone();
-      _dirty = false;
+      _localEditRevision += 1;
+      _dirty = true;
       _successMessage = '';
     });
   }
 
+  Future<void> _resetDraft() async {
+    if (_saved == null || _pushing || _pendingSave != null) return;
+    if (_dirty) {
+      final discard = await _confirmDiscardChanges(
+        title: '로컬 변경사항 되돌리기',
+        message: '저장되지 않은 편집을 서버에 저장된 초안으로 되돌립니다. 계속하시겠습니까?',
+        actionLabel: '되돌리기',
+      );
+      if (!discard || !mounted) return;
+    }
+    setState(() {
+      _draft = _saved!.clone();
+      _localEditRevision += 1;
+      _dirty = false;
+      _successMessage = '';
+      _error = '';
+    });
+  }
+
   Future<void> _handleBlockedPop() async {
-    final discard = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('변경사항 폐기'),
-        content: const Text('저장되지 않은 변경사항이 있습니다. 이 화면을 나가시겠습니까?'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('계속 편집'),
+    if (_pendingSave != null || _pushing) {
+      await showDialog<void>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          title: const Text('저장 결과 확인 필요'),
+          content: const Text(
+            '저장 요청 결과가 확정되지 않았습니다. 같은 요청으로 저장 결과를 확인한 뒤 화면을 나가 주세요.',
           ),
-          FilledButton(
-            onPressed: () => Navigator.pop(ctx, true),
-            child: const Text('나가기'),
-          ),
-        ],
-      ),
-    );
-    if (discard != true || !mounted) return;
+          actions: [
+            FilledButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text('계속 편집'),
+            ),
+          ],
+        ),
+      );
+      return;
+    }
+    if (_dirty) {
+      final discard = await _confirmDiscardChanges(
+        title: '로컬 변경사항 폐기',
+        message: '저장되지 않은 변경사항이 있습니다. 이 화면을 나가시겠습니까?',
+        actionLabel: '나가기',
+      );
+      if (!discard || !mounted) return;
+    }
     setState(() => _dirty = false);
     Navigator.of(context).pop();
   }
 
-  Future<void> _push() async {
-    final draft = _draft;
-    if (draft == null) return;
-
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('메뉴판에 반영'),
-        content: const Text('현재 편집된 내용을 사이니지 서버에 즉시 반영합니다.\n계속하시겠습니까?'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('취소'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.pop(ctx, true),
-            child: const Text('반영'),
-          ),
-        ],
-      ),
+  _PendingSignageSave _newPendingSave(_SignageMenu draft) {
+    final random = Random.secure();
+    final bytes = List<int>.generate(16, (_) => random.nextInt(256));
+    bytes[6] = (bytes[6] & 0x0f) | 0x40;
+    bytes[8] = (bytes[8] & 0x3f) | 0x80;
+    final hex =
+        bytes.map((byte) => byte.toRadixString(16).padLeft(2, '0')).join();
+    final requestId = '${hex.substring(0, 8)}-${hex.substring(8, 12)}-'
+        '${hex.substring(12, 16)}-${hex.substring(16, 20)}-${hex.substring(20)}';
+    return _PendingSignageSave(
+      requestId: requestId,
+      expectedRevision: _serverRevision,
+      baseRemoteHash: _baseRemoteHash.isEmpty ? null : _baseRemoteHash,
+      snapshot: draft.clone(),
+      localEditRevision: _localEditRevision,
     );
-    if (confirmed != true || !mounted) return;
+  }
+
+  Future<_SignageDraftEnvelope?> _lookupWriteReceipt(
+    _PendingSignageSave pending,
+  ) async {
+    try {
+      final response =
+          await context.read<AppState>().fetchMapParsed<_SignageDraftEnvelope>(
+                '/api/editor/write-receipts/${pending.requestId}',
+                params: const {'operation': 'signage.draft'},
+                parser: _SignageDraftEnvelope.fromJson,
+                cacheTtl: Duration.zero,
+                allowStaleOnError: false,
+              );
+      return response.data;
+    } on ApiException catch (error) {
+      if (error.statusCode == 404) return null;
+      rethrow;
+    }
+  }
+
+  void _acceptSavedEnvelope(
+    _SignageDraftEnvelope envelope,
+    _PendingSignageSave pending,
+  ) {
+    if (_scopeId.isNotEmpty && envelope.scopeId != _scopeId) {
+      throw const FormatException('저장 응답의 편집 범위가 현재 초안과 다릅니다.');
+    }
+    setState(() {
+      _scopeId = envelope.scopeId;
+      _baseRemoteHash = envelope.baseRemoteHash ?? '';
+      _baseRemote = envelope.baseMenu.clone();
+      _saved = envelope.menu.clone();
+      _serverRevision = envelope.revision;
+      _serverUpdatedAt = envelope.updatedAt;
+      _pendingSave = null;
+      _conflictSnapshot = null;
+      if (_localEditRevision == pending.localEditRevision) {
+        _draft = envelope.menu.clone();
+        _dirty = false;
+      } else {
+        _dirty = true;
+      }
+      _successMessage = _localEditRevision == pending.localEditRevision
+          ? '서버 초안 ${envelope.revision}번으로 저장했습니다. 외부 메뉴판에는 게시되지 않았습니다.'
+          : '제출한 내용은 서버 초안으로 저장했습니다. 저장 중 편집한 변경사항은 아직 저장되지 않았습니다.';
+      _error = '';
+    });
+  }
+
+  bool _isSignageConflict(ApiException error) => const {
+        'draft_changed',
+        'remote_changed',
+        'signage_draft_conflict',
+        'request_id_reused',
+      }.contains(error.code);
+
+  Future<void> _saveDraft() async {
+    final draft = _draft;
+    if (draft == null || !_dirty || _pushing) return;
 
     setState(() {
       _pushing = true;
@@ -328,37 +581,145 @@ class _SignageScreenState extends State<SignageScreen>
       _successMessage = '';
     });
 
+    var writeAttempted = false;
+    final previousPending = _pendingSave;
+    final appState = context.read<AppState>();
     try {
-      final appState = context.read<AppState>();
+      // Check the server-owned capability before creating or sending a write.
+      final editorContext = await _fetchEditorContext();
+      if (!mounted) return;
+      setState(() {
+        _editorContext = editorContext;
+        _capabilityError = '';
+      });
+      if (_scopeId.isNotEmpty && editorContext.scopeId != _scopeId) {
+        throw const ApiException(
+          '로그인 또는 편집 범위가 바뀌었습니다. 현재 로컬 초안은 다른 범위로 전송하지 않았습니다.',
+          statusCode: 409,
+          code: 'editor_scope_changed',
+        );
+      }
+      final capability = editorContext.capability('save_signage_draft');
+      if (capability?.enabled != true) {
+        throw ApiException(
+          _saveDraftBlockReason,
+          statusCode: 503,
+          code: capability?.reasonCode ?? 'capability_disabled',
+        );
+      }
+
+      final pending = previousPending ?? _newPendingSave(draft);
+      if (previousPending != null) {
+        final receipt = await _lookupWriteReceipt(previousPending);
+        if (receipt != null) {
+          if (!mounted) return;
+          _acceptSavedEnvelope(receipt, previousPending);
+          return;
+        }
+      }
+      if (_pendingSave == null) setState(() => _pendingSave = pending);
+      writeAttempted = true;
       final result = await appState.postJson(
-        '/api/signage/menu',
-        body: draft.toJson(),
+        '/api/editor/signage/draft',
+        method: 'PUT',
+        body: pending.body,
       );
+      final envelope = _SignageDraftEnvelope.fromJson(result);
       if (!mounted) return;
-      final rawBackup = result['backup'];
-      final backup = rawBackup is String && rawBackup.trim().isNotEmpty
-          ? rawBackup.trim()
-          : null;
-      setState(() {
-        _saved = draft.clone();
-        _dirty = false;
-        _pushing = false;
-        _successMessage = backup != null
-            ? '메뉴판이 업데이트되었습니다. (백업: ${backup.split('/').last})'
-            : '메뉴판이 성공적으로 업데이트되었습니다.';
-      });
-    } catch (e) {
+      _acceptSavedEnvelope(envelope, pending);
+    } catch (error) {
       if (!mounted) return;
-      setState(() {
-        _error = e.toString();
-        _pushing = false;
-      });
+      final pending = _pendingSave ?? previousPending;
+      if (writeAttempted && pending != null) {
+        try {
+          final receipt = await _lookupWriteReceipt(pending);
+          if (receipt != null) {
+            if (mounted) _acceptSavedEnvelope(receipt, pending);
+            return;
+          }
+        } catch (_) {
+          // Keep the immutable request for a same-ID retry; the receipt lookup
+          // itself may also be unavailable.
+        }
+      }
+      if (!mounted) return;
+      if (error is ApiException && _isSignageConflict(error)) {
+        setState(() {
+          _pendingSave = null;
+          _error =
+              '서버 초안 버전이 바뀌었습니다. 로컬 편집은 보존했습니다. 최신 초안을 비교해 주세요. ${error.message}';
+        });
+        try {
+          final latest = await _fetchDraft();
+          if (mounted && latest.scopeId == _scopeId) {
+            setState(() => _conflictSnapshot = latest);
+          }
+        } catch (_) {
+          // The local draft remains available even if comparison fetch fails.
+        }
+      } else if (writeAttempted) {
+        setState(() {
+          _error =
+              '저장 결과가 확정되지 않았습니다. 로컬 입력을 보존하고 동일 요청으로 결과 확인/재시도를 대기합니다. ${_formatError(error)}';
+        });
+      } else {
+        setState(() {
+          if (previousPending == null) _pendingSave = null;
+          _error = _formatError(error);
+        });
+      }
+    } finally {
+      if (mounted) setState(() => _pushing = false);
     }
+  }
+
+  String _formatError(Object error) {
+    if (error is ApiException && error.code == 'upgrade_required') {
+      return '서버가 새 편집 계약을 요구합니다. 구형 게시 경로로 우회하지 않습니다. ${error.message}';
+    }
+    if (error is ApiException && error.code == 'capability_disabled') {
+      return '서버에서 초안 저장을 허용하지 않습니다. ${error.message}';
+    }
+    return error.toString().replaceFirst('Exception: ', '');
+  }
+
+  void _useConflictRevision() {
+    final latest = _conflictSnapshot;
+    if (latest == null) return;
+    setState(() {
+      // Adopt only the server revision/base preconditions. Keep the user's
+      // edited menu intact; the explicit next save is a reviewed overwrite.
+      _scopeId = latest.scopeId;
+      _baseRemoteHash = latest.baseRemoteHash ?? '';
+      _baseRemote = latest.baseMenu.clone();
+      _saved = latest.menu.clone();
+      _serverRevision = latest.revision;
+      _serverUpdatedAt = latest.updatedAt;
+      _conflictSnapshot = null;
+      _localEditRevision += 1;
+      _dirty = true;
+      _error = '';
+      _successMessage =
+          '서버 rev ${latest.revision}과 비교했습니다. 로컬 초안은 유지했으며, 저장을 누르면 새 서버 버전을 기준으로 제출합니다.';
+    });
+  }
+
+  String _menuOutline(_SignageMenu? menu) {
+    if (menu == null) return '확인할 메뉴 데이터가 없습니다.';
+    final categories = menu.categories.map((category) {
+      final items = category.items
+          .map((item) => '${item.korean} ${_priceFormatted(item.price)}원')
+          .join(', ');
+      return '${category.title}: ${items.isEmpty ? '항목 없음' : items}';
+    }).join(' · ');
+    return categories.isEmpty
+        ? menu.shopName
+        : '${menu.shopName} · $categories';
   }
 
   @override
   Widget build(BuildContext context) {
-    if (_loading) {
+    if (_loading && _draft == null) {
       return const Center(
           child: CircularProgressIndicator(color: Color(0xFF0D9488)));
     }
@@ -367,7 +728,8 @@ class _SignageScreenState extends State<SignageScreen>
       return EmptyState(
         title: '메뉴판 데이터를 불러오지 못했습니다.',
         message: _error,
-        action: FilledButton(onPressed: _load, child: const Text('다시 시도')),
+        action:
+            FilledButton(onPressed: () => _load(), child: const Text('다시 시도')),
       );
     }
 
@@ -375,126 +737,188 @@ class _SignageScreenState extends State<SignageScreen>
     if (draft == null) {
       return EmptyState(
         title: '데이터 없음',
-        action: FilledButton(onPressed: _load, child: const Text('새로고침')),
+        action:
+            FilledButton(onPressed: () => _load(), child: const Text('새로고침')),
       );
     }
+    final shortBaseHash = _baseRemoteHash.isEmpty
+        ? '-'
+        : _baseRemoteHash.length > 12
+            ? _baseRemoteHash.substring(0, 12)
+            : _baseRemoteHash;
 
     return PopScope(
-      canPop: !_dirty,
+      canPop: !_dirty && !_pushing && _pendingSave == null,
       onPopInvokedWithResult: (didPop, result) {
         if (!didPop) _handleBlockedPop();
       },
-      child: Stack(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          ListView(
-            padding: const EdgeInsets.fromLTRB(16, 16, 16, 140),
-            children: [
-              // 오류/성공 배너
-              if (_error.isNotEmpty) _Banner(text: _error, isError: true),
-              if (_successMessage.isNotEmpty)
-                _Banner(text: _successMessage, isError: false),
+          Expanded(
+            child: ListView(
+              padding: const EdgeInsets.all(16),
+              children: [
+                if (_loading) const LinearProgressIndicator(minHeight: 2),
+                // 오류/성공 배너
+                if (_error.isNotEmpty) _Banner(text: _error, isError: true),
+                if (_successMessage.isNotEmpty)
+                  _Banner(text: _successMessage, isError: false),
 
-              const _EditingNotice(),
-
-              // 가게 정보
-              _SectionCard(
-                title: '가게 정보',
-                child: Column(
-                  children: [
-                    _LabeledField(
-                      label: '가게명',
-                      value: draft.shopName,
-                      onChanged: (v) {
-                        draft.shopName = v;
-                        _markDirty();
-                      },
-                    ),
-                    const SizedBox(height: 8),
-                    _LabeledField(
-                      label: '가게명 1줄',
-                      value: draft.shopNameLine1,
-                      onChanged: (v) {
-                        draft.shopNameLine1 = v;
-                        _markDirty();
-                      },
-                    ),
-                    const SizedBox(height: 8),
-                    _LabeledField(
-                      label: '가게명 2줄',
-                      value: draft.shopNameLine2,
-                      onChanged: (v) {
-                        draft.shopNameLine2 = v;
-                        _markDirty();
-                      },
-                    ),
-                  ],
+                _SectionCard(
+                  title: '게시본과 서버 초안',
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                          '서버 초안 revision: ${_serverRevision.isEmpty ? '-' : _serverRevision}'),
+                      const SizedBox(height: 4),
+                      Text('원격 게시본 기준 hash: $shortBaseHash'),
+                      if (_serverUpdatedAt.isNotEmpty) ...[
+                        const SizedBox(height: 4),
+                        Text('서버 초안 저장 시각: $_serverUpdatedAt'),
+                      ],
+                      const SizedBox(height: 8),
+                      Text('게시본: ${_menuOutline(_baseRemote)}'),
+                      const SizedBox(height: 4),
+                      Text('저장된 서버 초안: ${_menuOutline(_saved)}'),
+                      const SizedBox(height: 8),
+                      const _Banner(
+                        text: '아래 저장 동작은 서버 초안만 저장합니다. 외부 메뉴판/POS에는 게시하지 않습니다.',
+                        isError: false,
+                      ),
+                    ],
+                  ),
                 ),
-              ),
-              const SizedBox(height: 12),
+                const SizedBox(height: 12),
+                if (_conflictSnapshot != null)
+                  _SectionCard(
+                    title: '서버 초안 충돌 비교',
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text('최신 서버 revision: ${_conflictSnapshot!.revision}'),
+                        const SizedBox(height: 6),
+                        Text('서버 초안: ${_menuOutline(_conflictSnapshot!.menu)}'),
+                        const SizedBox(height: 4),
+                        Text('내 로컬 초안: ${_menuOutline(_draft)}'),
+                        const SizedBox(height: 10),
+                        FilledButton.icon(
+                          onPressed: _pushing ? null : _useConflictRevision,
+                          icon: const Icon(Icons.compare_arrows),
+                          label: const Text('비교한 서버 버전 기준으로 계속 편집'),
+                        ),
+                      ],
+                    ),
+                  ),
+                if (_conflictSnapshot != null) const SizedBox(height: 12),
+                if (!_canSaveDraft) ...[
+                  _Banner(text: _saveDraftBlockReason, isError: true),
+                  const SizedBox(height: 12),
+                ],
 
-              // 공지 사항
-              _SectionCard(
-                title: '공지 사항',
-                child: _LabeledField(
-                  label: '공지 내용',
-                  value: draft.announcementText,
-                  maxLines: 3,
-                  onChanged: (v) {
-                    draft.announcementText = v;
-                    _markDirty();
-                  },
+                const _EditingNotice(),
+
+                // 가게 정보
+                _SectionCard(
+                  title: '가게 정보',
+                  child: Column(
+                    children: [
+                      _LabeledField(
+                        label: '가게명',
+                        value: draft.shopName,
+                        onChanged: (v) {
+                          draft.shopName = v;
+                          _markDirty();
+                        },
+                      ),
+                      const SizedBox(height: 8),
+                      _LabeledField(
+                        label: '가게명 1줄',
+                        value: draft.shopNameLine1,
+                        onChanged: (v) {
+                          draft.shopNameLine1 = v;
+                          _markDirty();
+                        },
+                      ),
+                      const SizedBox(height: 8),
+                      _LabeledField(
+                        label: '가게명 2줄',
+                        value: draft.shopNameLine2,
+                        onChanged: (v) {
+                          draft.shopNameLine2 = v;
+                          _markDirty();
+                        },
+                      ),
+                    ],
+                  ),
                 ),
-              ),
-              const SizedBox(height: 12),
+                const SizedBox(height: 12),
 
-              // 카테고리 목록
-              ...draft.categories.asMap().entries.map((entry) {
-                final catIdx = entry.key;
-                final cat = entry.value;
-                return Padding(
-                  padding: const EdgeInsets.only(bottom: 12),
-                  child: _CategoryCard(
-                    category: cat,
-                    onChanged: _markDirty,
-                    onDelete: () => setState(() {
-                      draft.categories.removeAt(catIdx);
+                // 공지 사항
+                _SectionCard(
+                  title: '공지 사항',
+                  child: _LabeledField(
+                    label: '공지 내용',
+                    value: draft.announcementText,
+                    maxLines: 3,
+                    onChanged: (v) {
+                      draft.announcementText = v;
+                      _markDirty();
+                    },
+                  ),
+                ),
+                const SizedBox(height: 12),
+
+                // 카테고리 목록
+                ...draft.categories.asMap().entries.map((entry) {
+                  final catIdx = entry.key;
+                  final cat = entry.value;
+                  return Padding(
+                    padding: const EdgeInsets.only(bottom: 12),
+                    child: _CategoryCard(
+                      category: cat,
+                      onChanged: _markDirty,
+                      onDelete: () => setState(() {
+                        draft.categories.removeAt(catIdx);
+                        _markDirty();
+                      }),
+                    ),
+                  );
+                }),
+
+                // 카테고리 추가
+                if (_allowStructuralEditing)
+                  OutlinedButton.icon(
+                    onPressed: () => setState(() {
+                      draft.categories.add(
+                        _SignageCategory(id: '', title: '', items: []),
+                      );
                       _markDirty();
                     }),
+                    icon: const Icon(Icons.add),
+                    label: const Text('카테고리 추가'),
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: const Color(0xFF0D9488),
+                      side: const BorderSide(color: Color(0xFF0D9488)),
+                    ),
                   ),
-                );
-              }),
-
-              // 카테고리 추가
-              if (_allowStructuralEditing)
-                OutlinedButton.icon(
-                  onPressed: () => setState(() {
-                    draft.categories.add(
-                      _SignageCategory(id: '', title: '', items: []),
-                    );
-                    _markDirty();
-                  }),
-                  icon: const Icon(Icons.add),
-                  label: const Text('카테고리 추가'),
-                  style: OutlinedButton.styleFrom(
-                    foregroundColor: const Color(0xFF0D9488),
-                    side: const BorderSide(color: Color(0xFF0D9488)),
-                  ),
-                ),
-            ],
+              ],
+            ),
           ),
 
           // 하단 스티키 액션 바
-          Positioned(
-            left: 0,
-            right: 0,
-            bottom: 0,
-            child: _ActionBar(
-              dirty: _dirty,
-              pushing: _pushing,
-              onRefresh: _loading || _pushing ? null : _load,
-              onReset: _dirty && !_pushing ? _resetDraft : null,
-              onPush: _dirty && !_pushing ? _push : null,
-            ),
+          _ActionBar(
+            dirty: _dirty,
+            pushing: _pushing,
+            onRefresh: _loading || _pushing || _pendingSave != null
+                ? null
+                : () => _load(),
+            onReset: _dirty && !_pushing && _pendingSave == null
+                ? () => _resetDraft()
+                : null,
+            onSaveDraft:
+                _dirty && !_pushing && _canSaveDraft ? _saveDraft : null,
           ),
         ],
       ),
@@ -1242,14 +1666,14 @@ class _ActionBar extends StatelessWidget {
   final bool pushing;
   final VoidCallback? onRefresh;
   final VoidCallback? onReset;
-  final VoidCallback? onPush;
+  final VoidCallback? onSaveDraft;
 
   const _ActionBar({
     required this.dirty,
     required this.pushing,
     required this.onRefresh,
     required this.onReset,
-    required this.onPush,
+    required this.onSaveDraft,
   });
 
   @override
@@ -1288,7 +1712,7 @@ class _ActionBar extends StatelessWidget {
               const SizedBox(width: 6),
               Expanded(
                 child: Text(
-                  dirty ? '저장되지 않은 변경사항' : '저장된 상태',
+                  dirty ? '저장되지 않은 변경사항' : '서버 초안 저장됨 (외부 게시 전)',
                   style: TextStyle(
                     fontSize: 12,
                     fontWeight: FontWeight.w600,
@@ -1328,14 +1752,14 @@ class _ActionBar extends StatelessWidget {
               Expanded(
                 flex: 2,
                 child: FilledButton(
-                  onPressed: onPush,
+                  onPressed: onSaveDraft,
                   style: FilledButton.styleFrom(
                     backgroundColor: const Color(0xFF0D9488),
                     padding: const EdgeInsets.symmetric(vertical: 10),
                     tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                   ),
                   child: Text(
-                    pushing ? '반영 중...' : '메뉴판에 반영',
+                    pushing ? '서버 저장 중...' : '서버 초안 저장',
                     style: const TextStyle(fontSize: 13),
                   ),
                 ),
