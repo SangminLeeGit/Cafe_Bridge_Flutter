@@ -66,6 +66,7 @@ class _AdminRuntimeSettingsScreenState
   final Map<String, RuntimeSecretOperation> _secretOperations =
       <String, RuntimeSecretOperation>{};
   Map<String, String> _fieldErrors = <String, String>{};
+  RuntimeSettingsNotice? _noticeAfterActionDialog;
   String? _selectedGroupKey;
   String _overviewError = '';
   String _detailError = '';
@@ -119,6 +120,7 @@ class _AdminRuntimeSettingsScreenState
       _baseline = <String, Object?>{};
       _fieldErrors = <String, String>{};
       _notice = null;
+      _noticeAfterActionDialog = null;
       _pendingAction = null;
       _actionDialogOpen = false;
       _clearSensitiveInputs();
@@ -525,6 +527,7 @@ class _AdminRuntimeSettingsScreenState
       _notice = null;
       _pendingAction = action;
     });
+    _noticeAfterActionDialog = null;
     unawaited(_showReauthenticationDialog());
   }
 
@@ -628,10 +631,16 @@ class _AdminRuntimeSettingsScreenState
       },
     );
     _actionDialogOpen = false;
+    final notice = _noticeAfterActionDialog;
+    _noticeAfterActionDialog = null;
+    if (mounted && _hasAdminAccess && notice != null) {
+      _showNotice(notice);
+    }
   }
 
   void _dismissActionDialog() {
     if (_busy) return;
+    _noticeAfterActionDialog = null;
     _clearSensitiveInputs();
     if (mounted) {
       setState(() => _pendingAction = null);
@@ -698,6 +707,7 @@ class _AdminRuntimeSettingsScreenState
     } finally {
       _clearSensitiveInputs();
       if (mounted) {
+        _noticeAfterActionDialog = outcomeNotice;
         setState(() {
           _busy = false;
           _pendingAction = null;
@@ -707,13 +717,6 @@ class _AdminRuntimeSettingsScreenState
           Navigator.of(context, rootNavigator: true).pop();
         }
       }
-    }
-    final notice = outcomeNotice;
-    if (notice != null) {
-      // Let the dialog route finish rebuilding before showing the outcome.
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (mounted && _hasAdminAccess) _showNotice(notice);
-      });
     }
   }
 
