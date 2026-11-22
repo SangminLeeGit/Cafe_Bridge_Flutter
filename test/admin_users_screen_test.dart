@@ -152,6 +152,12 @@ Future<void> _scrollToVisible(WidgetTester tester, Finder finder) async {
   );
 }
 
+Future<void> _scrollToTop(WidgetTester tester) async {
+  final scrollable = find.byType(Scrollable).first;
+  tester.state<ScrollableState>(scrollable).position.jumpTo(0);
+  await tester.pumpAndSettle();
+}
+
 void main() {
   testWidgets('requires admin access and makes no API requests for other roles',
       (tester) async {
@@ -245,10 +251,7 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(state.writes, isEmpty);
-    await _scrollToVisible(
-      tester,
-      find.text('비밀번호는 최소 12자 이상이어야 합니다.'),
-    );
+    await _scrollToTop(tester);
     expect(find.text('비밀번호는 최소 12자 이상이어야 합니다.'), findsOneWidget);
     expect(
       find.byKey(const ValueKey('admin-user-create-confirm')),
@@ -422,7 +425,7 @@ void main() {
     await tester.tap(find.byKey(const ValueKey('admin-user-create-confirm')));
     await tester.pumpAndSettle();
 
-    await _scrollToVisible(tester, find.textContaining('계정 충돌'));
+    await _scrollToTop(tester);
     expect(find.textContaining('계정 충돌'), findsOneWidget);
     expect(find.textContaining('이미 존재하는 아이디입니다.'), findsOneWidget);
     expect(find.text(password), findsNothing);
