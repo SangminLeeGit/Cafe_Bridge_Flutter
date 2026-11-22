@@ -670,13 +670,14 @@ class _AdminRuntimeSettingsScreenState
 
     setState(() => _busy = true);
     final password = _passwordController.text;
+    RuntimeSettingsNotice? outcomeNotice;
     try {
       final actionResult = await _performAction(
         pending: pending,
         group: group,
         password: password,
       );
-      final notice = runtimeSettingsActionNotice(
+      outcomeNotice = runtimeSettingsActionNotice(
         pending.apiAction,
         actionResult,
       );
@@ -687,14 +688,11 @@ class _AdminRuntimeSettingsScreenState
       if (mounted && _selectedGroupKey == group.groupKey) {
         await _loadDetail(group.groupKey, resetDraft: true);
       }
-      if (mounted && _hasAdminAccess) _showNotice(notice);
     } catch (error) {
       if (mounted) {
-        _showNotice(
-          RuntimeSettingsNotice(
-            text: _safeMutationError(error, pending.kind),
-            isError: true,
-          ),
+        outcomeNotice = RuntimeSettingsNotice(
+          text: _safeMutationError(error, pending.kind),
+          isError: true,
         );
       }
     } finally {
@@ -710,6 +708,8 @@ class _AdminRuntimeSettingsScreenState
         }
       }
     }
+    final notice = outcomeNotice;
+    if (mounted && _hasAdminAccess && notice != null) _showNotice(notice);
   }
 
   Future<Map<String, dynamic>> _performAction({
