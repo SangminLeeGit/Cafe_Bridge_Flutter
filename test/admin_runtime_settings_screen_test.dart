@@ -439,15 +439,23 @@ Future<void> _confirmWithPassword(
   WidgetTester tester, {
   String password = _passwordValue,
 }) async {
-  await tester.ensureVisible(find.byKey(const Key('runtime-settings-password')));
+  final passwordField = find.byKey(const Key('runtime-settings-password'));
+  await tester.ensureVisible(passwordField);
   await tester.enterText(
-    find.byKey(const Key('runtime-settings-password')),
+    passwordField,
     password,
   );
   await tester.pump();
   await tester.tap(
     find.byKey(const Key('runtime-settings-confirm-action')),
   );
+  await tester.pumpAndSettle();
+  for (var attempt = 0;
+      attempt < 30 && passwordField.evaluate().isNotEmpty;
+      attempt += 1) {
+    await tester.pump(const Duration(milliseconds: 100));
+  }
+  expect(passwordField, findsNothing);
   await tester.pumpAndSettle();
 }
 
