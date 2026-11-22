@@ -359,6 +359,14 @@ Future<void> _mountScreen(
   await tester.pumpAndSettle();
 }
 
+Future<void> _scrollToVisible(WidgetTester tester, Finder finder) async {
+  await tester.scrollUntilVisible(
+    finder,
+    400,
+    scrollable: find.byType(Scrollable).first,
+  );
+}
+
 Future<void> _confirmWithPassword(
   WidgetTester tester, {
   String password = _passwordValue,
@@ -491,6 +499,7 @@ void main() {
     );
     expect(find.text('Worker 수렴 상태'), findsOneWidget);
     expect(find.text('v7 / v7'), findsOneWidget);
+    await _scrollToVisible(tester, find.text('변경 이력'));
     expect(find.text('변경 이력'), findsOneWidget);
     expect(find.textContaining('bot_token'), findsAtLeastNWidgets(1));
     expect(find.text(_secretValue), findsNothing);
@@ -504,18 +513,18 @@ void main() {
     final operation = find.byKey(
       const Key('runtime-secret-operation-bot_token'),
     );
-    await tester.ensureVisible(operation);
+    await _scrollToVisible(tester, operation);
     await tester.tap(operation);
     await tester.pumpAndSettle();
     await tester.tap(find.text('교체').last);
     await tester.pumpAndSettle();
 
     final replacement = find.byType(TextField).last;
-    await tester.ensureVisible(replacement);
+    await _scrollToVisible(tester, replacement);
     await tester.enterText(replacement, _secretValue);
     await tester.pump();
     final prepare = find.byKey(const Key('runtime-settings-prepare'));
-    await tester.ensureVisible(prepare);
+    await _scrollToVisible(tester, prepare);
     await tester.tap(prepare);
     await tester.pumpAndSettle();
     await _confirmWithPassword(tester);
@@ -560,14 +569,14 @@ void main() {
     final operation = find.byKey(
       const Key('runtime-secret-operation-bot_token'),
     );
-    await tester.ensureVisible(operation);
+    await _scrollToVisible(tester, operation);
     await tester.tap(operation);
     await tester.pumpAndSettle();
     await tester.tap(find.text('삭제').last);
     await tester.pumpAndSettle();
 
     final prepare = find.byKey(const Key('runtime-settings-prepare'));
-    await tester.ensureVisible(prepare);
+    await _scrollToVisible(tester, prepare);
     await tester.tap(prepare);
     await tester.pumpAndSettle();
     await _confirmWithPassword(tester);
@@ -586,7 +595,7 @@ void main() {
     await _mountScreen(tester, state);
 
     final testButton = find.widgetWithText(OutlinedButton, '연결 테스트');
-    await tester.ensureVisible(testButton);
+    await _scrollToVisible(tester, testButton);
     await tester.tap(testButton);
     await tester.pumpAndSettle();
     await _confirmWithPassword(tester);
@@ -595,7 +604,7 @@ void main() {
     expect(find.text('연결 검증을 완료했습니다.'), findsOneWidget);
 
     final applyButton = find.widgetWithText(FilledButton, '적용');
-    await tester.ensureVisible(applyButton);
+    await _scrollToVisible(tester, applyButton);
     await tester.tap(applyButton);
     await tester.pumpAndSettle();
     await _confirmWithPassword(tester);
@@ -612,7 +621,7 @@ void main() {
     await _mountScreen(tester, state);
 
     final cancelButton = find.widgetWithText(OutlinedButton, '취소');
-    await tester.ensureVisible(cancelButton);
+    await _scrollToVisible(tester, cancelButton);
     await tester.tap(cancelButton);
     await tester.pumpAndSettle();
     await _confirmWithPassword(tester);
@@ -622,7 +631,7 @@ void main() {
     final rollbackButton = find.byKey(
       const Key('runtime-settings-rollback-1'),
     );
-    await tester.ensureVisible(rollbackButton);
+    await _scrollToVisible(tester, rollbackButton);
     await tester.tap(rollbackButton);
     await tester.pumpAndSettle();
     await _confirmWithPassword(tester);
@@ -660,18 +669,18 @@ void main() {
     final operation = find.byKey(
       const Key('runtime-secret-operation-bot_token'),
     );
-    await tester.ensureVisible(operation);
+    await _scrollToVisible(tester, operation);
     await tester.tap(operation);
     await tester.pumpAndSettle();
     await tester.tap(find.text('교체').last);
     await tester.pumpAndSettle();
     final replacement = find.byType(TextField).last;
-    await tester.ensureVisible(replacement);
+    await _scrollToVisible(tester, replacement);
     await tester.enterText(replacement, _secretValue);
     await tester.pump();
 
     final prepare = find.byKey(const Key('runtime-settings-prepare'));
-    await tester.ensureVisible(prepare);
+    await _scrollToVisible(tester, prepare);
     await tester.tap(prepare);
     await tester.pumpAndSettle();
     await _confirmWithPassword(tester);
@@ -693,7 +702,7 @@ void main() {
     await _mountScreen(tester, state);
 
     final refresh = find.widgetWithText(OutlinedButton, '상태 새로고침');
-    await tester.ensureVisible(refresh);
+    await _scrollToVisible(tester, refresh);
     await tester.tap(refresh);
     await tester.pumpAndSettle();
 

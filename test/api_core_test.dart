@@ -79,6 +79,34 @@ void main() {
     );
   });
 
+  test('allows an individual POST to override the default timeout', () async {
+    final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+    addTearDown(() => server.close(force: true));
+    server.listen((request) async {
+      await Future<void>.delayed(const Duration(milliseconds: 80));
+      request.response.headers.contentType = ContentType.json;
+      request.response.write('{}');
+      await request.response.close();
+    });
+    final client = ApiClient();
+    addTearDown(client.close);
+
+    await expectLater(
+      client.postJson(
+        'http://127.0.0.1:${server.port}',
+        '/slow',
+        timeout: const Duration(milliseconds: 5),
+      ),
+      throwsA(
+        isA<ApiException>().having(
+          (error) => error.isTransportError,
+          'transport',
+          isTrue,
+        ),
+      ),
+    );
+  });
+
   test('preserves structured backend error codes, messages, fields and IDs',
       () async {
     final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);

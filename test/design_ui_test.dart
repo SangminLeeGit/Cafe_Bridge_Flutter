@@ -65,7 +65,7 @@ void main() {
       500,
       scrollable: find.byType(Scrollable),
     );
-    expect(find.text('admin 필요'), findsNWidgets(3));
-    expect(find.byIcon(Icons.lock_outline), findsNWidgets(3));
+    expect(find.text('admin 필요'), findsNWidgets(5));
+    expect(find.byIcon(Icons.lock_outline), findsNWidgets(5));
   });
 }

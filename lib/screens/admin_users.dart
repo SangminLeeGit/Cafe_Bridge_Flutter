@@ -402,11 +402,14 @@ class _AdminUsersScreenState extends State<AdminUsersScreen> {
       return;
     }
 
+    // Keep the credential out of the editable widget while the user reviews
+    // the confirmation dialog. The local value is used only for this request.
+    _passwordController.clear();
     setState(() {
-      _mutationBusy = true;
       _mutationError = '';
       _mutationMessage = '';
     });
+    var mutationStarted = false;
     try {
       final confirmed = await _confirmMutation(
         title: '사용자 생성 확인',
@@ -421,6 +424,8 @@ class _AdminUsersScreenState extends State<AdminUsersScreen> {
         return;
       }
 
+      setState(() => _mutationBusy = true);
+      mutationStarted = true;
       await context.read<AppState>().postJson(
         '/api/auth/users',
         body: <String, dynamic>{
@@ -448,7 +453,9 @@ class _AdminUsersScreenState extends State<AdminUsersScreen> {
     } finally {
       if (mounted) {
         _passwordController.clear();
-        setState(() => _mutationBusy = false);
+        if (mutationStarted) {
+          setState(() => _mutationBusy = false);
+        }
       }
     }
   }
@@ -475,10 +482,10 @@ class _AdminUsersScreenState extends State<AdminUsersScreen> {
     }
 
     setState(() {
-      _mutationBusy = true;
       _mutationError = '';
       _mutationMessage = '';
     });
+    var mutationStarted = false;
     try {
       final changes = <String>[
         '역할 ${_roleLabel(user.role)} → ${_roleLabel(role)}',
@@ -495,6 +502,8 @@ class _AdminUsersScreenState extends State<AdminUsersScreen> {
         return false;
       }
 
+      setState(() => _mutationBusy = true);
+      mutationStarted = true;
       final body = <String, dynamic>{
         'role': role,
         'is_active': isActive,
@@ -519,7 +528,7 @@ class _AdminUsersScreenState extends State<AdminUsersScreen> {
       }
       return false;
     } finally {
-      if (mounted) {
+      if (mounted && mutationStarted) {
         setState(() => _mutationBusy = false);
       }
     }
@@ -673,6 +682,7 @@ class _AdminUserCardState extends State<_AdminUserCard> {
 
   Future<void> _save() async {
     final password = _newPasswordController.text;
+    _newPasswordController.clear();
     final saved = await widget.onSave(
       widget.user,
       _role,

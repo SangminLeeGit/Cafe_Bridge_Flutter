@@ -144,6 +144,14 @@ Widget _app(_AdminUsersAppState state) {
   );
 }
 
+Future<void> _scrollToVisible(WidgetTester tester, Finder finder) async {
+  await tester.scrollUntilVisible(
+    finder,
+    400,
+    scrollable: find.byType(Scrollable).first,
+  );
+}
+
 void main() {
   testWidgets('requires admin access and makes no API requests for other roles',
       (tester) async {
@@ -183,7 +191,7 @@ void main() {
     expect(find.text('staff-user'), findsWidgets);
 
     final filter = find.byKey(const ValueKey('admin-users-audit-filter'));
-    await tester.ensureVisible(filter);
+    await _scrollToVisible(tester, filter);
     await tester.enterText(filter, 'user_created');
     await tester.pumpAndSettle();
 
@@ -202,7 +210,7 @@ void main() {
 
     expect(find.text('등록된 사용자가 없습니다.'), findsOneWidget);
     final auditPanel = find.text('최근 감사 로그');
-    await tester.ensureVisible(auditPanel);
+    await _scrollToVisible(tester, auditPanel);
     expect(find.text('감사 로그가 없습니다.'), findsOneWidget);
   });
 
@@ -217,7 +225,8 @@ void main() {
       find.byKey(const ValueKey('admin-users-login-id')),
       'new-staff',
     );
-    await tester.ensureVisible(
+    await _scrollToVisible(
+      tester,
       find.byKey(const ValueKey('admin-users-initial-password')),
     );
     await tester.enterText(
@@ -226,7 +235,7 @@ void main() {
     );
 
     final create = find.byKey(const ValueKey('admin-users-create'));
-    await tester.ensureVisible(create);
+    await _scrollToVisible(tester, create);
     await tester.tap(create);
     await tester.pumpAndSettle();
 
@@ -247,7 +256,8 @@ void main() {
     await tester.pumpWidget(_app(state));
     await tester.pumpAndSettle();
 
-    await tester.ensureVisible(
+    await _scrollToVisible(
+      tester,
       find.byKey(const ValueKey('admin-users-login-id')),
     );
     const password = 'test-only-password-2026';
@@ -255,7 +265,8 @@ void main() {
       find.byKey(const ValueKey('admin-users-login-id')),
       '  new-staff  ',
     );
-    await tester.ensureVisible(
+    await _scrollToVisible(
+      tester,
       find.byKey(const ValueKey('admin-users-initial-password')),
     );
     await tester.enterText(
@@ -263,7 +274,7 @@ void main() {
       password,
     );
     final create = find.byKey(const ValueKey('admin-users-create'));
-    await tester.ensureVisible(create);
+    await _scrollToVisible(tester, create);
     await tester.tap(create);
     await tester.pumpAndSettle();
 
@@ -295,19 +306,19 @@ void main() {
     await tester.pumpAndSettle();
 
     final role = find.byKey(const ValueKey('admin-user-role-2'));
-    await tester.ensureVisible(role);
+    await _scrollToVisible(tester, role);
     await tester.tap(role);
     await tester.pumpAndSettle();
     await tester.tap(find.text('운영자').last);
     await tester.pumpAndSettle();
 
     final active = find.byKey(const ValueKey('admin-user-active-2'));
-    await tester.ensureVisible(active);
+    await _scrollToVisible(tester, active);
     await tester.tap(active);
     await tester.pumpAndSettle();
 
     final save = find.byKey(const ValueKey('admin-user-save-2'));
-    await tester.ensureVisible(save);
+    await _scrollToVisible(tester, save);
     await tester.tap(save);
     await tester.pumpAndSettle();
     expect(state.writes, isEmpty);
@@ -335,10 +346,10 @@ void main() {
     const password = 'test-only-password-2028';
     final passwordField =
         find.byKey(const ValueKey('admin-user-password-2'));
-    await tester.ensureVisible(passwordField);
+    await _scrollToVisible(tester, passwordField);
     await tester.enterText(passwordField, password);
     final save = find.byKey(const ValueKey('admin-user-save-2'));
-    await tester.ensureVisible(save);
+    await _scrollToVisible(tester, save);
     await tester.tap(save);
     await tester.pumpAndSettle();
 
@@ -368,7 +379,8 @@ void main() {
     await tester.pumpWidget(_app(state));
     await tester.pumpAndSettle();
 
-    await tester.ensureVisible(
+    await _scrollToVisible(
+      tester,
       find.byKey(const ValueKey('admin-users-login-id')),
     );
     const password = 'test-only-password-2027';
@@ -376,7 +388,8 @@ void main() {
       find.byKey(const ValueKey('admin-users-login-id')),
       'duplicate-user',
     );
-    await tester.ensureVisible(
+    await _scrollToVisible(
+      tester,
       find.byKey(const ValueKey('admin-users-initial-password')),
     );
     await tester.enterText(
@@ -384,7 +397,7 @@ void main() {
       password,
     );
     final create = find.byKey(const ValueKey('admin-users-create'));
-    await tester.ensureVisible(create);
+    await _scrollToVisible(tester, create);
     await tester.tap(create);
     await tester.pumpAndSettle();
     await tester.tap(find.byKey(const ValueKey('admin-user-create-confirm')));
@@ -409,7 +422,9 @@ void main() {
         hasLength(1));
 
     state.failUserFetch = false;
-    await tester.tap(find.text('다시 불러오기'));
+    final retry = find.text('다시 불러오기');
+    await _scrollToVisible(tester, retry);
+    await tester.tap(retry);
     await tester.pumpAndSettle();
     expect(state.reads.where((read) => read.endpoint == '/api/auth/users'),
         hasLength(2));

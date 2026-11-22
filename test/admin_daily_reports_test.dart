@@ -50,6 +50,14 @@ Widget _app({
   );
 }
 
+Future<void> _scrollToVisible(WidgetTester tester, Finder finder) async {
+  await tester.scrollUntilVisible(
+    finder,
+    400,
+    scrollable: find.byType(Scrollable).first,
+  );
+}
+
 Map<String, dynamic> _settings() => {
       'enabled': true,
       'auto_sync_enabled': true,
@@ -291,9 +299,9 @@ void main() {
 
     final intervalField =
         find.byKey(const ValueKey('settings-collection_interval_minutes-1'));
-    await tester.ensureVisible(intervalField);
+    await _scrollToVisible(tester, intervalField);
     await tester.enterText(intervalField, '10.5');
-    await tester.ensureVisible(find.text('설정 검증'));
+    await _scrollToVisible(tester, find.text('설정 검증'));
     await tester.tap(find.text('설정 검증'));
     await tester.pumpAndSettle();
     expect(find.text('정수로 입력하세요.'), findsOneWidget);
@@ -305,11 +313,11 @@ void main() {
     await tester.enterText(intervalField, '31');
     final scheduleField =
         find.byKey(const ValueKey('settings-schedule_time-1'));
-    await tester.ensureVisible(scheduleField);
+    await _scrollToVisible(tester, scheduleField);
     await tester.enterText(scheduleField, '09:15');
-    await tester.ensureVisible(find.text('토'));
+    await _scrollToVisible(tester, find.text('토'));
     await tester.tap(find.text('토'));
-    await tester.ensureVisible(find.text('설정 검증'));
+    await _scrollToVisible(tester, find.text('설정 검증'));
     await tester.tap(find.text('설정 검증'));
     await tester.pumpAndSettle();
 
@@ -325,7 +333,7 @@ void main() {
     expect(validationProfile['closed_weekdays'], [7]);
     expect(find.text('설정 검증을 통과했습니다.'), findsOneWidget);
 
-    await tester.ensureVisible(find.text('설정 저장'));
+    await _scrollToVisible(tester, find.text('설정 저장'));
     await tester.tap(find.text('설정 저장'));
     await tester.pumpAndSettle();
 
@@ -408,12 +416,12 @@ void main() {
     await tester.pumpAndSettle();
 
     final runTile = find.text('2026-11-21');
-    await tester.ensureVisible(runTile);
+    await _scrollToVisible(tester, runTile);
     await tester.tap(runTile);
     await tester.pumpAndSettle();
     expect(find.text('오늘의 매출 요약'), findsOneWidget);
 
-    await tester.ensureVisible(find.text('실행 취소'));
+    await _scrollToVisible(tester, find.text('실행 취소'));
     await tester.tap(find.text('실행 취소'));
     await tester.pumpAndSettle();
 
@@ -425,7 +433,7 @@ void main() {
       isTrue,
     );
 
-    await tester.ensureVisible(find.text('보고서 실행'));
+    await _scrollToVisible(tester, find.text('보고서 실행'));
     await tester.tap(find.text('보고서 실행'));
     await tester.pumpAndSettle();
     expect(
@@ -505,13 +513,13 @@ void main() {
     ));
     await tester.pumpAndSettle();
 
-    await tester.ensureVisible(find.text('디바이스 로그인'));
+    await _scrollToVisible(tester, find.text('디바이스 로그인'));
     await tester.tap(find.text('디바이스 로그인'));
     await tester.pumpAndSettle();
     expect(find.text('ABCD-EFGH'), findsOneWidget);
     expect(find.text('로그인 URL 복사'), findsOneWidget);
 
-    await tester.ensureVisible(find.text('로그인 취소'));
+    await _scrollToVisible(tester, find.text('로그인 취소'));
     await tester.tap(find.text('로그인 취소'));
     await tester.pumpAndSettle();
     await tester.pump(const Duration(seconds: 31));
@@ -602,10 +610,10 @@ void main() {
     await tester.pumpWidget(_app(state: state, request: request));
     await tester.pumpAndSettle();
     final runTile = find.text('2026-11-21');
-    await tester.ensureVisible(runTile);
+    await _scrollToVisible(tester, runTile);
     await tester.tap(runTile);
     await tester.pumpAndSettle();
-    await tester.ensureVisible(find.text('보고서 재전송'));
+    await _scrollToVisible(tester, find.text('보고서 재전송'));
     await tester.tap(find.text('보고서 재전송'));
     await tester.pumpAndSettle();
 
@@ -635,6 +643,116 @@ void main() {
     expect(resendBody?['recipient_ids'], [_recipientId]);
     expect(resendBody?['mode'], 'full_report');
     expect(resendBody?['confirm_possible_duplicate'], isTrue);
+  });
+
+  testWidgets('ambiguous manual-run retry reuses its request ID',
+      (tester) async {
+    final state = _TestAppState(admin: true);
+    addTearDown(state.dispose);
+    final requestIds = <String>[];
+    var failFirstRun = true;
+
+    Future<Map<String, dynamic>> request(
+      String endpoint, {
+      required String method,
+      Map<String, Object?>? params,
+      Map<String, dynamic>? body,
+    }) async {
+      if (endpoint.endsWith('/settings')) return _settingsResponse();
+      if (endpoint.endsWith('/providers')) return _providersResponse();
+      if (endpoint.endsWith('/auth/codex/login')) {
+        return _notFoundCodexLogin();
+      }
+      if (endpoint.endsWith('/runs') && method == 'POST') {
+        requestIds.add(body!['request_id'] as String);
+        if (failFirstRun) {
+          failFirstRun = false;
+          throw const ApiException(
+            'network outcome is unknown',
+            isTransportError: true,
+          );
+        }
+        return {'run': _run(id: 'run-retried', status: 'running')};
+      }
+      if (endpoint.endsWith('/runs/run-retried')) {
+        return {'run': _run(id: 'run-retried', status: 'running')};
+      }
+      if (endpoint.endsWith('/runs')) return {'runs': <dynamic>[]};
+      if (endpoint.endsWith('/audits')) return {'audits': <dynamic>[]};
+      throw StateError('Unexpected request: $method $endpoint');
+    }
+
+    await tester.pumpWidget(_app(state: state, request: request));
+    await tester.pumpAndSettle();
+    final runButton = find.text('보고서 실행');
+    await _scrollToVisible(tester, runButton);
+    await tester.tap(runButton);
+    await tester.pumpAndSettle();
+    expect(requestIds, hasLength(1));
+
+    await _scrollToVisible(tester, runButton);
+    await tester.tap(runButton);
+    await tester.pumpAndSettle();
+
+    expect(requestIds, hasLength(2));
+    expect(requestIds.last, requestIds.first);
+    expect(requestIds.first, matches(RegExp(
+      r'^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+    )));
+  });
+
+  testWidgets('ambiguous Telegram test asks before another delivery attempt',
+      (tester) async {
+    final state = _TestAppState(admin: true);
+    addTearDown(state.dispose);
+    var failFirstTest = true;
+    var testCalls = 0;
+
+    Future<Map<String, dynamic>> request(
+      String endpoint, {
+      required String method,
+      Map<String, Object?>? params,
+      Map<String, dynamic>? body,
+    }) async {
+      if (endpoint.endsWith('/settings')) return _settingsResponse();
+      if (endpoint.endsWith('/providers')) return _providersResponse();
+      if (endpoint.endsWith('/auth/codex/login')) {
+        return _notFoundCodexLogin();
+      }
+      if (endpoint.endsWith('/tests/telegram')) {
+        testCalls += 1;
+        if (failFirstTest) {
+          failFirstTest = false;
+          throw const ApiException(
+            'network outcome is unknown',
+            isTransportError: true,
+          );
+        }
+        return {'ok': true, 'latency_ms': 10};
+      }
+      if (endpoint.endsWith('/runs')) return {'runs': <dynamic>[]};
+      if (endpoint.endsWith('/audits')) return {'audits': <dynamic>[]};
+      throw StateError('Unexpected request: $method $endpoint');
+    }
+
+    await tester.pumpWidget(_app(state: state, request: request));
+    await tester.pumpAndSettle();
+    final testButton = find.widgetWithText(OutlinedButton, '연결 테스트');
+    await _scrollToVisible(tester, testButton);
+    await tester.tap(testButton);
+    await tester.pumpAndSettle();
+    expect(testCalls, 1);
+
+    await _scrollToVisible(tester, testButton);
+    await tester.tap(testButton);
+    await tester.pumpAndSettle();
+    expect(find.text('테스트 전송 결과 확인'), findsOneWidget);
+    expect(testCalls, 1);
+
+    await tester.tap(find.text('대화를 확인하고 다시 테스트'));
+    await tester.pumpAndSettle();
+    expect(testCalls, 2);
+    expect(find.textContaining('Telegram 연결을 확인했습니다'), findsOneWidget);
   });
 
   testWidgets('does not render sensitive server error details', (tester) async {

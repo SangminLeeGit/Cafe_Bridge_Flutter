@@ -254,6 +254,7 @@ class ApiClient {
     String? csrfToken,
     bool includeCsrfToken = true,
     String method = 'POST',
+    Duration? timeout,
   }) {
     return _guard(() async {
       final response = await _send(
@@ -262,6 +263,7 @@ class ApiClient {
         body: body,
         sessionCookie: sessionCookie,
         csrfToken: includeCsrfToken ? csrfToken : null,
+        timeout: timeout,
       );
       return ApiResponse(
         data: _decodeMap(response),
@@ -288,6 +290,7 @@ class ApiClient {
     Map<String, dynamic>? body,
     String? sessionCookie,
     String? csrfToken,
+    Duration? timeout,
   }) async {
     if (_closed) {
       throw StateError('ApiClient has been closed.');
@@ -307,7 +310,7 @@ class ApiClient {
     return _client
         .send(request)
         .then(http.Response.fromStream)
-        .timeout(_timeout);
+        .timeout(timeout ?? _timeout);
   }
 
   void close() {

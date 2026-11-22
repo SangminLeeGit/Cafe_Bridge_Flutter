@@ -398,18 +398,93 @@ class _TouchkeyLayoutEditorScreenState extends State<TouchkeyLayoutEditorScreen>
     }
   }
 
-  int get _conflictingSlotCount {
+  List<String> get _conflictingSlotKeys {
     final baseline = _conflictBaseline;
     final local = _conflictLocal;
     final latest = _envelope;
-    if (baseline == null || local == null || latest == null) return 0;
+    if (baseline == null || local == null || latest == null) {
+      return const <String>[];
+    }
     return baseline.keys.where((key) {
       final localChanged = local[key] != baseline[key];
       final serverChanged = latest.saved.placements[key] != baseline[key];
       return localChanged &&
           serverChanged &&
           local[key] != latest.saved.placements[key];
-    }).length;
+    }).toList(growable: false);
+  }
+
+  int get _conflictingSlotCount => _conflictingSlotKeys.length;
+
+  Widget _buildConflictComparisonRows() {
+    final latest = _envelope;
+    final local = _conflictLocal;
+    if (latest == null || local == null) return const SizedBox.shrink();
+
+    String productName(String? code) {
+      if (code == null) return '빈 슬롯';
+      return latest.products[code]?.name ?? code;
+    }
+
+    Widget valueColumn(String title, String? code) {
+      return SizedBox(
+        width: 112,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              title,
+              style: const TextStyle(fontSize: 11, color: Color(0xFF64748B)),
+            ),
+            Text(
+              productName(code),
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(fontWeight: FontWeight.w600),
+            ),
+            if (code != null)
+              Text(
+                code,
+                style: const TextStyle(fontSize: 10, color: Color(0xFF64748B)),
+              ),
+          ],
+        ),
+      );
+    }
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        for (final key in _conflictingSlotKeys)
+          Container(
+            width: double.infinity,
+            margin: const EdgeInsets.only(top: 6),
+            padding: const EdgeInsets.all(8),
+            decoration: BoxDecoration(
+              color: Colors.white.withValues(alpha: 0.65),
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  '슬롯 $key 비교',
+                  style: const TextStyle(fontWeight: FontWeight.w700),
+                ),
+                const SizedBox(height: 6),
+                Wrap(
+                  spacing: 12,
+                  runSpacing: 8,
+                  children: [
+                    valueColumn('최신 서버 값', latest.saved.placements[key]),
+                    valueColumn('내 변경 값', local[key]),
+                  ],
+                ),
+              ],
+            ),
+          ),
+      ],
+    );
   }
 
   Future<void> _resolveConflict() async {
@@ -667,6 +742,13 @@ class _TouchkeyLayoutEditorScreenState extends State<TouchkeyLayoutEditorScreen>
                     '충돌 슬롯 $_conflictingSlotCount개',
                     style: const TextStyle(color: Color(0xFF9A3412)),
                   ),
+                ),
+              if (!_loading &&
+                  _conflictLatestLoaded &&
+                  _conflictingSlotCount > 0)
+                Padding(
+                  padding: const EdgeInsets.only(top: 4),
+                  child: _buildConflictComparisonRows(),
                 ),
               if (!_loading && _conflictLatestLoaded)
                 Align(

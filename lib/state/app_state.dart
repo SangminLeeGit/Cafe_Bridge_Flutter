@@ -1057,9 +1057,34 @@ class AppState extends ChangeNotifier {
     String endpoint, {
     Map<String, dynamic>? body,
     String method = 'POST',
+  }) =>
+      _postJsonAndMarkOnline(endpoint, body: body, method: method);
+
+  Future<Map<String, dynamic>> postJsonWithTimeout(
+    String endpoint, {
+    Map<String, dynamic>? body,
+    String method = 'POST',
+    required Duration timeout,
+  }) =>
+      _postJsonAndMarkOnline(
+        endpoint,
+        body: body,
+        method: method,
+        timeout: timeout,
+      );
+
+  Future<Map<String, dynamic>> _postJsonAndMarkOnline(
+    String endpoint, {
+    Map<String, dynamic>? body,
+    required String method,
+    Duration? timeout,
   }) async {
-    final response =
-        await _postJsonWithAuth(endpoint, body: body, method: method);
+    final response = await _postJsonWithAuth(
+      endpoint,
+      body: body,
+      method: method,
+      timeout: timeout,
+    );
     if (!_disposed) {
       final changed = _offlineMode;
       _offlineMode = false;
@@ -1075,6 +1100,7 @@ class AppState extends ChangeNotifier {
     Map<String, dynamic>? body,
     bool allowRetry = true,
     String method = 'POST',
+    Duration? timeout,
   }) async {
     final requestContext = _captureRequestContext();
     try {
@@ -1085,6 +1111,7 @@ class AppState extends ChangeNotifier {
         sessionCookie: requestContext.sessionCookie,
         csrfToken: requestContext.csrfToken,
         method: method,
+        timeout: timeout,
       );
       if (_isCurrentRequest(requestContext) &&
           response.sessionCookie != null &&
@@ -1107,6 +1134,7 @@ class AppState extends ChangeNotifier {
           body: body,
           allowRetry: false,
           method: method,
+          timeout: timeout,
         );
       }
       await _handleAuthError(error, requestContext);

@@ -1465,6 +1465,7 @@ class _AdminDeployPanelState extends State<_AdminDeployPanel> {
   bool _ciJobsRefreshing = false;
   bool _dryRun = true;
   bool _submitting = false;
+  bool _confirmationPending = false;
   String _message = '';
   String _error = '';
   String _runtimeError = '';
@@ -1478,6 +1479,7 @@ class _AdminDeployPanelState extends State<_AdminDeployPanel> {
 
   bool get _requestBusy =>
       _submitting ||
+      _confirmationPending ||
       _refreshing ||
       _runtimeRefreshing ||
       _ciJobsRefreshing ||
@@ -1536,13 +1538,13 @@ class _AdminDeployPanelState extends State<_AdminDeployPanel> {
     final requestScope = _scopeKey;
 
     setState(() {
-      _submitting = true;
       _message = '';
       _error = '';
     });
 
     try {
       if (!dryRun) {
+        setState(() => _confirmationPending = true);
         final confirmed = await showDialog<bool>(
           context: context,
           barrierDismissible: false,
@@ -1579,6 +1581,10 @@ class _AdminDeployPanelState extends State<_AdminDeployPanel> {
         return;
       }
 
+      setState(() {
+        _confirmationPending = false;
+        _submitting = true;
+      });
       final response = await appState.postJson(
         '/api/deploy',
         body: {
@@ -1629,7 +1635,10 @@ class _AdminDeployPanelState extends State<_AdminDeployPanel> {
       }
     } finally {
       if (mounted) {
-        setState(() => _submitting = false);
+        setState(() {
+          _submitting = false;
+          _confirmationPending = false;
+        });
       }
     }
   }

@@ -44,6 +44,11 @@ class AdminDailyReportsScreen extends StatefulWidget {
 
 class _AdminDailyReportsScreenState extends State<AdminDailyReportsScreen>
     with WidgetsBindingObserver {
+  static const _manualRunRequestPrefix =
+      'active_daily_report_manual_run_request';
+  static const _regenerateRequestPrefix =
+      'active_daily_report_regenerate_request';
+  static const _resendRequestPrefix = 'active_daily_report_resend_request';
   static const _weekdayOptions = <(String, String)>[
     ('mon', '월'),
     ('tue', '화'),
@@ -117,6 +122,8 @@ class _AdminDailyReportsScreenState extends State<AdminDailyReportsScreen>
   final Map<String, String> _recipientOriginalChatIds = {};
   final Set<String> _rotatedRecipientIds = {};
   final Map<String, String> _recipientLocalKeys = {};
+  final Map<String, Map<String, String>> _pendingRequestIds = {};
+  String? _ambiguousTelegramTestTarget;
 
   @override
   void initState() {
@@ -212,6 +219,24 @@ class _AdminDailyReportsScreenState extends State<AdminDailyReportsScreen>
         allowStaleOnError: false,
       );
       return result.data;
+    }
+    if (method.toUpperCase() == 'POST' &&
+        endpoint == '/api/admin/daily-reports/tests/telegram') {
+      final configuredTimeout =
+          _intValue(_settings?['request_timeout_seconds']) ?? 45;
+      final perRequestSeconds = configuredTimeout < 1
+          ? 1
+          : configuredTimeout > 120
+              ? 120
+              : configuredTimeout;
+      // Username resolution is optional; when used, it adds another Telegram
+      // request before the endpoint's getMe + sendMessage sequence.
+      return appState.postJsonWithTimeout(
+        endpoint,
+        body: body,
+        method: method,
+        timeout: Duration(seconds: perRequestSeconds * 3 + 15),
+      );
     }
     return appState.postJson(endpoint, body: body, method: method);
   }
@@ -620,26 +645,76 @@ class _AdminDailyReportsScreenState extends State<AdminDailyReportsScreen>
     }
     final id = _string(recipient['recipient_id']);
     if (id.isEmpty) return;
+    final intentKey =
+        '$id|$_settingsVersion|${_string(recipient['chat_id']).trim()}';
+    if (_ambiguousTelegramTestTarget == intentKey) {
+      final confirmed = await showDialog<bool>(
+        context: context,
+        builder: (dialogContext) => AlertDialog(
+          title: const Text('테스트 전송 결과 확인'),
+          content: const Text(
+            '응답을 받지 못해 서버가 테스트 메시지를 이미 전달했을 수 있습니다. '
+            '먼저 Telegram 대화를 확인하세요. 확인하지 않고 다시 보내면 중복 메시지가 생길 수 있습니다.',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(false),
+              child: const Text('취소'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.of(dialogContext).pop(true),
+              child: const Text('대화를 확인하고 다시 테스트'),
+            ),
+          ],
+        ),
+      );
+      if (!mounted || confirmed != true) return;
+    }
     setState(() => _testingRecipientId = id);
     await _runBusy('telegram-$id', 'Telegram 연결 테스트에 실패했습니다.', () async {
-      final response = await _request(
-        '/api/admin/daily-reports/tests/telegram',
-        method: 'POST',
-        body: {
-          'recipient_id': id,
-          'expected_version': _settingsVersion,
-        },
-      );
-      final ok = response['ok'] == true;
-      final latency = _intValue(response['latency_ms']);
-      _setNotice(
-        ok
-            ? 'Telegram 연결을 확인했습니다${latency == null ? '' : ' (${latency}ms)'}.'
-            : 'Telegram 테스트에 실패했습니다. 연결 설정을 확인하세요.',
-        error: !ok,
-      );
+      try {
+        final response = await _request(
+          '/api/admin/daily-reports/tests/telegram',
+          method: 'POST',
+          body: {
+            'recipient_id': id,
+            'expected_version': _settingsVersion,
+          },
+        );
+        if (!mounted) return;
+        setState(() => _ambiguousTelegramTestTarget = null);
+        final ok = response['ok'] == true;
+        final latency = _intValue(response['latency_ms']);
+        final latencySuffix = latency == null ? '' : ' (${latency}ms)';
+        _setNotice(
+          ok
+              ? 'Telegram 연결을 확인했습니다$latencySuffix.'
+              : 'Telegram 테스트에 실패했습니다. 연결 설정을 확인하세요.',
+          error: !ok,
+        );
+      } catch (error) {
+        if (_isAmbiguousTelegramTestFailure(error)) {
+          if (mounted) {
+            setState(() => _ambiguousTelegramTestTarget = intentKey);
+            _setNotice(
+              '응답을 확인하지 못했습니다. 서버가 테스트 메시지를 전달했을 수 있으니 Telegram 대화를 확인한 뒤 다시 시도하세요.',
+              error: true,
+            );
+          }
+          return;
+        }
+        if (mounted) setState(() => _ambiguousTelegramTestTarget = null);
+        rethrow;
+      }
     });
     if (mounted) setState(() => _testingRecipientId = null);
+  }
+
+  bool _isAmbiguousTelegramTestFailure(Object error) {
+    if (error is! ApiException) return true;
+    return error.isTransportError ||
+        error.statusCode == null ||
+        error.statusCode! >= 500;
   }
 
   Future<void> _testProvider(String provider) async {
@@ -906,15 +981,27 @@ class _AdminDailyReportsScreenState extends State<AdminDailyReportsScreen>
       _setNotice('보고서 대상 날짜를 선택하세요.', error: true);
       return;
     }
+    const reason = 'Flutter 관리자 수동 실행';
+    final fingerprint = jsonEncode(
+      <String, Object?>{'target_date': targetDate, 'reason': reason},
+    );
     await _runBusy('run', '수동 실행을 요청하지 못했습니다.', () async {
+      final requestId = await _requestIdForIntent(
+        prefix: _manualRunRequestPrefix,
+        fingerprint: fingerprint,
+      );
       final response = await _request(
         '/api/admin/daily-reports/runs',
         method: 'POST',
         body: {
           'target_date': targetDate,
-          'request_id': _newUuid(),
-          'reason': 'Flutter 관리자 수동 실행',
+          'request_id': requestId,
+          'reason': reason,
         },
+      );
+      await _completeRequestIntent(
+        prefix: _manualRunRequestPrefix,
+        fingerprint: fingerprint,
       );
       final id = _runId(_asMap(response['run']));
       _setNotice('$targetDate 보고서 실행을 요청했습니다.');
@@ -978,14 +1065,25 @@ class _AdminDailyReportsScreenState extends State<AdminDailyReportsScreen>
   Future<void> _regenerateReport(Map<String, dynamic> run) async {
     final reportId = _string(run['report_id']);
     if (reportId.isEmpty) return;
+    const reason = 'Flutter 관리자 재생성';
+    final fingerprint =
+        jsonEncode(<String, Object?>{'report_id': reportId, 'reason': reason});
     await _runBusy('regenerate', '보고서 재생성을 요청하지 못했습니다.', () async {
+      final requestId = await _requestIdForIntent(
+        prefix: _regenerateRequestPrefix,
+        fingerprint: fingerprint,
+      );
       final response = await _request(
         '/api/admin/daily-reports/reports/${Uri.encodeComponent(reportId)}/regenerate',
         method: 'POST',
         body: {
-          'request_id': _newUuid(),
-          'reason': 'Flutter 관리자 재생성',
+          'request_id': requestId,
+          'reason': reason,
         },
+      );
+      await _completeRequestIntent(
+        prefix: _regenerateRequestPrefix,
+        fingerprint: fingerprint,
       );
       _setNotice('보고서 재생성을 요청했습니다.');
       await _refreshOverview(
@@ -1122,18 +1220,36 @@ class _AdminDailyReportsScreenState extends State<AdminDailyReportsScreen>
   ) async {
     final reportId = _string(run['report_id']);
     if (reportId.isEmpty || _settingsDirty) return;
+    const reason = 'Flutter 관리자 확인 후 재전송';
+    final stableRecipientIds = recipientIds.toList()..sort();
+    final fingerprint = jsonEncode(<String, Object?>{
+      'report_id': reportId,
+      'expected_settings_version': _settingsVersion,
+      'recipient_ids': stableRecipientIds,
+      'mode': 'full_report',
+      'reason': reason,
+      'confirm_possible_duplicate': confirmDuplicate,
+    });
     await _runBusy('resend', '보고서 재전송을 요청하지 못했습니다.', () async {
+      final requestId = await _requestIdForIntent(
+        prefix: _resendRequestPrefix,
+        fingerprint: fingerprint,
+      );
       final response = await _request(
         '/api/admin/daily-reports/reports/${Uri.encodeComponent(reportId)}/resend',
         method: 'POST',
         body: {
-          'request_id': _newUuid(),
+          'request_id': requestId,
           'expected_settings_version': _settingsVersion,
-          'recipient_ids': recipientIds,
+          'recipient_ids': stableRecipientIds,
           'mode': 'full_report',
-          'reason': 'Flutter 관리자 확인 후 재전송',
+          'reason': reason,
           'confirm_possible_duplicate': confirmDuplicate,
         },
+      );
+      await _completeRequestIntent(
+        prefix: _resendRequestPrefix,
+        fingerprint: fingerprint,
       );
       _setNotice('${recipientIds.length}명에게 전체 보고서 재전송을 요청했습니다.');
       await _refreshOverview(
@@ -1760,13 +1876,14 @@ class _AdminDailyReportsScreenState extends State<AdminDailyReportsScreen>
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Row(
+          Wrap(
+            alignment: WrapAlignment.spaceBetween,
+            crossAxisAlignment: WrapCrossAlignment.center,
+            runSpacing: 4,
             children: [
-              const Expanded(
-                child: Text(
-                  'Telegram 수신자',
-                  style: TextStyle(fontWeight: FontWeight.w700),
-                ),
+              const Text(
+                'Telegram 수신자',
+                style: TextStyle(fontWeight: FontWeight.w700),
               ),
               TextButton.icon(
                 onPressed: recipients.length >= 100 ? null : _addRecipient,
@@ -2024,20 +2141,27 @@ class _AdminDailyReportsScreenState extends State<AdminDailyReportsScreen>
             ],
           ),
           const Divider(height: 24),
-          Row(
+          Wrap(
+            alignment: WrapAlignment.spaceBetween,
+            crossAxisAlignment: WrapCrossAlignment.center,
+            runSpacing: 4,
             children: [
-              const Expanded(
-                child: Text(
-                  'Codex 인증',
-                  style: TextStyle(fontWeight: FontWeight.w700),
-                ),
+              const Text(
+                'Codex 인증',
+                style: TextStyle(fontWeight: FontWeight.w700),
               ),
-              Text(
-                codex == null
-                    ? '확인 중'
-                    : '${_string(codex['status'])}'
-                        '${_string(codex['auth_method']).isEmpty ? '' : ' · ${_string(codex['auth_method'])}'}',
-                style: const TextStyle(color: AppColors.textSecondary),
+              ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 180),
+                child: Text(
+                  codex == null
+                      ? '확인 중'
+                      : '${_string(codex['status'])}'
+                          '${_string(codex['auth_method']).isEmpty ? '' : ' · ${_string(codex['auth_method'])}'}',
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  textAlign: TextAlign.end,
+                  style: const TextStyle(color: AppColors.textSecondary),
+                ),
               ),
             ],
           ),
@@ -2688,6 +2812,74 @@ class _AdminDailyReportsScreenState extends State<AdminDailyReportsScreen>
     return '${hex.substring(0, 8)}-${hex.substring(8, 12)}-'
         '${hex.substring(12, 16)}-${hex.substring(16, 20)}-'
         '${hex.substring(20)}';
+  }
+
+  Future<String> _requestIdForIntent({
+    required String prefix,
+    required String fingerprint,
+  }) async {
+    var requests = _pendingRequestIds[prefix];
+    if (requests == null) {
+      requests = <String, String>{};
+      if (widget.requestJson == null) {
+        final stored = await context.read<AppState>().readActiveTask(prefix);
+        if (stored != null) {
+          try {
+            final decoded = jsonDecode(stored);
+            final rawRequests = decoded is Map ? decoded['requests'] : null;
+            if (rawRequests is Map) {
+              for (final entry in rawRequests.entries) {
+                final key = entry.key.toString();
+                final value = entry.value?.toString() ?? '';
+                if (key.isNotEmpty && value.isNotEmpty) {
+                  requests[key] = value;
+                }
+              }
+            }
+          } on FormatException {
+            // Ignore an older or malformed entry and establish a fresh intent.
+          }
+        }
+      }
+      _pendingRequestIds[prefix] = requests;
+    }
+
+    final existing = requests[fingerprint];
+    final requestId = existing ?? _newUuid();
+    if (existing == null) {
+      requests[fingerprint] = requestId;
+    }
+    if (widget.requestJson == null) {
+      await context.read<AppState>().saveActiveTask(
+            prefix,
+            jsonEncode(<String, Object?>{'requests': requests}),
+          );
+    }
+    return requestId;
+  }
+
+  Future<void> _completeRequestIntent({
+    required String prefix,
+    required String fingerprint,
+  }) async {
+    final current = _pendingRequestIds[prefix];
+    if (current == null || !current.containsKey(fingerprint)) return;
+    final requests = Map<String, String>.of(current)..remove(fingerprint);
+    if (widget.requestJson == null) {
+      if (requests.isEmpty) {
+        await context.read<AppState>().clearActiveTask(prefix);
+      } else {
+        await context.read<AppState>().saveActiveTask(
+              prefix,
+              jsonEncode(<String, Object?>{'requests': requests}),
+            );
+      }
+    }
+    if (requests.isEmpty) {
+      _pendingRequestIds.remove(prefix);
+    } else {
+      _pendingRequestIds[prefix] = requests;
+    }
   }
 
   static String _maskChatId(String value) =>

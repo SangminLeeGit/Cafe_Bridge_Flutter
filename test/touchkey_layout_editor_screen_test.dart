@@ -200,7 +200,9 @@ void main() {
 
     expect(find.textContaining('충돌 슬롯 1개'), findsOneWidget);
     expect(find.text('카푸치노'), findsOneWidget);
-    expect(find.text('라떼'), findsOneWidget);
+    expect(find.text('최신 서버 값'), findsOneWidget);
+    expect(find.text('내 변경 값'), findsOneWidget);
+    expect(find.text('라떼'), findsNWidgets(2));
 
     await tester.tap(find.text('변경 조정'));
     await tester.pumpAndSettle();
