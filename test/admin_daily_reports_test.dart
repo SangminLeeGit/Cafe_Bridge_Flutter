@@ -60,6 +60,8 @@ Future<void> _scrollToVisible(WidgetTester tester, Finder finder) async {
     400,
     scrollable: scrollable,
   );
+  await tester.ensureVisible(finder);
+  await tester.pumpAndSettle();
 }
 
 Future<void> _scrollToTop(WidgetTester tester) async {
