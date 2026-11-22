@@ -105,6 +105,7 @@ class _AdminRuntimeSettingsScreenState
     super.didChangeDependencies();
     final hasAdminAccess = context.watch<AppState>().hasAdminAccess;
     if (!hasAdminAccess && _lastAdminAccess) {
+      debugPrint('Runtime settings notice cleared after admin access loss');
       final closeActionDialog = _actionDialogOpen;
       _detailRequest += 1;
       _initialLoadStarted = false;
@@ -389,6 +390,9 @@ class _AdminRuntimeSettingsScreenState
       return;
     }
     _detailRequest += 1;
+    debugPrint(
+      'Runtime settings notice cleared after group selection: $groupKey',
+    );
     setState(() {
       _selectedGroupKey = groupKey;
       _group = null;
@@ -522,6 +526,9 @@ class _AdminRuntimeSettingsScreenState
         ? '버전 ${action.version}으로 되돌림'
         : '';
     setState(() {
+      debugPrint(
+        'Runtime settings notice cleared before ${action.apiAction}',
+      );
       _notice = null;
       _pendingAction = action;
     });
@@ -853,6 +860,7 @@ class _AdminRuntimeSettingsScreenState
 
   void _showNotice(RuntimeSettingsNotice notice) {
     if (!mounted) return;
+    debugPrint('Runtime settings notice set: ${notice.text}');
     setState(() => _notice = notice);
   }
 
@@ -967,6 +975,9 @@ class _AdminRuntimeSettingsScreenState
   }
 
   Widget _buildAdminBody() {
+    if (_notice != null) {
+      debugPrint('Runtime settings notice rendered: ${_notice!.text}');
+    }
     if (_initialLoading && _groups.isEmpty) {
       return const LoadingState(message: '런타임 설정을 불러오는 중입니다.');
     }
