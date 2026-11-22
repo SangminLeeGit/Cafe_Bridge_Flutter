@@ -211,7 +211,7 @@ class WorkspaceCategoryOptions {
       middleOptionsByMajor[major] ?? const [];
 
   List<String> minorOptions(String major, String middle) =>
-      minorOptionsByMajorMiddle['$major__$middle'] ?? const [];
+      minorOptionsByMajorMiddle['${major}__${middle}'] ?? const [];
 
   bool containsPath(String major, String middle, String minor) =>
       available &&

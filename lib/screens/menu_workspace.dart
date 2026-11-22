@@ -2077,7 +2077,7 @@ class _NewMenuAddScreenState extends State<_NewMenuAddScreen> {
               style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w800),
             ),
             const SizedBox(height: 12),
-            if (_savedEntry == null) ...[
+            if (entry == null) ...[
               _InfoRow(
                 label: '상품명',
                 value: asString(_reviewFields['item_name']),

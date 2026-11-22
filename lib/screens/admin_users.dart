@@ -582,7 +582,7 @@ class _AdminUsersScreenState extends State<AdminUsersScreen> {
       'password',
       '123456789012',
       'cafe-bridge1234!',
-      'qwer1234!@#$',
+      'qwer1234!@#\$',
     }.contains(value.toLowerCase())) {
       return '너무 약한 비밀번호는 사용할 수 없습니다.';
     }
