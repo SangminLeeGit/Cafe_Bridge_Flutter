@@ -690,14 +690,7 @@ void main() {
     expect(state.postBodies.last['reauth_password'], _passwordValue);
     await _scrollToTop(tester);
     final notice = find.byKey(const Key('runtime-settings-notice'));
-    expect(
-      notice,
-      findsOneWidget,
-      reason: 'Rendered text: ${tester.widgetList<Text>(find.byType(Text)).map(
-            (widget) => widget.data,
-          ).whereType<String>().toList()}; '
-          'POST endpoints: ${state.postEndpoints}',
-    );
+    expect(notice, findsOneWidget);
     expect(
       tester.widget<Text>(notice).data,
       '설정을 적용했습니다.',

@@ -50,6 +50,7 @@ class AdminRuntimeSettingsScreen extends StatefulWidget {
 
 class _AdminRuntimeSettingsScreenState
     extends State<AdminRuntimeSettingsScreen> {
+  final ScrollController _scrollController = ScrollController();
   final TextEditingController _passwordController = TextEditingController();
   final TextEditingController _reasonController = TextEditingController();
   final Map<String, TextEditingController> _secretControllers =
@@ -105,7 +106,6 @@ class _AdminRuntimeSettingsScreenState
     super.didChangeDependencies();
     final hasAdminAccess = context.watch<AppState>().hasAdminAccess;
     if (!hasAdminAccess && _lastAdminAccess) {
-      debugPrint('Runtime settings notice cleared after admin access loss');
       final closeActionDialog = _actionDialogOpen;
       _detailRequest += 1;
       _initialLoadStarted = false;
@@ -149,6 +149,7 @@ class _AdminRuntimeSettingsScreenState
     for (final controller in _secretControllers.values) {
       controller.dispose();
     }
+    _scrollController.dispose();
     super.dispose();
   }
 
@@ -390,9 +391,6 @@ class _AdminRuntimeSettingsScreenState
       return;
     }
     _detailRequest += 1;
-    debugPrint(
-      'Runtime settings notice cleared after group selection: $groupKey',
-    );
     setState(() {
       _selectedGroupKey = groupKey;
       _group = null;
@@ -526,9 +524,6 @@ class _AdminRuntimeSettingsScreenState
         ? '버전 ${action.version}으로 되돌림'
         : '';
     setState(() {
-      debugPrint(
-        'Runtime settings notice cleared before ${action.apiAction}',
-      );
       _notice = null;
       _pendingAction = action;
     });
@@ -634,18 +629,9 @@ class _AdminRuntimeSettingsScreenState
         );
       },
     );
-    debugPrint(
-      'Runtime action dialog returned ${action.apiAction}: '
-      '${outcomeNotice?.text ?? "no notice"}',
-    );
     _actionDialogOpen = false;
     if (mounted && _hasAdminAccess && outcomeNotice != null) {
       _showNotice(outcomeNotice);
-    } else {
-      debugPrint(
-        'Runtime action notice skipped: mounted=$mounted '
-        'admin=$_hasAdminAccess',
-      );
     }
   }
 
@@ -700,10 +686,6 @@ class _AdminRuntimeSettingsScreenState
         pending.apiAction,
         actionResult,
       );
-      debugPrint(
-        'Runtime action ${pending.apiAction} produced '
-        '${outcomeNotice.text}',
-      );
       await Future.wait<void>(<Future<void>>[
         _loadGroups(),
         _loadDiagnostics(),
@@ -727,15 +709,7 @@ class _AdminRuntimeSettingsScreenState
         });
         if (_actionDialogOpen) {
           _actionDialogOpen = false;
-          debugPrint(
-            'Runtime action ${pending.apiAction} closing dialog with '
-            '${outcomeNotice?.text ?? "no notice"}',
-          );
           Navigator.of(context, rootNavigator: true).pop(outcomeNotice);
-        } else {
-          debugPrint(
-            'Runtime action ${pending.apiAction} did not find an open dialog',
-          );
         }
       }
     }
@@ -860,8 +834,18 @@ class _AdminRuntimeSettingsScreenState
 
   void _showNotice(RuntimeSettingsNotice notice) {
     if (!mounted) return;
-    debugPrint('Runtime settings notice set: ${notice.text}');
     setState(() => _notice = notice);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || !_scrollController.hasClients) return;
+      final position = _scrollController.position;
+      unawaited(
+        position.animateTo(
+          position.minScrollExtent,
+          duration: const Duration(milliseconds: 180),
+          curve: Curves.easeOut,
+        ),
+      );
+    });
   }
 
   String _safeReadError(Object error, {required String fallback}) {
@@ -975,15 +959,13 @@ class _AdminRuntimeSettingsScreenState
   }
 
   Widget _buildAdminBody() {
-    if (_notice != null) {
-      debugPrint('Runtime settings notice rendered: ${_notice!.text}');
-    }
     if (_initialLoading && _groups.isEmpty) {
       return const LoadingState(message: '런타임 설정을 불러오는 중입니다.');
     }
     return RefreshIndicator(
       onRefresh: _refreshAll,
       child: ListView(
+        controller: _scrollController,
         physics: const AlwaysScrollableScrollPhysics(),
         padding: const EdgeInsets.all(16),
         children: <Widget>[
