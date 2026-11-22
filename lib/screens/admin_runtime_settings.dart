@@ -680,7 +680,6 @@ class _AdminRuntimeSettingsScreenState
         pending.apiAction,
         actionResult,
       );
-      if (mounted) _showNotice(notice);
       await Future.wait<void>(<Future<void>>[
         _loadGroups(),
         _loadDiagnostics(),
@@ -688,6 +687,7 @@ class _AdminRuntimeSettingsScreenState
       if (mounted && _selectedGroupKey == group.groupKey) {
         await _loadDetail(group.groupKey, resetDraft: true);
       }
+      if (mounted && _hasAdminAccess) _showNotice(notice);
     } catch (error) {
       if (mounted) {
         _showNotice(
