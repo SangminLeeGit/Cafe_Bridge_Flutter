@@ -156,7 +156,7 @@ class _AdminUsersScreenState extends State<AdminUsersScreen> {
           const SizedBox(height: 12),
           DropdownButtonFormField<String>(
             key: const ValueKey('admin-users-create-role'),
-            value: _newRole,
+            initialValue: _newRole,
             decoration: const InputDecoration(
               labelText: '역할',
               border: OutlineInputBorder(),
@@ -766,8 +766,8 @@ class _AdminUserCardState extends State<_AdminUserCard> {
             ],
             const SizedBox(height: 14),
             DropdownButtonFormField<String>(
-          key: ValueKey('admin-user-role-${user.id}'),
-              value: _role,
+              key: ValueKey('admin-user-role-${user.id}'),
+              initialValue: _role,
               decoration: const InputDecoration(
                 labelText: '역할',
                 border: OutlineInputBorder(),
@@ -957,12 +957,12 @@ class _AdminAccessDenied extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Center(
+    return const Center(
       child: Padding(
-        padding: const EdgeInsets.all(24),
+        padding: EdgeInsets.all(24),
         child: Column(
           mainAxisSize: MainAxisSize.min,
-          children: const [
+          children: [
             Icon(Icons.lock_outline, size: 38, color: Color(0xFF64748B)),
             SizedBox(height: 12),
             Text(

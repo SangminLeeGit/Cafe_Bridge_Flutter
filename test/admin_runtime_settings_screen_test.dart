@@ -270,7 +270,7 @@ class _RuntimeSettingsAppState extends AppState {
     postEndpoints.add(endpoint);
     postBodies.add(requestBody);
     if (endpoint == failMutationAt) {
-      throw ApiException(
+      throw const ApiException(
         'unsafe server detail echoed $_secretValue and $_passwordValue',
         statusCode: 500,
       );

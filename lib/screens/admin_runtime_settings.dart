@@ -63,7 +63,7 @@ class _AdminRuntimeSettingsScreenState
       const <RuntimeSettingsHistoryItem>[];
   Map<String, Object?> _draft = <String, Object?>{};
   Map<String, Object?> _baseline = <String, Object?>{};
-  Map<String, RuntimeSecretOperation> _secretOperations =
+  final Map<String, RuntimeSecretOperation> _secretOperations =
       <String, RuntimeSecretOperation>{};
   Map<String, String> _fieldErrors = <String, String>{};
   String? _selectedGroupKey;
@@ -796,7 +796,6 @@ class _AdminRuntimeSettingsScreenState
           },
         );
     }
-    throw const ApiException('Unsupported runtime settings action.');
   }
 
   Future<void> _refreshChangeStatus() async {
@@ -1139,7 +1138,7 @@ class _AdminRuntimeSettingsScreenState
                   key: ValueKey(
                     'runtime-settings-group-picker-${_selectedGroupKey ?? "none"}-$_groupPickerGeneration',
                   ),
-                  value: _selectedGroupKey,
+                  initialValue: _selectedGroupKey,
                   isExpanded: true,
                   decoration: const InputDecoration(
                     labelText: '관리형 설정 그룹',
@@ -1286,7 +1285,7 @@ class _AdminRuntimeSettingsScreenState
           const SizedBox(height: 6),
           DropdownButtonFormField<RuntimeSecretOperation>(
             key: Key('runtime-secret-operation-${field.field}'),
-            value: operation,
+            initialValue: operation,
             isExpanded: true,
             decoration: const InputDecoration(
               labelText: '보안 값 작업',
@@ -1356,7 +1355,7 @@ class _AdminRuntimeSettingsScreenState
             ? value.toString()
             : null;
         return DropdownButtonFormField<String>(
-          value: selected,
+          initialValue: selected,
           isExpanded: true,
           decoration: InputDecoration(
             labelText: field.label,

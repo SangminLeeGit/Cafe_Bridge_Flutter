@@ -142,6 +142,8 @@ class MenuEntry {
 }
 
 class WorkspaceCategoryOptions {
+  static const _majorMiddleSeparator = '__';
+
   final bool available;
   final String source;
   final String snapshotId;
@@ -211,7 +213,8 @@ class WorkspaceCategoryOptions {
       middleOptionsByMajor[major] ?? const [];
 
   List<String> minorOptions(String major, String middle) =>
-      minorOptionsByMajorMiddle['${major}__${middle}'] ?? const [];
+      minorOptionsByMajorMiddle['$major$_majorMiddleSeparator$middle'] ??
+      const [];
 
   bool containsPath(String major, String middle, String minor) =>
       available &&

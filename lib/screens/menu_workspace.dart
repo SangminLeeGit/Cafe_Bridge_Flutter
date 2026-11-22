@@ -2171,7 +2171,7 @@ class _NewMenuAddScreenState extends State<_NewMenuAddScreen> {
                         entry.minorCategory,
                       ].where((value) => value.isNotEmpty).join(' › '),
                     ),
-                    _InfoRow(
+                    const _InfoRow(
                       label: '저장 상태',
                       value: 'CafeBridge 초안 · POS 미반영',
                     ),
