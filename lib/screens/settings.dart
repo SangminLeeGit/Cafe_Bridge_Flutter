@@ -707,7 +707,7 @@ class DeployManagementScreen extends StatelessWidget {
   }
 }
 
-/// Read-only admin deployment monitor, also exposed for focused widget tests.
+/// Admin deployment request and monitor, exposed for focused widget tests.
 class AdminDeployMonitor extends StatelessWidget {
   const AdminDeployMonitor({super.key});
 
@@ -1448,6 +1448,8 @@ class _AdminDeployPanel extends StatefulWidget {
 }
 
 class _AdminDeployPanelState extends State<_AdminDeployPanel> {
+  final GlobalKey<FormState> _deployFormKey = GlobalKey<FormState>();
+  final TextEditingController _reasonController = TextEditingController();
   List<_DeployTask> _history = [];
   _DeployTask? _currentTask;
   _VersionInfo? _versionInfo;
@@ -1461,6 +1463,8 @@ class _AdminDeployPanelState extends State<_AdminDeployPanel> {
   bool _ciJobsLoading = true;
   bool _ciJobsLoaded = false;
   bool _ciJobsRefreshing = false;
+  bool _dryRun = true;
+  bool _submitting = false;
   String _message = '';
   String _error = '';
   String _runtimeError = '';
@@ -1468,6 +1472,16 @@ class _AdminDeployPanelState extends State<_AdminDeployPanel> {
   String _scopeKey = '';
   Timer? _pollTimer;
   bool _pollInFlight = false;
+
+  bool get _hasActiveDeploy =>
+      _currentTask?.isActive == true || _history.any((task) => task.isActive);
+
+  bool get _requestBusy =>
+      _submitting ||
+      _refreshing ||
+      _runtimeRefreshing ||
+      _ciJobsRefreshing ||
+      _hasActiveDeploy;
 
   @override
   void didChangeDependencies() {
@@ -1507,12 +1521,123 @@ class _AdminDeployPanelState extends State<_AdminDeployPanel> {
   @override
   void dispose() {
     _stopPolling();
+    _reasonController.dispose();
     super.dispose();
+  }
+
+  Future<void> _submitDeployRequest() async {
+    if (!mounted || _requestBusy) return;
+    final appState = context.read<AppState>();
+    if (!appState.hasAdminAccess) return;
+    if (_deployFormKey.currentState?.validate() != true) return;
+
+    final reason = _reasonController.text.trim();
+    final dryRun = _dryRun;
+    final requestScope = _scopeKey;
+
+    setState(() {
+      _submitting = true;
+      _message = '';
+      _error = '';
+    });
+
+    try {
+      if (!dryRun) {
+        final confirmed = await showDialog<bool>(
+          context: context,
+          barrierDismissible: false,
+          builder: (dialogContext) => AlertDialog(
+            title: const Text('프로덕션 APK 등록 요청 확인'),
+            content: Text(
+              '실제 Flutter APK CI 작업을 백엔드에 등록합니다. 빌드와 APK 등록은 서버 CI가 처리합니다.\n\n'
+              '사유: $reason\n\n계속하시겠습니까?',
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(dialogContext).pop(false),
+                child: const Text('취소'),
+              ),
+              ElevatedButton(
+                onPressed: () => Navigator.of(dialogContext).pop(true),
+                child: const Text('등록 요청 보내기'),
+              ),
+            ],
+          ),
+        );
+        if (confirmed != true) return;
+      }
+
+      if (!mounted ||
+          requestScope != _scopeKey ||
+          !context.read<AppState>().hasAdminAccess) {
+        return;
+      }
+      if (_hasActiveDeploy) {
+        setState(() {
+          _error = '진행 중인 배포 작업이 있어 새 요청을 보낼 수 없습니다.';
+        });
+        return;
+      }
+
+      final response = await appState.postJson(
+        '/api/deploy',
+        body: {
+          'target': 'flutter-apk',
+          'reason': reason,
+          'dry_run': dryRun,
+        },
+      );
+      final taskId = response['task_id']?.toString().trim() ?? '';
+      if (taskId.isEmpty) {
+        throw const FormatException('배포 응답에 task_id가 없습니다.');
+      }
+      if (!mounted ||
+          requestScope != _scopeKey ||
+          !context.read<AppState>().hasAdminAccess) {
+        return;
+      }
+
+      final status = response['status']?.toString().trim();
+      final task = _DeployTask(
+        taskId: taskId,
+        target: 'flutter-apk',
+        requestedBy: appState.loginId ?? '',
+        reason: reason,
+        dryRun: dryRun,
+        status: status == null || status.isEmpty ? 'pending' : status,
+        currentStep: '요청 접수',
+        logPath: '',
+        resolvedCommit: '',
+        errorMessage: '',
+      );
+      setState(() {
+        _currentTask = task;
+        _history = [
+          task,
+          ..._history.where((item) => item.taskId != taskId),
+        ].take(20).toList(growable: false);
+        _message =
+            '${dryRun ? 'Dry-run' : '프로덕션 APK'} 배포 요청 접수: $taskId · 상태 ${task.status}';
+      });
+      _syncPolling();
+    } catch (error) {
+      if (mounted && requestScope == _scopeKey) {
+        setState(() {
+          _message = '';
+          _error = _adminRequestError(error, '배포 요청을 보내지 못했습니다.');
+        });
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _submitting = false);
+      }
+    }
   }
 
   Future<void> _refresh() async {
     final appState = context.read<AppState>();
     if (!appState.hasAdminAccess ||
+        _submitting ||
         _refreshing ||
         _runtimeRefreshing ||
         _ciJobsRefreshing) {
@@ -1708,6 +1833,7 @@ class _AdminDeployPanelState extends State<_AdminDeployPanel> {
 
   Future<void> _refreshRuntimeStatus() async {
     if (!context.read<AppState>().hasAdminAccess ||
+        _submitting ||
         _refreshing ||
         _runtimeRefreshing) {
       return;
@@ -1723,6 +1849,7 @@ class _AdminDeployPanelState extends State<_AdminDeployPanel> {
 
   Future<void> _refreshCiJobs() async {
     if (!context.read<AppState>().hasAdminAccess ||
+        _submitting ||
         _refreshing ||
         _ciJobsRefreshing) {
       return;
@@ -1744,6 +1871,111 @@ class _AdminDeployPanelState extends State<_AdminDeployPanel> {
     );
   }
 
+  Widget _buildDeployRequestForm() {
+    final canEdit = !_requestBusy;
+    final canSubmit = canEdit;
+    final activeTaskId = _currentTask?.taskId ?? '';
+    final buttonLabel = _submitting
+        ? '요청 처리 중...'
+        : _dryRun
+            ? 'Dry-run 요청 보내기'
+            : '프로덕션 APK 등록 요청';
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF8FAFC),
+        border: Border.all(color: const Color(0xFFE2E8F0)),
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text(
+            'Flutter APK 배포 요청',
+            style: TextStyle(
+              color: Color(0xFF0F172A),
+              fontWeight: FontWeight.w800,
+            ),
+          ),
+          const SizedBox(height: 10),
+          Form(
+            key: _deployFormKey,
+            child: TextFormField(
+              controller: _reasonController,
+              enabled: canEdit,
+              minLines: 2,
+              maxLines: 4,
+              maxLength: 300,
+              textAlignVertical: TextAlignVertical.top,
+              decoration: const InputDecoration(
+                labelText: '배포 사유',
+                hintText: '예: Android 결제 흐름 수정 반영',
+                helperText: '필수 · 최대 300자',
+                alignLabelWithHint: true,
+                border: OutlineInputBorder(),
+              ),
+              validator: (value) {
+                final reason = value?.trim() ?? '';
+                if (reason.isEmpty) {
+                  return '배포 사유를 입력해 주세요.';
+                }
+                if (reason.runes.length > 300) {
+                  return '배포 사유는 300자 이내로 입력해 주세요.';
+                }
+                return null;
+              },
+            ),
+          ),
+          SwitchListTile(
+            contentPadding: EdgeInsets.zero,
+            title: const Text(
+              'Dry-run 모드',
+              style: TextStyle(fontWeight: FontWeight.w700),
+            ),
+            subtitle: Text(
+              _dryRun
+                  ? '요청 검증만 수행하고 실제 APK CI 등록은 하지 않습니다.'
+                  : '실제 Flutter APK CI 등록을 요청합니다.',
+            ),
+            value: _dryRun,
+            onChanged: canEdit ? (value) => setState(() => _dryRun = value) : null,
+          ),
+          if (_hasActiveDeploy) ...[
+            const SizedBox(height: 4),
+            _AdminInlineMessage(
+              message: '진행 중인 배포 작업'
+                  '${activeTaskId.isEmpty ? '' : ' ($activeTaskId)'}'
+                  '이 있어 새 요청은 잠겨 있습니다.',
+              warning: true,
+            ),
+          ],
+          const SizedBox(height: 10),
+          SizedBox(
+            width: double.infinity,
+            child: ElevatedButton.icon(
+              key: const ValueKey('deploy-request-button'),
+              onPressed:
+                  canSubmit ? () => unawaited(_submitDeployRequest()) : null,
+              icon: _submitting
+                  ? const SizedBox(
+                      width: 18,
+                      height: 18,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : Icon(_dryRun ? Icons.fact_check_outlined : Icons.send),
+              label: Text(buttonLabel),
+              style: ElevatedButton.styleFrom(
+                minimumSize: const Size.fromHeight(48),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _buildRuntimeMonitor() {
     final status = _runtimeStatus;
     return Column(
@@ -1753,7 +1985,7 @@ class _AdminDeployPanelState extends State<_AdminDeployPanel> {
           children: [
             const Expanded(child: _SectionTitle('현재 런타임 상태')),
             TextButton.icon(
-              onPressed: _runtimeRefreshing || _refreshing
+              onPressed: _submitting || _runtimeRefreshing || _refreshing
                   ? null
                   : () => unawaited(_refreshRuntimeStatus()),
               icon: const Icon(Icons.refresh, size: 18),
@@ -1894,7 +2126,7 @@ class _AdminDeployPanelState extends State<_AdminDeployPanel> {
           children: [
             const Expanded(child: _SectionTitle('최근 Flutter APK CI 작업')),
             TextButton.icon(
-              onPressed: _ciJobsRefreshing || _refreshing
+              onPressed: _submitting || _ciJobsRefreshing || _refreshing
                   ? null
                   : () => unawaited(_refreshCiJobs()),
               icon: const Icon(Icons.refresh, size: 18),
@@ -2041,7 +2273,10 @@ class _AdminDeployPanelState extends State<_AdminDeployPanel> {
               ),
               TextButton.icon(
                 onPressed:
-                    _refreshing || _runtimeRefreshing || _ciJobsRefreshing
+                    _submitting ||
+                            _refreshing ||
+                            _runtimeRefreshing ||
+                            _ciJobsRefreshing
                         ? null
                         : () => unawaited(_refresh()),
                 icon: const Icon(Icons.refresh),
@@ -2051,45 +2286,23 @@ class _AdminDeployPanelState extends State<_AdminDeployPanel> {
           ),
           const SizedBox(height: 6),
           const Text(
-            '배포 상태와 이력을 확인합니다.',
+            'APK 배포 요청을 보내고 작업 상태와 이력을 확인합니다.',
             style: TextStyle(color: Color(0xFF64748B)),
           ),
           const SizedBox(height: 16),
-          Container(
-            width: double.infinity,
-            padding: const EdgeInsets.all(14),
-            decoration: BoxDecoration(
-              color: const Color(0xFFFFF7ED),
-              border: Border.all(color: const Color(0xFFFED7AA)),
-              borderRadius: BorderRadius.circular(12),
-            ),
-            child: const Text(
-              '모바일은 배포 상태를 조회하는 모니터입니다. 새 배포 실행은 웹 관리자 화면을 이용하세요.',
-              style: TextStyle(
-                color: Color(0xFF9A3412),
-                fontWeight: FontWeight.w600,
-              ),
-            ),
+          const _AdminInlineMessage(
+            message:
+                '요청 권한은 백엔드가 관리자 세션으로 확인합니다. 실제 빌드와 APK 등록은 서버의 Flutter APK CI 작업이 수행합니다.',
           ),
+          const SizedBox(height: 12),
+          _buildDeployRequestForm(),
           if (_message.isNotEmpty) ...[
             const SizedBox(height: 12),
-            Text(
-              _message,
-              style: const TextStyle(
-                color: Color(0xFF0F766E),
-                fontWeight: FontWeight.w600,
-              ),
-            ),
+            _AdminInlineMessage(message: _message),
           ],
           if (_error.isNotEmpty) ...[
             const SizedBox(height: 12),
-            Text(
-              _error,
-              style: const TextStyle(
-                color: Color(0xFFDC2626),
-                fontWeight: FontWeight.w600,
-              ),
-            ),
+            _AdminInlineMessage(message: _error, isError: true),
           ],
           const SizedBox(height: 16),
           _buildRuntimeMonitor(),

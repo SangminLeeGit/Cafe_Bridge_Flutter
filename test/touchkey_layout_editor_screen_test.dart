@@ -1,4 +1,5 @@
 import 'package:cafe_bridge_flutter/screens/touchkey_layout_editor.dart';
+import 'package:cafe_bridge_flutter/services/api.dart';
 import 'package:cafe_bridge_flutter/services/cache_store.dart';
 import 'package:cafe_bridge_flutter/state/app_state.dart';
 import 'package:flutter/material.dart';
@@ -12,6 +13,8 @@ class _FakeAppState extends AppState {
   String? writeEndpoint;
   String? writeMethod;
   Map<String, dynamic>? writeBody;
+  bool makeNextSaveConflict = false;
+  bool conflictSeen = false;
 
   @override
   bool get hasOperatorAccess => true;
@@ -55,6 +58,12 @@ class _FakeAppState extends AppState {
             'price': 5000,
             'placeable': true,
           },
+          '300': {
+            'product_code': '300',
+            'name': '카푸치노',
+            'price': 5200,
+            'placeable': true,
+          },
         },
         'capabilities': {
           'edit': {'enabled': true, 'reasons': []},
@@ -84,7 +93,7 @@ class _FakeAppState extends AppState {
         },
       };
     } else if (endpoint == '/api/editor/touchkey/layout') {
-      json = _envelope('100', '4');
+      json = conflictSeen ? _envelope('300', '5') : _envelope('100', '4');
     } else {
       throw StateError('unexpected endpoint $endpoint');
     }
@@ -104,7 +113,12 @@ class _FakeAppState extends AppState {
     writeEndpoint = endpoint;
     writeMethod = method;
     writeBody = body;
-    return _envelope('200', '5');
+    if (makeNextSaveConflict) {
+      makeNextSaveConflict = false;
+      conflictSeen = true;
+      throw const ApiException('revision changed', statusCode: 409);
+    }
+    return _envelope('200', conflictSeen ? '6' : '5');
   }
 }
 
@@ -135,6 +149,15 @@ void main() {
     await tester.tap(find.text('라떼'));
     await tester.pumpAndSettle();
 
+    await tester.tap(find.byTooltip('실행 취소'));
+    await tester.pumpAndSettle();
+    expect(find.text('아메리카노'), findsOneWidget);
+    expect(find.text('라떼'), findsNothing);
+
+    await tester.tap(find.byTooltip('다시 실행'));
+    await tester.pumpAndSettle();
+    expect(find.text('라떼'), findsOneWidget);
+
     await tester.tap(find.text('서버 초안 저장'));
     await tester.pumpAndSettle();
 
@@ -143,6 +166,55 @@ void main() {
     expect(state.writeMethod, 'PUT');
     expect(state.writeBody?['expected_revision'], '4');
     expect(state.writeBody?['base_snapshot_id'], 'base-snapshot-a');
+    expect(state.writeBody?['slots'], [
+      {'h': 1, 'v': 1, 'product_code': '200'},
+    ]);
+    expect(find.text('서버 초안을 저장했습니다. POS 변경은 실행하지 않았습니다.'), findsOneWidget);
+  });
+
+  testWidgets('resolves revision conflicts against the latest server draft',
+      (tester) async {
+    final state = _FakeAppState()..makeNextSaveConflict = true;
+    addTearDown(state.dispose);
+    await tester.pumpWidget(
+      ChangeNotifierProvider<AppState>.value(
+        value: state,
+        child: const MaterialApp(
+          home: TouchkeyLayoutEditorScreen(
+            classCode: '01',
+            sortValue: '1',
+            className: '커피',
+            page: 1,
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('아메리카노'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('라떼'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('서버 초안 저장'));
+    await tester.pumpAndSettle();
+
+    expect(find.textContaining('충돌 슬롯 1개'), findsOneWidget);
+    expect(find.text('카푸치노'), findsOneWidget);
+    expect(find.text('라떼'), findsOneWidget);
+
+    await tester.tap(find.text('변경 조정'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('겹친 슬롯은 내 값'));
+    await tester.pumpAndSettle();
+
+    expect(
+      find.text('변경사항을 최신 revision 기준으로 조정했습니다. 저장 전 검토해 주세요.'),
+      findsOneWidget,
+    );
+    await tester.tap(find.text('서버 초안 저장'));
+    await tester.pumpAndSettle();
+
+    expect(state.writeBody?['expected_revision'], '5');
     expect(state.writeBody?['slots'], [
       {'h': 1, 'v': 1, 'product_code': '200'},
     ]);

@@ -4,6 +4,7 @@ import 'api_contracts.dart';
 
 class MenuEntry {
   final int id;
+  final int revision;
   final String kind;
   final String status;
   final String itemCode;
@@ -24,11 +25,16 @@ class MenuEntry {
   final int? supplyPrice;
   final String notes;
   final String source;
+  final String placementJson;
+  final String categoryNodeId;
+  final String catalogSnapshotId;
+  final String pendingSubmissionKey;
   final String createdAt;
   final String updatedAt;
 
   const MenuEntry({
     required this.id,
+    this.revision = 1,
     required this.kind,
     required this.status,
     required this.itemCode,
@@ -49,6 +55,10 @@ class MenuEntry {
     this.supplyPrice,
     required this.notes,
     required this.source,
+    this.placementJson = '',
+    this.categoryNodeId = '',
+    this.catalogSnapshotId = '',
+    this.pendingSubmissionKey = '',
     required this.createdAt,
     required this.updatedAt,
   });
@@ -56,6 +66,7 @@ class MenuEntry {
   factory MenuEntry.fromJson(Map<String, dynamic> json) {
     return MenuEntry(
       id: asInt(json['id']),
+      revision: asInt(json['revision']) > 0 ? asInt(json['revision']) : 1,
       kind: asString(json['kind']),
       status: asString(json['status']),
       itemCode: asString(json['item_code']),
@@ -79,6 +90,10 @@ class MenuEntry {
           json['supply_price'] == null ? null : asInt(json['supply_price']),
       notes: asString(json['notes']),
       source: asString(json['source']),
+      placementJson: asString(json['placement_json']),
+      categoryNodeId: asString(json['category_node_id']),
+      catalogSnapshotId: asString(json['catalog_snapshot_id']),
+      pendingSubmissionKey: asString(json['pending_submission_key']),
       createdAt: asString(json['created_at']),
       updatedAt: asString(json['updated_at']),
     );
@@ -87,9 +102,11 @@ class MenuEntry {
   MenuEntry copyWith({
     String? status,
     int? targetPrice,
+    int? revision,
   }) {
     return MenuEntry(
       id: id,
+      revision: revision ?? this.revision,
       kind: kind,
       status: status ?? this.status,
       itemCode: itemCode,
@@ -110,12 +127,195 @@ class MenuEntry {
       supplyPrice: supplyPrice,
       notes: notes,
       source: source,
+      placementJson: placementJson,
+      categoryNodeId: categoryNodeId,
+      catalogSnapshotId: catalogSnapshotId,
+      pendingSubmissionKey: pendingSubmissionKey,
       createdAt: createdAt,
       updatedAt: updatedAt,
     );
   }
 
   int get priceDelta => (targetPrice ?? 0) - (currentPrice ?? 0);
+
+  bool get isSubmissionReserved => pendingSubmissionKey.trim().isNotEmpty;
+}
+
+class WorkspaceCategoryOptions {
+  final bool available;
+  final String source;
+  final String snapshotId;
+  final String tenantId;
+  final String shopNo;
+  final String environment;
+  final String credentialRef;
+  final String upstreamOrigin;
+  final List<String> majorOptions;
+  final Map<String, List<String>> middleOptionsByMajor;
+  final Map<String, List<String>> minorOptionsByMajorMiddle;
+
+  const WorkspaceCategoryOptions({
+    required this.available,
+    required this.source,
+    required this.snapshotId,
+    required this.tenantId,
+    required this.shopNo,
+    required this.environment,
+    required this.credentialRef,
+    required this.upstreamOrigin,
+    required this.majorOptions,
+    required this.middleOptionsByMajor,
+    required this.minorOptionsByMajorMiddle,
+  });
+
+  factory WorkspaceCategoryOptions.fromJson(Map<String, dynamic> json) {
+    Map<String, List<String>> parseOptions(Object? raw) {
+      final result = <String, List<String>>{};
+      if (raw is Map) {
+        for (final entry in raw.entries) {
+          if (entry.value is List) {
+            result[entry.key.toString()] = (entry.value as List)
+                .map((value) => value.toString().trim())
+                .where((value) => value.isNotEmpty)
+                .toList(growable: false);
+          }
+        }
+      }
+      return result;
+    }
+
+    List<String> parseList(Object? raw) => raw is List
+        ? raw
+            .map((value) => value.toString().trim())
+            .where((value) => value.isNotEmpty)
+            .toList(growable: false)
+        : const [];
+
+    return WorkspaceCategoryOptions(
+      available: json['available'] == true && json['complete'] == true,
+      source: asString(json['source']),
+      snapshotId: asString(json['snapshot_id']),
+      tenantId: asString(json['tenant_id']),
+      shopNo: asString(json['shop_no']),
+      environment: asString(json['environment']),
+      credentialRef: asString(json['credential_ref']),
+      upstreamOrigin: asString(json['upstream_origin']),
+      majorOptions: parseList(json['major_options']),
+      middleOptionsByMajor: parseOptions(json['middle_options_by_major']),
+      minorOptionsByMajorMiddle:
+          parseOptions(json['minor_options_by_major_middle']),
+    );
+  }
+
+  List<String> middleOptions(String major) =>
+      middleOptionsByMajor[major] ?? const [];
+
+  List<String> minorOptions(String major, String middle) =>
+      minorOptionsByMajorMiddle['$major__$middle'] ?? const [];
+
+  bool containsPath(String major, String middle, String minor) =>
+      available &&
+      majorOptions.contains(major) &&
+      middleOptions(major).contains(middle) &&
+      minorOptions(major, middle).contains(minor);
+
+  bool get hasExecutionScope =>
+      snapshotId.isNotEmpty &&
+      tenantId.isNotEmpty &&
+      shopNo.isNotEmpty &&
+      environment.isNotEmpty &&
+      credentialRef.isNotEmpty &&
+      upstreamOrigin.isNotEmpty;
+}
+
+class WorkspaceFormOptions {
+  final Map<String, dynamic> defaults;
+  final Map<String, dynamic> options;
+  final Map<String, dynamic> profile;
+  final WorkspaceCategoryOptions categoryOptions;
+
+  const WorkspaceFormOptions({
+    required this.defaults,
+    required this.options,
+    required this.profile,
+    required this.categoryOptions,
+  });
+
+  factory WorkspaceFormOptions.fromJson(Map<String, dynamic> json) {
+    return WorkspaceFormOptions(
+      defaults: asMap(json['defaults']),
+      options: asMap(json['options']),
+      profile: asMap(json['profile']),
+      categoryOptions: WorkspaceCategoryOptions.fromJson(
+        asMap(json['category_options']),
+      ),
+    );
+  }
+
+  String profileDefault(String field, {String fallback = ''}) {
+    final profileValue = asString(profile['default_$field']).trim();
+    if (profileValue.isNotEmpty) return profileValue;
+    final directValue = asString(profile[field]).trim();
+    if (directValue.isNotEmpty) return directValue;
+    final defaultValue = asString(defaults[field]).trim();
+    return defaultValue.isNotEmpty ? defaultValue : fallback;
+  }
+
+  List<String> optionValues(String field) {
+    final value = options[field];
+    if (value is! List) return const [];
+    return value
+        .map((item) => item.toString().trim())
+        .where((item) => item.isNotEmpty)
+        .toList(growable: false);
+  }
+}
+
+Map<String, dynamic> buildNewItemDraftRequestBody({
+  required String itemName,
+  required int targetPrice,
+  required String majorCategory,
+  required String middleCategory,
+  required String minorCategory,
+  required String unitName,
+  required String taxMode,
+  required String useMode,
+  required String stockMode,
+  required String barcode,
+  required String description,
+  required String notes,
+  int? costPrice,
+  int? supplyPrice,
+}) {
+  return {
+    'item_name': itemName.trim(),
+    'target_price': targetPrice,
+    'major_category': majorCategory.trim(),
+    'middle_category': middleCategory.trim(),
+    'minor_category': minorCategory.trim(),
+    'unit_name': unitName.trim(),
+    'tax_mode': taxMode.trim(),
+    'use_mode': useMode.trim(),
+    'stock_mode': stockMode.trim(),
+    'barcode': barcode.trim(),
+    'description': description.trim(),
+    'notes': notes.trim(),
+    if (costPrice != null) 'cost_price': costPrice,
+    if (supplyPrice != null) 'supply_price': supplyPrice,
+  };
+}
+
+Map<String, dynamic> buildRevisionGuardedMenuEntryUpdateBody({
+  required Map<String, dynamic> fields,
+  required int expectedRevision,
+}) {
+  if (expectedRevision <= 0) {
+    throw ArgumentError.value(expectedRevision, 'expectedRevision');
+  }
+  return {
+    ...fields,
+    'expected_revision': expectedRevision,
+  };
 }
 
 class WorkspaceSnapshotSummary {

@@ -51,55 +51,6 @@ class _ProductRow {
   bool get isLikelyOption => itemName.trim().startsWith('-->');
 }
 
-class _CategoryOptionCatalog {
-  final List<String> majorOptions;
-  final Map<String, List<String>> middleOptionsByMajor;
-  final Map<String, List<String>> minorOptionsByMajorMiddle;
-
-  const _CategoryOptionCatalog({
-    required this.majorOptions,
-    required this.middleOptionsByMajor,
-    required this.minorOptionsByMajorMiddle,
-  });
-
-  factory _CategoryOptionCatalog.fromProducts(List<_ProductRow> products) {
-    final majorSet = <String>{};
-    final middleMap = <String, Set<String>>{};
-    final minorMap = <String, Set<String>>{};
-
-    for (final product in products) {
-      final major = (product.raw['대분류명'] ?? '').toString().trim();
-      final middle = (product.raw['중분류명'] ?? '').toString().trim();
-      final minor = (product.raw['소분류명'] ?? '').toString().trim();
-      if (major.isEmpty || middle.isEmpty) continue;
-
-      majorSet.add(major);
-      middleMap.putIfAbsent(major, () => <String>{}).add(middle);
-      if (minor.isNotEmpty) {
-        minorMap.putIfAbsent('$major::$middle', () => <String>{}).add(minor);
-      }
-    }
-
-    List<String> sortedValues(Iterable<String> values) {
-      final list = values.toList(growable: false);
-      list.sort((left, right) => left.compareTo(right));
-      return list;
-    }
-
-    return _CategoryOptionCatalog(
-      majorOptions: sortedValues(majorSet),
-      middleOptionsByMajor: {
-        for (final entry in middleMap.entries)
-          entry.key: sortedValues(entry.value),
-      },
-      minorOptionsByMajorMiddle: {
-        for (final entry in minorMap.entries)
-          entry.key: sortedValues(entry.value),
-      },
-    );
-  }
-}
-
 const _lookupDetailFields = <({String label, String key, bool money})>[
   (label: '원가', key: '원가', money: true),
   (label: '공급가', key: '공급가', money: true),
@@ -155,6 +106,20 @@ String _statusLabel(String status) {
       return '초안';
   }
 }
+
+bool _hasUncertainWorkspaceWriteOutcome(Object error) =>
+    error is ApiException &&
+    (error.isTransportError ||
+        error.statusCode == 408 ||
+        (error.statusCode != null && error.statusCode! >= 500));
+
+bool _isWorkspaceWriteConflict(Object error) =>
+    error is ApiException &&
+    (error.statusCode == 409 ||
+        error.code == 'revision_conflict' ||
+        error.message.contains(
+          '워크스페이스 항목이 다른 요청에 의해 변경되었습니다',
+        ));
 
 Color _statusColor(String status) {
   switch (status) {
@@ -925,14 +890,9 @@ class _ProductBrowserTabState extends State<_ProductBrowserTab>
     );
   }
 
-  // Kept for the read-only preview workflow; mobile navigation does not expose it.
-  // ignore: unused_element
   void _openNewItemScreen() {
     final appState = context.read<AppState>();
     if (!appState.hasOperatorAccess) return;
-    final categoryCatalog = _CategoryOptionCatalog.fromProducts(_products
-        .where((product) => !product.isLikelyOption)
-        .toList(growable: false));
     Navigator.of(context).push(
       MaterialPageRoute(
         builder: (_) => AccessGate(
@@ -940,7 +900,6 @@ class _ProductBrowserTabState extends State<_ProductBrowserTab>
           fullScreen: true,
           child: _NewMenuAddScreen(
             appState: appState,
-            categoryCatalog: categoryCatalog,
             onSubmitted: () {
               widget.onNewItemRegistered?.call();
               unawaited(_refreshCurrent());
@@ -1030,6 +989,16 @@ class _ProductBrowserTabState extends State<_ProductBrowserTab>
                 runSpacing: 6,
                 alignment: WrapAlignment.end,
                 children: [
+                  if (isOperator)
+                    FilledButton.icon(
+                      onPressed: _openNewItemScreen,
+                      icon: const Icon(Icons.add, size: 17),
+                      label: const Text('새 메뉴 등록'),
+                      style: FilledButton.styleFrom(
+                        backgroundColor: const Color(0xFF0D9488),
+                        visualDensity: VisualDensity.compact,
+                      ),
+                    ),
                   TextButton.icon(
                     onPressed: _refreshCurrent,
                     icon: const Icon(Icons.refresh, size: 16),
@@ -1105,7 +1074,7 @@ class _ProductBrowserTabState extends State<_ProductBrowserTab>
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
             color: const Color(0xFFFFF7ED),
             child: const Text(
-              'operator 이상 권한이 있어야 가격 변경을 실행할 수 있습니다. 신규 상품 등록은 웹 관리자 화면을 이용하세요.',
+              'operator 이상 권한이 있어야 가격 변경과 등록 초안 작성을 실행할 수 있습니다.',
               style: TextStyle(fontSize: 12, color: Color(0xFF92400E)),
             ),
           ),
@@ -1116,12 +1085,12 @@ class _ProductBrowserTabState extends State<_ProductBrowserTab>
 
 class _NewMenuAddScreen extends StatefulWidget {
   final AppState appState;
-  final _CategoryOptionCatalog categoryCatalog;
+  final MenuEntry? existingEntry;
   final VoidCallback? onSubmitted;
 
   const _NewMenuAddScreen({
     required this.appState,
-    required this.categoryCatalog,
+    this.existingEntry,
     this.onSubmitted,
   });
 
@@ -1131,43 +1100,86 @@ class _NewMenuAddScreen extends StatefulWidget {
 
 class _NewMenuAddScreenState extends State<_NewMenuAddScreen> {
   final _itemNameController = TextEditingController();
-  final _itemCodeController = TextEditingController();
   final _targetPriceController = TextEditingController();
   final _costPriceController = TextEditingController();
   final _supplyPriceController = TextEditingController();
-  final _unitNameController = TextEditingController(text: 'EA');
   final _barcodeController = TextEditingController();
   final _descriptionController = TextEditingController();
-  final _reasonController = TextEditingController();
+  final _notesController = TextEditingController();
 
-  String _taxMode = 'Y';
-  String _useMode = 'Y';
-  String _stockMode = 'Y';
+  WorkspaceFormOptions? _formOptions;
+  MenuEntry? _existingEntry;
+  MenuEntry? _savedEntry;
+  Map<String, dynamic>? _preparedPlan;
+  Map<String, dynamic>? _pendingCreateBody;
+  Map<String, dynamic>? _pendingUpdateBody;
+  Set<int> _preCreateEntryIds = const {};
+  List<MenuEntry> _reconcileMatches = const [];
+  MenuEntry? _latestEntry;
+  String _reconcileMessage = '';
   String _majorCategory = '';
   String _middleCategory = '';
   String _minorCategory = '';
-  bool _isSubmitting = false;
+  String _unitName = 'EA';
+  String _taxMode = '과세';
+  String _useMode = '사용';
+  String _stockMode = 'N';
+  int _step = 1;
+  int _noMatchReconcileChecks = 0;
+  bool _optionsLoading = true;
+  bool _isSaving = false;
+  bool _isPreparing = false;
+  bool _isReconciling = false;
+  bool _createOutcomeUnknown = false;
+  bool _updateOutcomeUnknown = false;
+  bool _retryCreateAllowed = false;
+  bool _retryUpdateAllowed = false;
+  bool _serverConflict = false;
+  bool _formDirty = false;
+  bool _leavePromptOpen = false;
   String _error = '';
-  String _statusMessage = '';
-  String _lastPreviewMessage = '';
-  String _lastPreviewSavedCode = '';
-  Map<String, dynamic> _lastResolvedCategories = const {};
-  TaskPoller<WorkspaceTaskHistoryEntry>? _poller;
 
   @override
   void dispose() {
-    _poller?.cancel();
     _itemNameController.dispose();
-    _itemCodeController.dispose();
     _targetPriceController.dispose();
     _costPriceController.dispose();
     _supplyPriceController.dispose();
-    _unitNameController.dispose();
     _barcodeController.dispose();
     _descriptionController.dispose();
-    _reasonController.dispose();
+    _notesController.dispose();
     super.dispose();
   }
+
+  @override
+  void initState() {
+    super.initState();
+    _existingEntry = widget.existingEntry;
+    final entry = widget.existingEntry;
+    if (entry != null) {
+      _itemNameController.text = entry.itemName;
+      _targetPriceController.text = entry.targetPrice?.toString() ?? '';
+      _costPriceController.text = entry.costPrice?.toString() ?? '';
+      _supplyPriceController.text = entry.supplyPrice?.toString() ?? '';
+      _barcodeController.text = entry.barcode;
+      _descriptionController.text = entry.description;
+      _notesController.text = entry.notes;
+      _majorCategory = entry.majorCategory;
+      _middleCategory = entry.middleCategory;
+      _minorCategory = entry.minorCategory;
+      _unitName = entry.unitName;
+      _taxMode = entry.taxMode;
+      _useMode = entry.useMode;
+      _stockMode = entry.stockMode;
+    }
+    unawaited(_loadFormOptions());
+  }
+
+  bool get _isEditing => _existingEntry != null;
+  bool get _existingEntryLocked =>
+      _existingEntry?.isSubmissionReserved == true ||
+      const {'ready', 'done', 'reserved', 'stale'}
+          .contains(_existingEntry?.status);
 
   int? _parseNonNegativeInt(String raw, {required String fieldName}) {
     final trimmed = raw.trim();
@@ -1182,9 +1194,51 @@ class _NewMenuAddScreenState extends State<_NewMenuAddScreen> {
     return parsed;
   }
 
+  Future<WorkspaceFormOptions> _fetchFormOptions() async {
+    final response = await widget.appState.fetchMapParsed<WorkspaceFormOptions>(
+      '/api/menu-workspace/form-options',
+      parser: WorkspaceFormOptions.fromJson,
+      cacheTtl: Duration.zero,
+      allowStaleOnError: false,
+    );
+    return response.data;
+  }
+
+  Future<void> _loadFormOptions() async {
+    if (mounted) {
+      setState(() {
+        _optionsLoading = true;
+        _error = '';
+      });
+    }
+    try {
+      final options = await _fetchFormOptions();
+      if (!mounted) return;
+      setState(() {
+        _formOptions = options;
+        if (_existingEntry == null) {
+          _majorCategory = options.profileDefault('major_category');
+          _middleCategory = options.profileDefault('middle_category');
+          _minorCategory = options.profileDefault('minor_category');
+          _unitName = options.profileDefault('unit_name', fallback: 'EA');
+          _taxMode = options.profileDefault('tax_mode', fallback: '과세');
+          _useMode = options.profileDefault('use_mode', fallback: '사용');
+          _stockMode = options.profileDefault('stock_mode', fallback: 'N');
+        }
+        _optionsLoading = false;
+      });
+    } catch (error) {
+      if (!mounted) return;
+      setState(() {
+        _optionsLoading = false;
+        _error = '분류와 등록 기본값을 불러오지 못했습니다. 다시 새로고침해 주세요. $error';
+      });
+    }
+  }
+
   List<String> get _middleCategoryOptions {
     if (_majorCategory.trim().isEmpty) return const [];
-    return widget.categoryCatalog.middleOptionsByMajor[_majorCategory.trim()] ??
+    return _formOptions?.categoryOptions.middleOptions(_majorCategory.trim()) ??
         const [];
   }
 
@@ -1192,70 +1246,40 @@ class _NewMenuAddScreenState extends State<_NewMenuAddScreen> {
     final major = _majorCategory.trim();
     final middle = _middleCategory.trim();
     if (major.isEmpty || middle.isEmpty) return const [];
-    return widget
-            .categoryCatalog.minorOptionsByMajorMiddle['$major::$middle'] ??
+    return _formOptions?.categoryOptions.minorOptions(major, middle) ??
         const [];
   }
 
-  String get _middleCategoryHint {
-    if (_majorCategory.trim().isEmpty) return '대분류를 먼저 선택';
-    if (_middleCategoryOptions.isEmpty) return '선택 가능한 중분류 없음';
-    return '중분류 선택';
-  }
-
-  String get _minorCategoryHint {
-    if (_majorCategory.trim().isEmpty) return '대분류를 먼저 선택';
-    if (_middleCategory.trim().isEmpty) return '중분류를 먼저 선택';
-    if (_minorCategoryOptions.isEmpty) return '선택 가능한 소분류 없음';
-    return '소분류 선택';
-  }
-
   void _onMajorCategoryChanged(String? value) {
-    final nextMajor = (value ?? '').trim();
-    final nextMiddleOptions = nextMajor.isEmpty
-        ? const <String>[]
-        : (widget.categoryCatalog.middleOptionsByMajor[nextMajor] ??
-            const <String>[]);
-    final keepMiddle = nextMiddleOptions.contains(_middleCategory.trim());
-    final nextMiddle = keepMiddle ? _middleCategory.trim() : '';
-    final nextMinorOptions = (nextMajor.isEmpty || nextMiddle.isEmpty)
-        ? const <String>[]
-        : (widget.categoryCatalog
-                .minorOptionsByMajorMiddle['$nextMajor::$nextMiddle'] ??
-            const <String>[]);
-    final keepMinor = nextMinorOptions.contains(_minorCategory.trim());
-    setState(() {
-      _majorCategory = nextMajor;
-      _middleCategory = nextMiddle;
-      _minorCategory = keepMinor ? _minorCategory.trim() : '';
-    });
+    _majorCategory = (value ?? '').trim();
+    _middleCategory = '';
+    _minorCategory = '';
   }
 
   void _onMiddleCategoryChanged(String? value) {
-    final nextMiddle = (value ?? '').trim();
-    final nextMinorOptions =
-        (_majorCategory.trim().isEmpty || nextMiddle.isEmpty)
-            ? const <String>[]
-            : (widget.categoryCatalog.minorOptionsByMajorMiddle[
-                    '${_majorCategory.trim()}::$nextMiddle'] ??
-                const <String>[]);
-    final keepMinor = nextMinorOptions.contains(_minorCategory.trim());
-    setState(() {
-      _middleCategory = nextMiddle;
-      _minorCategory = keepMinor ? _minorCategory.trim() : '';
-    });
+    _middleCategory = (value ?? '').trim();
+    _minorCategory = '';
   }
 
-  Map<String, dynamic> _buildRequestBody({required bool execute}) {
+  void _markFormChanged() {
+    _formDirty = true;
+    _preparedPlan = null;
+    _savedEntry = null;
+    _error = '';
+  }
+
+  Map<String, dynamic> _buildDraftFields() {
+    final options = _formOptions;
+    if (options == null || _optionsLoading) {
+      throw const ApiException('등록 정보를 불러오는 중입니다. 잠시 후 다시 시도하세요.');
+    }
     final itemName = _itemNameController.text.trim();
     final majorCategory = _majorCategory.trim();
     final middleCategory = _middleCategory.trim();
     final minorCategory = _minorCategory.trim();
-    final itemCode = _itemCodeController.text.trim();
     final barcode = _barcodeController.text.trim();
-    final unitName = _unitNameController.text.trim();
     final description = _descriptionController.text.trim();
-    final reason = _reasonController.text.trim();
+    final notes = _notesController.text.trim();
     final targetPrice = _parseNonNegativeInt(
       _targetPriceController.text,
       fieldName: '판매가',
@@ -1272,465 +1296,944 @@ class _NewMenuAddScreenState extends State<_NewMenuAddScreen> {
     if (itemName.isEmpty) {
       throw const ApiException('상품명을 입력하세요.');
     }
-    if (majorCategory.isEmpty ||
-        middleCategory.isEmpty ||
-        minorCategory.isEmpty) {
-      throw const ApiException('대/중/소 분류를 모두 입력하세요.');
-    }
     if (targetPrice == null) {
       throw const ApiException('판매가를 입력하세요.');
     }
-    if (barcode.isNotEmpty && int.tryParse(barcode) == null) {
-      throw const ApiException('바코드는 숫자만 입력할 수 있습니다.');
-    }
-
-    return {
-      'item_name': itemName,
-      'target_price': targetPrice,
-      'major_category': majorCategory,
-      'middle_category': middleCategory,
-      'minor_category': minorCategory,
-      'unit_name': unitName.isEmpty ? 'EA' : unitName,
-      'tax_mode': _taxMode,
-      'use_mode': _useMode,
-      'stock_mode': _stockMode,
-      'barcode': barcode,
-      'description': description,
-      'item_code': itemCode,
-      if (costPrice != null) 'cost_price': costPrice,
-      if (supplyPrice != null) 'supply_price': supplyPrice,
-      'execute': execute,
-      'reason': reason.isNotEmpty
-          ? reason
-          : (execute ? 'mobile-new-item-apply' : 'mobile-new-item-preview'),
-    };
-  }
-
-  Future<WorkspaceTaskHistoryEntry> _pollTask(String taskId) async {
-    final poller = TaskPoller<WorkspaceTaskHistoryEntry>(
-      interval: const Duration(seconds: 3),
-      timeout: const Duration(minutes: 6),
-      adapter: TaskStatusAdapter<WorkspaceTaskHistoryEntry>(
-        statusOf: (task) => task.status,
-      ),
-      fetch: () async {
-        final response =
-            await widget.appState.fetchMapParsed<WorkspaceTaskHistoryEntry>(
-          '/api/menu-workspace/new-item-apply/$taskId',
-          parser: WorkspaceTaskHistoryEntry.fromJson,
-          cacheTtl: Duration.zero,
-          allowStaleOnError: false,
-        );
-        return response.data;
-      },
-    );
-    _poller?.cancel();
-    _poller = poller;
-    try {
-      return await poller.poll();
-    } on TaskPollingFailedException<WorkspaceTaskHistoryEntry> catch (error) {
-      return error.value;
-    } on TimeoutException {
+    if (!options.categoryOptions.containsPath(
+      majorCategory,
+      middleCategory,
+      minorCategory,
+    )) {
       throw const ApiException(
-        '신규 메뉴 작업 응답이 지연되고 있습니다. 잠시 후 다시 확인해 주세요.',
+        '현재 EasyPOS 분류 목록에서 대·중·소 분류를 선택하세요. 분류 목록이 준비되지 않았다면 새로고침해 주세요.',
       );
-    } finally {
-      if (identical(_poller, poller)) _poller = null;
     }
+    final fields = buildNewItemDraftRequestBody(
+      itemName: itemName,
+      targetPrice: targetPrice,
+      majorCategory: majorCategory,
+      middleCategory: middleCategory,
+      minorCategory: minorCategory,
+      unitName: _unitName,
+      taxMode: _taxMode,
+      useMode: _useMode,
+      stockMode: _stockMode,
+      barcode: barcode,
+      description: description,
+      notes: notes,
+      costPrice: costPrice,
+      supplyPrice: supplyPrice,
+    );
+    // The PATCH request excludes nulls on the server. Blank cost/supply inputs
+    // therefore mean "leave unchanged" while editing, not "clear this value".
+    return fields;
   }
 
-  Future<void> _submit({required bool execute}) async {
-    final messenger = ScaffoldMessenger.of(context);
-    Map<String, dynamic> body;
+  MenuEntry _parseSavedEntry(
+    Map<String, dynamic> json, {
+    int? expectedId,
+  }) {
+    final entry = MenuEntry.fromJson(json);
+    if (entry.id <= 0 ||
+        entry.kind != 'new_item' ||
+        (expectedId != null && entry.id != expectedId)) {
+      throw const FormatException('서버의 등록 초안 응답을 확인할 수 없습니다.');
+    }
+    return entry;
+  }
+
+  Future<WorkspaceSnapshot> _fetchWorkspaceSnapshot() async {
+    final response = await widget.appState.fetchMapParsed<WorkspaceSnapshot>(
+      '/api/menu-workspace',
+      parser: WorkspaceSnapshot.fromJson,
+      cacheTtl: Duration.zero,
+      allowStaleOnError: false,
+    );
+    return response.data;
+  }
+
+  Future<void> _continueToReview() async {
     try {
-      body = _buildRequestBody(execute: execute);
+      final body = _buildDraftFields();
+      setState(() {
+        _reviewFields = body;
+        _step = 2;
+        _error = '';
+      });
     } catch (error) {
       setState(() {
         _error = error.toString().replaceFirst('Exception: ', '');
       });
+    }
+  }
+
+  Map<String, dynamic> _reviewFields = const {};
+
+  Future<bool> _confirmSave() async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: Text(_isEditing ? '등록 초안 수정' : '등록 초안 저장'),
+        content: const Text(
+          '메뉴 정보를 CafeBridge 작업대에 저장합니다. 이 작업은 POS에 상품·가격·터치키 정보를 반영하지 않습니다.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: const Text('돌아가기'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(dialogContext, true),
+            child: const Text('초안 저장'),
+          ),
+        ],
+      ),
+    );
+    return confirmed == true;
+  }
+
+  Future<void> _saveDraft({bool alreadyConfirmed = false}) async {
+    if (_isSaving || _createOutcomeUnknown || _updateOutcomeUnknown) return;
+    if (!alreadyConfirmed && !await _confirmSave()) return;
+    Map<String, dynamic> fields;
+    try {
+      fields = _buildDraftFields();
+    } catch (error) {
+      if (!mounted) return;
+      setState(() => _error = error.toString().replaceFirst('Exception: ', ''));
       return;
     }
 
-    setState(() {
-      _isSubmitting = true;
-      _error = '';
-      _statusMessage = execute
-          ? '웹과 동일한 Selenium 경로로 신규 메뉴를 등록 중입니다. 최대 1~2분 정도 걸릴 수 있습니다.'
-          : '신규 메뉴 미리보기를 실행 중입니다.';
-    });
-
-    try {
-      final started = await widget.appState.postJson(
-        '/api/menu-workspace/new-item-apply',
-        body: body,
-      );
-      final taskId = AsyncTaskStartResponse.fromJson(started).taskId.trim();
-      if (taskId.isEmpty) {
-        throw const ApiException('신규 메뉴 작업 ID를 받지 못했습니다.');
-      }
-
-      final task = await _pollTask(taskId);
-      if (!mounted) return;
-
-      final topLevelMessage = task.errorMessage.trim();
-      final resultMessage = task.resultMessage.trim();
-      var message = resultMessage.isNotEmpty
-          ? resultMessage
-          : (topLevelMessage.isNotEmpty ? topLevelMessage : '작업 결과를 확인해 주세요.');
-      final resultStatus = task.resultStatus;
-      final isSuccess = task.status == 'succeeded' &&
-          (resultStatus == 'preview' || resultStatus == 'applied');
-      final savedItemCode = task.savedItemCode.trim();
-      if (resultStatus == 'applied' && savedItemCode.isNotEmpty) {
-        message = '$message (저장 코드 $savedItemCode)';
-      }
-
-      if (!isSuccess) {
+    final editing = _existingEntry;
+    if (editing?.isSubmissionReserved == true) {
+      setState(() {
+        _error = '등록 요청이 예약된 항목은 수정할 수 없습니다. 작업 이력을 확인하세요.';
+      });
+      return;
+    }
+    if (editing == null) {
+      setState(() {
+        _isSaving = true;
+        _error = '';
+        _reconcileMessage = '';
+      });
+      Set<int> baseline;
+      try {
+        baseline =
+            (await _fetchWorkspaceSnapshot()).entries.map((e) => e.id).toSet();
+      } catch (error) {
+        if (!mounted) return;
         setState(() {
-          _error = message;
-          _statusMessage = '';
+          _isSaving = false;
+          _error =
+              '저장 전 작업 목록 확인에 실패해 요청을 보내지 않았습니다. 연결을 확인하고 다시 시도하세요. $error';
         });
         return;
       }
-
-      if (execute) {
-        widget.onSubmitted?.call();
-        Navigator.of(context).pop();
-        messenger.showSnackBar(
-          SnackBar(
-            content: Text(message),
-            backgroundColor: const Color(0xFF0D9488),
-            duration: const Duration(seconds: 5),
-          ),
+      _preCreateEntryIds = baseline;
+      var requestCompleted = false;
+      try {
+        final response = await widget.appState.postJson(
+          '/api/menu-workspace/new-item',
+          body: fields,
         );
-        return;
+        requestCompleted = true;
+        final saved = _parseSavedEntry(response);
+        _markSaved(saved, created: true);
+      } catch (error) {
+        if (!mounted) return;
+        final uncertain =
+            requestCompleted || _hasUncertainWorkspaceWriteOutcome(error);
+        setState(() {
+          _isSaving = false;
+          _error = uncertain
+              ? '저장 응답을 확인하지 못했습니다. 중복 저장하지 말고 작업 목록에서 먼저 저장 여부를 확인하세요.'
+              : error.toString().replaceFirst('Exception: ', '');
+          _createOutcomeUnknown = uncertain;
+          _pendingCreateBody = uncertain ? fields : null;
+          _noMatchReconcileChecks = 0;
+          _retryCreateAllowed = false;
+        });
       }
+      return;
+    }
 
-      setState(() {
-        _lastPreviewMessage = message;
-        _lastPreviewSavedCode = savedItemCode;
-        _lastResolvedCategories = task.resolvedCategories;
-        _statusMessage = '';
-      });
-      messenger.showSnackBar(
-        SnackBar(
-          content: Text(message),
-          duration: const Duration(seconds: 4),
-        ),
+    final body = buildRevisionGuardedMenuEntryUpdateBody(
+      fields: fields,
+      expectedRevision: editing.revision,
+    );
+    setState(() {
+      _isSaving = true;
+      _error = '';
+      _serverConflict = false;
+    });
+    var requestCompleted = false;
+    try {
+      final response = await widget.appState.postJson(
+        '/api/menu-workspace/entries/${editing.id}',
+        body: body,
+        method: 'PATCH',
       );
+      requestCompleted = true;
+      final saved = _parseSavedEntry(response, expectedId: editing.id);
+      _markSaved(saved, created: false);
+    } catch (error) {
+      if (!mounted) return;
+      final uncertain =
+          requestCompleted || _hasUncertainWorkspaceWriteOutcome(error);
+      setState(() {
+        _isSaving = false;
+        _error = uncertain
+            ? '수정 응답을 확인하지 못했습니다. 다시 저장하기 전에 최신 버전을 확인하세요.'
+            : error.toString().replaceFirst('Exception: ', '');
+        _updateOutcomeUnknown = uncertain;
+        _pendingUpdateBody = _updateOutcomeUnknown ? body : null;
+        _serverConflict = _isWorkspaceWriteConflict(error);
+      });
+    }
+  }
+
+  void _markSaved(MenuEntry entry, {required bool created}) {
+    if (!mounted) return;
+    setState(() {
+      _existingEntry = entry;
+      _savedEntry = entry;
+      _reviewFields = const {};
+      _preparedPlan = null;
+      _reconcileMatches = const [];
+      _latestEntry = null;
+      _step = 2;
+      _isSaving = false;
+      _isReconciling = false;
+      _formDirty = false;
+      _createOutcomeUnknown = false;
+      _updateOutcomeUnknown = false;
+      _retryCreateAllowed = false;
+      _retryUpdateAllowed = false;
+      _pendingCreateBody = null;
+      _pendingUpdateBody = null;
+      _serverConflict = false;
+      _error = '';
+      _reconcileMessage = created
+          ? '등록 초안을 저장했습니다. 아직 POS에는 반영되지 않았습니다.'
+          : '등록 초안을 수정했습니다. 아직 POS에는 반영되지 않았습니다.';
+    });
+    widget.onSubmitted?.call();
+  }
+
+  bool _entryMatchesBody(MenuEntry entry, Map<String, dynamic> body) {
+    final values = <String, dynamic>{
+      'item_name': entry.itemName,
+      'target_price': entry.targetPrice,
+      'major_category': entry.majorCategory,
+      'middle_category': entry.middleCategory,
+      'minor_category': entry.minorCategory,
+      'unit_name': entry.unitName,
+      'tax_mode': entry.taxMode,
+      'use_mode': entry.useMode,
+      'stock_mode': entry.stockMode,
+      'barcode': entry.barcode,
+      'description': entry.description,
+      'notes': entry.notes,
+      'cost_price': entry.costPrice,
+      'supply_price': entry.supplyPrice,
+    };
+    for (final field in body.keys) {
+      if (field == 'expected_revision') continue;
+      if (values[field] != body[field]) return false;
+    }
+    return true;
+  }
+
+  Future<void> _reconcileSave() async {
+    if (_isReconciling) return;
+    setState(() {
+      _isReconciling = true;
+      _reconcileMatches = const [];
+      _reconcileMessage = '작업 목록에서 저장 결과를 확인하고 있습니다.';
+    });
+    try {
+      final snapshot = await _fetchWorkspaceSnapshot();
+      if (!mounted) return;
+      if (_createOutcomeUnknown) {
+        final body = _pendingCreateBody;
+        if (body == null) throw const ApiException('확인할 신규 메뉴 요청이 없습니다.');
+        final matches = snapshot.entries
+            .where((entry) =>
+                entry.kind == 'new_item' &&
+                !_preCreateEntryIds.contains(entry.id) &&
+                _entryMatchesBody(entry, body))
+            .toList(growable: false);
+        setState(() {
+          _isReconciling = false;
+          _reconcileMatches = matches;
+          if (matches.isNotEmpty) {
+            _noMatchReconcileChecks = 0;
+            _reconcileMessage =
+                '입력 내용과 일치하는 새 초안이 있습니다. 저장됐다고 자동 판단하지 않습니다. 아래 항목을 확인한 뒤 선택하세요.';
+          } else {
+            _noMatchReconcileChecks++;
+            _retryCreateAllowed = _noMatchReconcileChecks >= 2;
+            _reconcileMessage = _retryCreateAllowed
+                ? '최신 작업 목록 2회에서 새 초안을 찾지 못했습니다. 요청이 처리 중일 가능성도 있으니 확인 후에만 다시 저장하세요.'
+                : '새 초안을 아직 찾지 못했습니다. 잠시 후 한 번 더 확인하세요. 확인 전에는 저장을 다시 요청하지 마세요.';
+          }
+        });
+      } else if (_updateOutcomeUnknown || _serverConflict) {
+        final editing = _existingEntry;
+        if (editing == null) {
+          throw const ApiException('확인할 수정 항목이 없습니다.');
+        }
+        MenuEntry? latest;
+        for (final item in snapshot.entries) {
+          if (item.id == editing.id) {
+            latest = item;
+            break;
+          }
+        }
+        if (latest == null) {
+          setState(() {
+            _isReconciling = false;
+            _latestEntry = null;
+            _reconcileMessage = '항목을 찾지 못했습니다. 작업 목록을 새로고침해 확인하세요.';
+          });
+          return;
+        }
+        final latestEntry = latest;
+        final pending = _pendingUpdateBody;
+        if (pending != null && _entryMatchesBody(latestEntry, pending)) {
+          _markSaved(latestEntry, created: false);
+          return;
+        }
+        setState(() {
+          _isReconciling = false;
+          _latestEntry = latestEntry;
+          _retryUpdateAllowed = latestEntry.revision == editing.revision &&
+              !latestEntry.isSubmissionReserved;
+          _reconcileMessage = _retryUpdateAllowed
+              ? '서버 항목의 revision이 바뀌지 않아 수정은 저장되지 않은 것으로 보입니다. 최신 내용을 유지한 채 다시 시도할 수 있습니다.'
+              : '서버 항목이 다른 요청으로 변경되었습니다. 최신 내용을 불러와 확인한 뒤 다시 편집하세요.';
+        });
+      }
     } catch (error) {
       if (!mounted) return;
       setState(() {
-        _error = error.toString().replaceFirst('Exception: ', '');
-        _statusMessage = '';
+        _isReconciling = false;
+        _reconcileMessage =
+            '저장 결과를 확인하지 못했습니다. 다시 확인하기 전에는 요청을 반복하지 마세요. $error';
       });
-    } finally {
-      if (mounted) {
-        setState(() => _isSubmitting = false);
-      }
     }
+  }
+
+  Future<void> _useReconciledEntry(MenuEntry entry) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('이 초안을 이어서 사용'),
+        content: Text(
+          '“${entry.itemName}” (ID ${entry.id}, revision ${entry.revision})이 입력 내용과 일치합니다. 작업 목록에서 확인한 항목을 이어서 사용합니다.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: const Text('취소'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(dialogContext, true),
+            child: const Text('이 초안 사용'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed == true) _markSaved(entry, created: true);
+  }
+
+  void _loadLatestEntry(MenuEntry entry) {
+    setState(() {
+      _existingEntry = entry;
+      _savedEntry = null;
+      _latestEntry = null;
+      _updateOutcomeUnknown = false;
+      _serverConflict = false;
+      _retryUpdateAllowed = false;
+      _pendingUpdateBody = null;
+      _formDirty = false;
+      _preparedPlan = null;
+      _error = '';
+      _reconcileMessage = '최신 서버 내용을 불러왔습니다. 수정한 내용을 다시 확인하세요.';
+      _step = 1;
+      _itemNameController.text = entry.itemName;
+      _targetPriceController.text = entry.targetPrice?.toString() ?? '';
+      _costPriceController.text = entry.costPrice?.toString() ?? '';
+      _supplyPriceController.text = entry.supplyPrice?.toString() ?? '';
+      _barcodeController.text = entry.barcode;
+      _descriptionController.text = entry.description;
+      _notesController.text = entry.notes;
+      _majorCategory = entry.majorCategory;
+      _middleCategory = entry.middleCategory;
+      _minorCategory = entry.minorCategory;
+      _unitName = entry.unitName;
+      _taxMode = entry.taxMode;
+      _useMode = entry.useMode;
+      _stockMode = entry.stockMode;
+    });
+  }
+
+  Future<void> _prepareRegistration() async {
+    final entry = _savedEntry;
+    if (entry == null || _isPreparing) return;
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('등록 준비 확인'),
+        content: const Text(
+          '현재 EasyPOS 분류 카탈로그와 초안 내용을 서버에서 검증합니다. 이 단계는 POS에 상품·가격·터치키를 쓰지 않습니다.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: const Text('취소'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(dialogContext, true),
+            child: const Text('준비 검증'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+    setState(() {
+      _isPreparing = true;
+      _error = '';
+      _preparedPlan = null;
+    });
+    try {
+      final options = await _fetchFormOptions();
+      final catalog = options.categoryOptions;
+      if (!catalog.hasExecutionScope ||
+          !catalog.containsPath(
+            entry.majorCategory,
+            entry.middleCategory,
+            entry.minorCategory,
+          )) {
+        throw const ApiException(
+          '최신 EasyPOS 분류 카탈로그와 등록 범위를 확인할 수 없습니다. 초안을 확인한 뒤 다시 시도하세요.',
+        );
+      }
+      final response = await widget.appState.postJson(
+        '/api/easypos/product-create/plan',
+        body: {
+          'tenant_id': catalog.tenantId,
+          'shop_no': catalog.shopNo,
+          'environment': catalog.environment,
+          'credential_ref': catalog.credentialRef,
+          'upstream_origin': catalog.upstreamOrigin,
+          'entry_id': entry.id,
+          'entry_revision': entry.revision,
+          'payload': {
+            'item_code': entry.itemCode,
+            'item_name': entry.itemName,
+            'target_price': entry.targetPrice,
+            'barcode': entry.barcode,
+            'unit_name': entry.unitName,
+            'tax_mode': entry.taxMode,
+            'use_mode': entry.useMode,
+            'stock_mode': entry.stockMode,
+            'cost_price': entry.costPrice,
+            'supply_price': entry.supplyPrice,
+          },
+          'major': entry.majorCategory,
+          'middle': entry.middleCategory,
+          'minor': entry.minorCategory,
+          'catalog_version': catalog.snapshotId,
+          'form_contract_version': 'wizard-v1',
+        },
+      );
+      final plan = asMap(response['plan']);
+      if (plan.isEmpty || asString(plan['plan_id']).trim().isEmpty) {
+        throw const ApiException('서버가 등록 준비 계획을 반환하지 않았습니다.');
+      }
+      if (!mounted) return;
+      setState(() {
+        _formOptions = options;
+        _preparedPlan = plan;
+        _isPreparing = false;
+        _reconcileMessage =
+            '등록 준비 검증을 마쳤습니다. POS에는 아직 반영되지 않았습니다.';
+      });
+    } catch (error) {
+      if (!mounted) return;
+      setState(() {
+        _isPreparing = false;
+        _error = error.toString().replaceFirst('Exception: ', '');
+      });
+    }
+  }
+
+  Future<void> _confirmLeave() async {
+    if (_leavePromptOpen) return;
+    _leavePromptOpen = true;
+    final uncertain = _createOutcomeUnknown || _updateOutcomeUnknown;
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: Text(uncertain ? '저장 결과를 확인하세요' : '작성 중인 내용이 있어요'),
+        content: Text(
+          uncertain
+              ? '저장 응답이 불확실합니다. 나간 뒤 작업 목록을 새로고침해 초안이 저장됐는지 확인하세요. 확인 전에는 같은 요청을 반복하지 마세요.'
+              : '저장하지 않은 변경 내용이 사라집니다. 나갈까요?',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: const Text('계속 편집'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(dialogContext, true),
+            child: const Text('나가기'),
+          ),
+        ],
+      ),
+    );
+    _leavePromptOpen = false;
+    if (confirmed == true && mounted) {
+      Navigator.of(context).pop(_savedEntry);
+    }
+  }
+
+  List<String> _selectOptions(String key, String current, String fallback) {
+    final values = _formOptions?.optionValues(key) ?? const <String>[];
+    final result = <String>[...values];
+    if (current.trim().isNotEmpty && !result.contains(current.trim())) {
+      result.add(current.trim());
+    }
+    if (result.isEmpty && fallback.isNotEmpty) result.add(fallback);
+    return result;
+  }
+
+  Widget _selectField({
+    required String label,
+    required String value,
+    required List<String> options,
+    required ValueChanged<String> onChanged,
+    bool enabled = true,
+  }) {
+    final choices = options.toSet().toList(growable: false);
+    return DropdownButtonFormField<String>(
+      key: ValueKey<String>('$label:${choices.join('\u0000')}:$value'),
+      initialValue: choices.contains(value) ? value : null,
+      decoration: InputDecoration(
+        labelText: label,
+        border: const OutlineInputBorder(),
+      ),
+      items: choices
+          .map((option) => DropdownMenuItem<String>(
+                value: option,
+                child: Text(option),
+              ))
+          .toList(growable: false),
+      onChanged: enabled && choices.isNotEmpty
+          ? (next) {
+              if (next == null) return;
+              setState(() {
+                onChanged(next);
+                _markFormChanged();
+              });
+            }
+          : null,
+    );
+  }
+
+  Widget _textField({
+    required String label,
+    required TextEditingController controller,
+    TextInputType? keyboardType,
+    int maxLines = 1,
+    String? helperText,
+    bool enabled = true,
+  }) {
+    return TextField(
+      controller: controller,
+      enabled: enabled,
+      keyboardType: keyboardType,
+      minLines: maxLines == 1 ? null : maxLines,
+      maxLines: maxLines,
+      textInputAction: maxLines == 1 ? TextInputAction.next : TextInputAction.newline,
+      decoration: InputDecoration(
+        labelText: label,
+        helperText: helperText,
+        border: const OutlineInputBorder(),
+      ),
+      onChanged: (_) => setState(_markFormChanged),
+    );
   }
 
   @override
   Widget build(BuildContext context) {
-    final isBusy = _isSubmitting;
-    return Scaffold(
+    final isBusy = _isSaving || _isPreparing || _isReconciling;
+    final entry = _savedEntry;
+    final catalog = _formOptions?.categoryOptions;
+    final majorOptions = catalog?.majorOptions ?? const <String>[];
+    final middleOptions = _middleCategoryOptions;
+    final minorOptions = _minorCategoryOptions;
+    final planId = asString(_preparedPlan?['plan_id']);
+    final warnings = (_preparedPlan?['validation_warnings'] as List? ?? const [])
+        .map((warning) => warning.toString())
+        .toList(growable: false);
+    final reviewAdditionalInfo = <String>[
+      if (asString(_reviewFields['barcode']).isNotEmpty)
+        '바코드 ${_reviewFields['barcode']}',
+      if (_reviewFields['cost_price'] != null)
+        '원가 ${_won(asInt(_reviewFields['cost_price']))}원',
+      if (_reviewFields['supply_price'] != null)
+        '공급가 ${_won(asInt(_reviewFields['supply_price']))}원',
+    ];
+    return PopScope<MenuEntry?>(
+      canPop: !_formDirty && !_createOutcomeUnknown && !_updateOutcomeUnknown,
+      onPopInvokedWithResult: (didPop, _) {
+        if (!didPop) unawaited(_confirmLeave());
+      },
+      child: Scaffold(
       appBar: AppBar(
-        title: const Text('신규 메뉴'),
+        title: Text(_isEditing ? '등록 초안 편집' : '새 메뉴 등록'),
+        actions: [
+          IconButton(
+            tooltip: '분류 목록 새로고침',
+            onPressed: _optionsLoading || isBusy ? null : _loadFormOptions,
+            icon: const Icon(Icons.refresh),
+          ),
+        ],
         bottom: PreferredSize(
           preferredSize: const Size.fromHeight(1),
           child: Container(height: 1, color: const Color(0xFFE2E8F0)),
         ),
       ),
-      body: SafeArea(
-        child: ListView(
-          padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
-          children: [
-            const _InlineNotice(
-              backgroundColor: Color(0xFFF0FDFA),
-              borderColor: Color(0xFF99F6E4),
-              textColor: Color(0xFF0F766E),
-              icon: Icons.info_outline,
-              message:
-                  '미리보기는 저장 가능성만 확인하고, 등록은 백엔드 신규 메뉴 추가 API를 통해 실제 저장을 시도합니다. 분류는 기존 값만 드롭다운에서 선택합니다.',
-            ),
+      body: ListView(
+        padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
+        children: [
+          Row(
+            children: [
+              _StepBadge(number: 1, label: '정보', active: _step == 1),
+              const Expanded(child: Divider()),
+              _StepBadge(number: 2, label: '확인', active: _step == 2),
+            ],
+          ),
+          const SizedBox(height: 16),
+          const _InlineNotice(
+            backgroundColor: Color(0xFFFFF7ED),
+            borderColor: Color(0xFFFED7AA),
+            textColor: Color(0xFF9A3412),
+            icon: Icons.lock_outline,
+            message:
+                '이 화면은 CafeBridge 등록 초안만 저장하고 서버 카탈로그로 등록 준비를 검증합니다. POS 상품 등록·가격 변경·터치키 반영은 실행하지 않습니다.',
+          ),
+          if (_optionsLoading) ...[
             const SizedBox(height: 16),
-            TextField(
+            const LinearProgressIndicator(),
+            const SizedBox(height: 8),
+            const Text('최신 EasyPOS 분류와 등록 기본값을 확인하고 있습니다.'),
+          ],
+          if (catalog != null && !catalog.available) ...[
+            const SizedBox(height: 12),
+            _InlineNotice(
+              backgroundColor: const Color(0xFFFFF7ED),
+              borderColor: const Color(0xFFFED7AA),
+              textColor: const Color(0xFF9A3412),
+              icon: Icons.warning_amber_outlined,
+              message: 'EasyPOS 분류 목록을 사용할 수 없습니다. ${catalog.snapshotId.isEmpty ? '연결을 확인하고 새로고침해 주세요.' : '현재 분류를 확인해 주세요.'}',
+            ),
+          ],
+          if (_step == 1) ...[
+            const SizedBox(height: 16),
+            Text(
+              _isEditing ? '등록 초안 수정' : '새 메뉴 정보',
+              style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w800),
+            ),
+            const SizedBox(height: 12),
+            _textField(
+              label: '상품명 *',
               controller: _itemNameController,
-              textInputAction: TextInputAction.next,
-              decoration: const InputDecoration(
-                labelText: '상품명 *',
-                border: OutlineInputBorder(),
-              ),
+              enabled: !isBusy,
             ),
             const SizedBox(height: 12),
-            Row(
-              children: [
-                Expanded(
-                  child: TextField(
-                    controller: _itemCodeController,
-                    textInputAction: TextInputAction.next,
-                    decoration: const InputDecoration(
-                      labelText: '상품코드',
-                      border: OutlineInputBorder(),
-                    ),
-                  ),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: TextField(
-                    controller: _unitNameController,
-                    textInputAction: TextInputAction.next,
-                    decoration: const InputDecoration(
-                      labelText: '단위명칭',
-                      border: OutlineInputBorder(),
-                    ),
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 12),
-            Row(
-              children: [
-                Expanded(
-                  child: DropdownButtonFormField<String>(
-                    initialValue:
-                        _majorCategory.isEmpty ? null : _majorCategory,
-                    hint: const Text('대분류 선택'),
-                    decoration: const InputDecoration(
-                      labelText: '대분류 *',
-                      border: OutlineInputBorder(),
-                    ),
-                    items: widget.categoryCatalog.majorOptions
-                        .map(
-                          (option) => DropdownMenuItem<String>(
-                              value: option, child: Text(option)),
-                        )
-                        .toList(growable: false),
-                    onChanged: isBusy ? null : _onMajorCategoryChanged,
-                  ),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: DropdownButtonFormField<String>(
-                    initialValue:
-                        _middleCategory.isEmpty ? null : _middleCategory,
-                    hint: Text(_middleCategoryHint),
-                    disabledHint: Text(_middleCategoryHint),
-                    decoration: const InputDecoration(
-                      labelText: '중분류 *',
-                      border: OutlineInputBorder(),
-                    ),
-                    items: _middleCategoryOptions
-                        .map((option) => DropdownMenuItem<String>(
-                            value: option, child: Text(option)))
-                        .toList(growable: false),
-                    onChanged: isBusy ||
-                            _majorCategory.trim().isEmpty ||
-                            _middleCategoryOptions.isEmpty
-                        ? null
-                        : _onMiddleCategoryChanged,
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 12),
-            DropdownButtonFormField<String>(
-              initialValue: _minorCategory.isEmpty ? null : _minorCategory,
-              hint: Text(_minorCategoryHint),
-              disabledHint: Text(_minorCategoryHint),
-              decoration: const InputDecoration(
-                labelText: '소분류 *',
-                border: OutlineInputBorder(),
-              ),
-              items: _minorCategoryOptions
-                  .map((option) => DropdownMenuItem<String>(
-                      value: option, child: Text(option)))
-                  .toList(growable: false),
-              onChanged: isBusy ||
-                      _middleCategory.trim().isEmpty ||
-                      _minorCategoryOptions.isEmpty
-                  ? null
-                  : (value) =>
-                      setState(() => _minorCategory = (value ?? '').trim()),
-            ),
-            const SizedBox(height: 12),
-            Row(
-              children: [
-                Expanded(
-                  child: TextField(
-                    controller: _targetPriceController,
-                    keyboardType: TextInputType.number,
-                    textInputAction: TextInputAction.next,
-                    decoration: const InputDecoration(
-                      labelText: '판매가 *',
-                      suffixText: '원',
-                      border: OutlineInputBorder(),
-                    ),
-                  ),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: TextField(
-                    controller: _costPriceController,
-                    keyboardType: TextInputType.number,
-                    textInputAction: TextInputAction.next,
-                    decoration: const InputDecoration(
-                      labelText: '원가',
-                      suffixText: '원',
-                      border: OutlineInputBorder(),
-                    ),
-                  ),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: TextField(
-                    controller: _supplyPriceController,
-                    keyboardType: TextInputType.number,
-                    textInputAction: TextInputAction.next,
-                    decoration: const InputDecoration(
-                      labelText: '공급가',
-                      suffixText: '원',
-                      border: OutlineInputBorder(),
-                    ),
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 12),
-            Row(
-              children: [
-                Expanded(
-                  child: DropdownButtonFormField<String>(
-                    initialValue: _taxMode,
-                    decoration: const InputDecoration(
-                      labelText: '과세유무',
-                      border: OutlineInputBorder(),
-                    ),
-                    items: const [
-                      DropdownMenuItem(value: 'Y', child: Text('과세(Y)')),
-                      DropdownMenuItem(value: 'N', child: Text('면세(N)')),
-                    ],
-                    onChanged: isBusy
-                        ? null
-                        : (value) =>
-                            setState(() => _taxMode = value ?? _taxMode),
-                  ),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: DropdownButtonFormField<String>(
-                    initialValue: _useMode,
-                    decoration: const InputDecoration(
-                      labelText: '사용구분',
-                      border: OutlineInputBorder(),
-                    ),
-                    items: const [
-                      DropdownMenuItem(value: 'Y', child: Text('사용(Y)')),
-                      DropdownMenuItem(value: 'N', child: Text('미사용(N)')),
-                    ],
-                    onChanged: isBusy
-                        ? null
-                        : (value) =>
-                            setState(() => _useMode = value ?? _useMode),
-                  ),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: DropdownButtonFormField<String>(
-                    initialValue: _stockMode,
-                    decoration: const InputDecoration(
-                      labelText: '재고관리',
-                      border: OutlineInputBorder(),
-                    ),
-                    items: const [
-                      DropdownMenuItem(value: 'Y', child: Text('관리(Y)')),
-                      DropdownMenuItem(value: 'N', child: Text('미관리(N)')),
-                    ],
-                    onChanged: isBusy
-                        ? null
-                        : (value) =>
-                            setState(() => _stockMode = value ?? _stockMode),
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 12),
-            TextField(
-              controller: _barcodeController,
+            _textField(
+              label: '판매가 *',
+              controller: _targetPriceController,
               keyboardType: TextInputType.number,
-              textInputAction: TextInputAction.next,
-              decoration: const InputDecoration(
-                labelText: '바코드',
-                border: OutlineInputBorder(),
-              ),
+              enabled: !isBusy,
             ),
             const SizedBox(height: 12),
-            TextField(
-              controller: _descriptionController,
-              minLines: 2,
-              maxLines: 3,
-              decoration: const InputDecoration(
-                labelText: '상품설명',
-                border: OutlineInputBorder(),
-                alignLabelWithHint: true,
-              ),
+            _selectField(
+              label: '대분류 *',
+              value: _majorCategory,
+              options: majorOptions,
+              enabled: !isBusy && (catalog?.available ?? false),
+              onChanged: _onMajorCategoryChanged,
             ),
             const SizedBox(height: 12),
-            TextField(
-              controller: _reasonController,
-              minLines: 2,
-              maxLines: 3,
-              decoration: const InputDecoration(
-                labelText: '메모 / 요청 사유',
-                border: OutlineInputBorder(),
-                alignLabelWithHint: true,
-              ),
+            _selectField(
+              label: '중분류 *',
+              value: _middleCategory,
+              options: middleOptions,
+              enabled: !isBusy && _majorCategory.isNotEmpty,
+              onChanged: _onMiddleCategoryChanged,
             ),
-            if (_lastPreviewMessage.isNotEmpty) ...[
-              const SizedBox(height: 12),
-              _InlineNotice(
-                backgroundColor: const Color(0xFFF0FDF4),
-                borderColor: const Color(0xFF86EFAC),
-                textColor: const Color(0xFF166534),
-                icon: Icons.check_circle_outline,
-                message: _lastPreviewMessage,
-              ),
-              if (_lastResolvedCategories.isNotEmpty) ...[
+            const SizedBox(height: 12),
+            _selectField(
+              label: '소분류 *',
+              value: _minorCategory,
+              options: minorOptions,
+              enabled: !isBusy && _middleCategory.isNotEmpty,
+              onChanged: (value) => _minorCategory = value,
+            ),
+            const SizedBox(height: 12),
+            ExpansionTile(
+              tilePadding: EdgeInsets.zero,
+              title: const Text('추가 정보'),
+              subtitle: const Text('원가 · 공급가 · 바코드 · 과세 · 단위'),
+              children: [
+                _textField(
+                  label: '원가',
+                  controller: _costPriceController,
+                  keyboardType: TextInputType.number,
+                  helperText: _isEditing ? '비우면 기존 값이 유지됩니다.' : null,
+                  enabled: !isBusy,
+                ),
                 const SizedBox(height: 12),
-                Panel(
-                  title: '해석된 분류 코드',
-                  child: Column(
-                    children: [
-                      _InfoRow(
-                        label: '대분류',
-                        value: _categoryDisplayValue(
-                          _lastResolvedCategories['major_category']?.toString(),
-                          _lastResolvedCategories['major_code']?.toString(),
-                        ),
+                _textField(
+                  label: '공급가',
+                  controller: _supplyPriceController,
+                  keyboardType: TextInputType.number,
+                  helperText: _isEditing ? '비우면 기존 값이 유지됩니다.' : null,
+                  enabled: !isBusy,
+                ),
+                const SizedBox(height: 12),
+                _textField(
+                  label: '바코드',
+                  controller: _barcodeController,
+                  keyboardType: TextInputType.text,
+                  enabled: !isBusy,
+                ),
+                const SizedBox(height: 12),
+                _textField(
+                  label: '상품 설명',
+                  controller: _descriptionController,
+                  maxLines: 2,
+                  enabled: !isBusy,
+                ),
+                const SizedBox(height: 12),
+                _selectField(
+                  label: '단위',
+                  value: _unitName,
+                  options: _selectOptions('unit_name', _unitName, 'EA'),
+                  enabled: !isBusy,
+                  onChanged: (value) => _unitName = value,
+                ),
+                const SizedBox(height: 12),
+                _selectField(
+                  label: '과세',
+                  value: _taxMode,
+                  options: _selectOptions('tax_mode', _taxMode, '과세'),
+                  enabled: !isBusy,
+                  onChanged: (value) => _taxMode = value,
+                ),
+                const SizedBox(height: 12),
+                _selectField(
+                  label: '사용',
+                  value: _useMode,
+                  options: _selectOptions('use_mode', _useMode, '사용'),
+                  enabled: !isBusy,
+                  onChanged: (value) => _useMode = value,
+                ),
+                const SizedBox(height: 12),
+                _selectField(
+                  label: '재고 관리',
+                  value: _stockMode,
+                  options: _selectOptions('stock_mode', _stockMode, 'N'),
+                  enabled: !isBusy,
+                  onChanged: (value) => _stockMode = value,
+                ),
+                const SizedBox(height: 12),
+                _textField(
+                  label: '내부 메모',
+                  controller: _notesController,
+                  maxLines: 2,
+                  enabled: !isBusy,
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            Text(
+              '상품코드는 등록 후 EasyPOS가 관리합니다. 이 초안에서 상품코드를 지정하지 않습니다.',
+              style: TextStyle(
+                fontSize: 12,
+                color: Theme.of(context).colorScheme.onSurfaceVariant,
+              ),
+            ),
+          ] else ...[
+            const SizedBox(height: 16),
+            Text(
+              entry == null ? '저장 전 최종 확인' : '등록 초안 확인',
+              style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w800),
+            ),
+            const SizedBox(height: 12),
+            if (_savedEntry == null) ...[
+              _InfoRow(
+                label: '상품명',
+                value: asString(_reviewFields['item_name']),
+              ),
+              _InfoRow(
+                label: '판매가',
+                value: '${_won(asInt(_reviewFields['target_price']))}원',
+              ),
+              _InfoRow(
+                label: '분류',
+                value: [
+                  _reviewFields['major_category'],
+                  _reviewFields['middle_category'],
+                  _reviewFields['minor_category'],
+                ].where((value) => value != null && value.toString().isNotEmpty).join(' › '),
+              ),
+              _InfoRow(
+                label: '추가 정보',
+                value: reviewAdditionalInfo.isEmpty
+                    ? '-'
+                    : reviewAdditionalInfo.join(' · '),
+              ),
+              if (_reconcileMessage.isNotEmpty &&
+                  (_createOutcomeUnknown ||
+                      _updateOutcomeUnknown ||
+                      _serverConflict)) ...[
+                const SizedBox(height: 12),
+                _InlineNotice(
+                  backgroundColor: const Color(0xFFFFF7ED),
+                  borderColor: const Color(0xFFFED7AA),
+                  textColor: const Color(0xFF9A3412),
+                  icon: Icons.sync_problem_outlined,
+                  message: _reconcileMessage,
+                ),
+              ],
+              if (_reconcileMatches.isNotEmpty) ...[
+                const SizedBox(height: 12),
+                for (final match in _reconcileMatches)
+                  Card(
+                    child: ListTile(
+                      title: Text(match.itemName),
+                      subtitle: Text(
+                        'ID ${match.id} · revision ${match.revision} · ${_won(match.targetPrice ?? 0)}원',
                       ),
-                      _InfoRow(
-                        label: '중분류',
-                        value: _categoryDisplayValue(
-                          _lastResolvedCategories['middle_category']
-                              ?.toString(),
-                          (_lastResolvedCategories['middle_code_full'] ??
-                                  _lastResolvedCategories['middle_code'])
-                              ?.toString(),
-                        ),
+                      trailing: const Icon(Icons.chevron_right),
+                      onTap: isBusy ? null : () => _useReconciledEntry(match),
+                    ),
+                  ),
+              ],
+              if (_latestEntry != null &&
+                  (_updateOutcomeUnknown || _serverConflict)) ...[
+                const SizedBox(height: 12),
+                Card(
+                  child: ListTile(
+                    title: const Text('최신 서버 버전'),
+                    subtitle: Text(
+                      'revision ${_latestEntry!.revision} · ${_latestEntry!.itemName}',
+                    ),
+                    trailing: const Icon(Icons.refresh),
+                    onTap:
+                        isBusy ? null : () => _loadLatestEntry(_latestEntry!),
+                  ),
+                ),
+              ],
+              const SizedBox(height: 12),
+              const _InlineNotice(
+                backgroundColor: Color(0xFFF0FDFA),
+                borderColor: Color(0xFF99F6E4),
+                textColor: Color(0xFF0F766E),
+                icon: Icons.info_outline,
+                message: '저장 후에도 상태는 초안입니다. POS에는 아무것도 반영되지 않습니다.',
+              ),
+            ] else ...[
+              Panel(
+                title: entry.itemName,
+                subtitle:
+                    '초안 ID ${entry.id} · revision ${entry.revision} · ${_statusLabel(entry.status)}',
+                child: Column(
+                  children: [
+                    _InfoRow(
+                      label: '판매가',
+                      value: entry.targetPrice == null
+                          ? '-'
+                          : '${_won(entry.targetPrice!)}원',
+                    ),
+                    _InfoRow(
+                      label: '분류',
+                      value: [
+                        entry.majorCategory,
+                        entry.middleCategory,
+                        entry.minorCategory,
+                      ].where((value) => value.isNotEmpty).join(' › '),
+                    ),
+                    _InfoRow(
+                      label: '저장 상태',
+                      value: 'CafeBridge 초안 · POS 미반영',
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 12),
+              if (_reconcileMessage.isNotEmpty)
+                _InlineNotice(
+                  backgroundColor: _createOutcomeUnknown || _updateOutcomeUnknown
+                      ? const Color(0xFFFFF7ED)
+                      : const Color(0xFFF0FDFA),
+                  borderColor: _createOutcomeUnknown || _updateOutcomeUnknown
+                      ? const Color(0xFFFED7AA)
+                      : const Color(0xFF99F6E4),
+                  textColor: _createOutcomeUnknown || _updateOutcomeUnknown
+                      ? const Color(0xFF9A3412)
+                      : const Color(0xFF0F766E),
+                  icon: _createOutcomeUnknown || _updateOutcomeUnknown
+                      ? Icons.sync_problem_outlined
+                      : Icons.check_circle_outline,
+                  message: _reconcileMessage,
+                ),
+              if (_preparedPlan != null) ...[
+                const SizedBox(height: 12),
+                _InlineNotice(
+                  backgroundColor: const Color(0xFFF0FDFA),
+                  borderColor: const Color(0xFF99F6E4),
+                  textColor: const Color(0xFF0F766E),
+                  icon: Icons.verified_outlined,
+                  message: warnings.isEmpty
+                      ? '등록 준비 검증을 마쳤습니다. 아직 POS에 반영되지 않았습니다.'
+                      : '등록 준비 계획에 확인할 내용이 있습니다: ${warnings.join(' ')}',
+                ),
+                if (planId.isNotEmpty)
+                  SelectableText('준비 번호: $planId'),
+              ],
+              if (_reconcileMatches.isNotEmpty) ...[
+                const SizedBox(height: 12),
+                for (final match in _reconcileMatches)
+                  Card(
+                    child: ListTile(
+                      title: Text(match.itemName),
+                      subtitle: Text(
+                        'ID ${match.id} · revision ${match.revision} · ${_won(match.targetPrice ?? 0)}원',
                       ),
-                      _InfoRow(
-                        label: '소분류',
-                        value: _categoryDisplayValue(
-                          _lastResolvedCategories['minor_category']?.toString(),
-                          (_lastResolvedCategories['minor_code_full'] ??
-                                  _lastResolvedCategories['minor_code'])
-                              ?.toString(),
-                        ),
-                      ),
-                      if (_lastPreviewSavedCode.isNotEmpty)
-                        _InfoRow(label: '저장 코드', value: _lastPreviewSavedCode),
-                    ],
+                      trailing: const Icon(Icons.chevron_right),
+                      onTap: isBusy ? null : () => _useReconciledEntry(match),
+                    ),
+                  ),
+              ],
+              if (_latestEntry != null &&
+                  (_updateOutcomeUnknown || _serverConflict)) ...[
+                const SizedBox(height: 12),
+                Card(
+                  child: ListTile(
+                    title: const Text('최신 서버 버전'),
+                    subtitle: Text(
+                      'revision ${_latestEntry!.revision} · ${_latestEntry!.itemName}',
+                    ),
+                    trailing: const Icon(Icons.refresh),
+                    onTap: isBusy ? null : () => _loadLatestEntry(_latestEntry!),
                   ),
                 ),
               ],
@@ -1742,17 +2245,12 @@ class _NewMenuAddScreenState extends State<_NewMenuAddScreen> {
                 style: const TextStyle(color: Color(0xFFDC2626), fontSize: 13),
               ),
             ],
-            if (_statusMessage.isNotEmpty) ...[
+            if (_isSaving || _isPreparing || _isReconciling) ...[
               const SizedBox(height: 14),
               const LinearProgressIndicator(minHeight: 3),
-              const SizedBox(height: 8),
-              Text(
-                _statusMessage,
-                style: const TextStyle(fontSize: 12, color: Color(0xFF64748B)),
-              ),
             ],
           ],
-        ),
+        ],
       ),
       bottomNavigationBar: SafeArea(
         top: false,
@@ -1761,34 +2259,236 @@ class _NewMenuAddScreenState extends State<_NewMenuAddScreen> {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              const Text(
-                '모바일에서는 신규 상품을 실제 등록하지 않습니다. 실제 실행은 웹 관리자 화면을 이용하세요.',
-                textAlign: TextAlign.center,
-                style: TextStyle(color: Color(0xFF92400E)),
-              ),
-              const SizedBox(height: 8),
-              OutlinedButton(
-                onPressed: isBusy ? null : () => _submit(execute: false),
-                style: OutlinedButton.styleFrom(
-                  minimumSize: const Size(double.infinity, 50),
-                ),
-                child: Text(isBusy ? '처리 중...' : '미리보기'),
-              ),
+              if (_step == 1)
+                FilledButton(
+                  onPressed: isBusy ||
+                          _optionsLoading ||
+                          _existingEntryLocked ||
+                          !(catalog?.available ?? false)
+                      ? null
+                      : _continueToReview,
+                  style: FilledButton.styleFrom(
+                    backgroundColor: const Color(0xFF0D9488),
+                    minimumSize: const Size(double.infinity, 50),
+                  ),
+                  child: const Text('다음: 내용 확인'),
+                )
+              else if (_savedEntry == null)
+                Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    if (_createOutcomeUnknown ||
+                        _updateOutcomeUnknown ||
+                        _serverConflict)
+                      OutlinedButton.icon(
+                        onPressed: isBusy ? null : _reconcileSave,
+                        icon: const Icon(Icons.sync),
+                        label: Text(
+                          _isReconciling ? '확인 중...' : '저장 여부 확인',
+                        ),
+                        style: OutlinedButton.styleFrom(
+                          minimumSize: const Size(double.infinity, 46),
+                        ),
+                      ),
+                    if (_retryCreateAllowed)
+                      OutlinedButton(
+                        onPressed: isBusy
+                            ? null
+                            : () async {
+                                final confirmed = await showDialog<bool>(
+                                  context: context,
+                                  builder: (dialogContext) => AlertDialog(
+                                    title: const Text('초안 저장 다시 시도'),
+                                    content: const Text(
+                                      '최신 작업 목록을 두 번 확인했지만 일치하는 초안이 없습니다. 중복 가능성을 이해하고 다시 저장할까요?',
+                                    ),
+                                    actions: [
+                                      TextButton(
+                                        onPressed: () =>
+                                            Navigator.pop(dialogContext, false),
+                                        child: const Text('취소'),
+                                      ),
+                                      FilledButton(
+                                        onPressed: () =>
+                                            Navigator.pop(dialogContext, true),
+                                        child: const Text('다시 저장'),
+                                      ),
+                                    ],
+                                  ),
+                                );
+                                if (confirmed == true && mounted) {
+                                  setState(() {
+                                    _createOutcomeUnknown = false;
+                                    _retryCreateAllowed = false;
+                                  });
+                                  await _saveDraft(alreadyConfirmed: true);
+                                }
+                              },
+                        child: const Text('확인 후 다시 저장'),
+                      ),
+                    if (_retryUpdateAllowed)
+                      OutlinedButton(
+                        onPressed: isBusy
+                            ? null
+                            : () async {
+                                final confirmed = await showDialog<bool>(
+                                  context: context,
+                                  builder: (dialogContext) => AlertDialog(
+                                    title: const Text('수정 다시 시도'),
+                                    content: const Text(
+                                      '최신 작업 목록을 확인했으며 같은 revision에 수정 내용이 반영되지 않은 것으로 보입니다. 같은 수정 요청을 다시 보낼까요?',
+                                    ),
+                                    actions: [
+                                      TextButton(
+                                        onPressed: () =>
+                                            Navigator.pop(dialogContext, false),
+                                        child: const Text('취소'),
+                                      ),
+                                      FilledButton(
+                                        onPressed: () =>
+                                            Navigator.pop(dialogContext, true),
+                                        child: const Text('다시 수정'),
+                                      ),
+                                    ],
+                                  ),
+                                );
+                                if (confirmed != true || !mounted) return;
+                                setState(() {
+                                  _updateOutcomeUnknown = false;
+                                  _retryUpdateAllowed = false;
+                                });
+                                await _saveDraft(alreadyConfirmed: true);
+                              },
+                        child: const Text('수정 다시 시도'),
+                      ),
+                    if (!_createOutcomeUnknown &&
+                        !_updateOutcomeUnknown &&
+                        !_serverConflict)
+                      Row(
+                        children: [
+                          Expanded(
+                            child: OutlinedButton(
+                              onPressed: isBusy
+                                  ? null
+                                  : () => setState(() {
+                                        _step = 1;
+                                        _error = '';
+                                      }),
+                              style: OutlinedButton.styleFrom(
+                                minimumSize: const Size(double.infinity, 50),
+                              ),
+                              child: const Text('수정하기'),
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: FilledButton(
+                              onPressed: isBusy ? null : () => _saveDraft(),
+                              style: FilledButton.styleFrom(
+                                backgroundColor: const Color(0xFF0D9488),
+                                minimumSize: const Size(double.infinity, 50),
+                              ),
+                              child: Text(
+                                  _isSaving ? '저장 중...' : '초안 저장'),
+                            ),
+                          ),
+                        ],
+                      ),
+                  ],
+                )
+              else ...[
+                if (!_createOutcomeUnknown &&
+                    !_updateOutcomeUnknown &&
+                    !_serverConflict)
+                  OutlinedButton(
+                    onPressed: isBusy
+                        ? null
+                        : () {
+                            _existingEntry = _savedEntry;
+                            setState(() {
+                              _step = 1;
+                              _formDirty = false;
+                              _preparedPlan = null;
+                              _error = '';
+                            });
+                          },
+                    style: OutlinedButton.styleFrom(
+                      minimumSize: const Size(double.infinity, 46),
+                    ),
+                    child: const Text('초안 내용 수정'),
+                  ),
+                if (_savedEntry != null &&
+                    !_createOutcomeUnknown &&
+                    !_updateOutcomeUnknown &&
+                    !_serverConflict)
+                  FilledButton(
+                    onPressed: isBusy ? null : _prepareRegistration,
+                    style: FilledButton.styleFrom(
+                      backgroundColor: const Color(0xFF0D9488),
+                      minimumSize: const Size(double.infinity, 50),
+                    ),
+                    child: Text(
+                      _isPreparing
+                          ? '서버에서 검증 중...'
+                          : _preparedPlan == null
+                              ? '등록 준비 검증'
+                              : '최신 카탈로그로 다시 검증',
+                    ),
+                  ),
+                if (_savedEntry != null)
+                  TextButton(
+                    onPressed: isBusy
+                        ? null
+                        : () => Navigator.of(context).pop(_savedEntry),
+                    child: Text(widget.existingEntry == null
+                        ? '초안 목록으로 돌아가기'
+                        : '상세 화면으로 돌아가기'),
+                  ),
+              ],
             ],
           ),
         ),
+      ),
       ),
     );
   }
 }
 
-String _categoryDisplayValue(String? name, String? code) {
-  final normalizedName = (name ?? '').trim();
-  final normalizedCode = (code ?? '').trim();
-  if (normalizedName.isEmpty && normalizedCode.isEmpty) return '-';
-  if (normalizedCode.isEmpty) return normalizedName;
-  if (normalizedName.isEmpty) return normalizedCode;
-  return '$normalizedName ($normalizedCode)';
+class _StepBadge extends StatelessWidget {
+  final int number;
+  final String label;
+  final bool active;
+
+  const _StepBadge({
+    required this.number,
+    required this.label,
+    required this.active,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final color = active ? const Color(0xFF0D9488) : const Color(0xFF64748B);
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        CircleAvatar(
+          radius: 16,
+          backgroundColor: active
+              ? const Color.fromRGBO(13, 148, 136, 0.12)
+              : const Color(0xFFF1F5F9),
+          child: Text(
+            '$number',
+            style: TextStyle(color: color, fontWeight: FontWeight.w800),
+          ),
+        ),
+        const SizedBox(width: 8),
+        Text(
+          label,
+          style: TextStyle(color: color, fontWeight: FontWeight.w700),
+        ),
+      ],
+    );
+  }
 }
 
 // ─── Product Card ─────────────────────────────────────────────────────────────
@@ -2505,7 +3205,13 @@ class _MenuEntryDetailScreenState extends State<MenuEntryDetailScreen> {
   Widget build(BuildContext context) {
     final e = _entry;
     final appState = context.read<AppState>();
-    final canEdit = appState.hasOperatorAccess;
+    final canEdit = appState.hasOperatorAccess && !e.isSubmissionReserved;
+    final canEditMenuDraft = canEdit &&
+        e.kind == 'new_item' &&
+        !const {'ready', 'done', 'reserved', 'stale'}.contains(e.status);
+    final canEditStatus = canEdit &&
+        e.kind != 'new_item' &&
+        !const {'done', 'reserved', 'stale'}.contains(e.status);
 
     return Scaffold(
       appBar: AppBar(
@@ -2515,7 +3221,13 @@ class _MenuEntryDetailScreenState extends State<MenuEntryDetailScreen> {
           child: Container(height: 1, color: const Color(0xFFE2E8F0)),
         ),
         actions: [
-          if (canEdit)
+          if (canEditMenuDraft)
+            IconButton(
+              tooltip: '등록 초안 편집',
+              icon: const Icon(Icons.edit_outlined),
+              onPressed: () => _editMenuDraft(e),
+            ),
+          if (canEditStatus)
             IconButton(
               tooltip: '항목 편집',
               icon: const Icon(Icons.edit_outlined),
@@ -2543,7 +3255,14 @@ class _MenuEntryDetailScreenState extends State<MenuEntryDetailScreen> {
                       value: e.itemCode.isEmpty ? '-' : e.itemCode),
                   _InfoRow(
                       label: '분류',
-                      value: e.categoryHint.isEmpty ? '-' : e.categoryHint),
+                      value: e.kind == 'new_item'
+                          ? [
+                              e.majorCategory,
+                              e.middleCategory,
+                              e.minorCategory,
+                            ].where((value) => value.isNotEmpty).join(' › ')
+                          : (e.categoryHint.isEmpty ? '-' : e.categoryHint)),
+                  _InfoRow(label: 'revision', value: '${e.revision}'),
                   _InfoRow(label: '상태', value: _statusLabel(e.status)),
                   _InfoRow(label: '종류', value: _kindLabel(e.kind)),
                   _InfoRow(
@@ -2595,6 +3314,33 @@ class _MenuEntryDetailScreenState extends State<MenuEntryDetailScreen> {
                       value: e.targetPrice == null
                           ? '-'
                           : '${_wonSigned(e.priceDelta)}원',
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 12),
+            ],
+            if (e.kind == 'new_item') ...[
+              Panel(
+                title: '등록 정보',
+                child: Column(
+                  children: [
+                    _InfoRow(
+                      label: '판매가',
+                      value: e.targetPrice == null
+                          ? '-'
+                          : '${_won(e.targetPrice!)}원',
+                    ),
+                    _InfoRow(
+                      label: '원가 / 공급가',
+                      value:
+                          '${e.costPrice == null ? '-' : _won(e.costPrice!)} / ${e.supplyPrice == null ? '-' : _won(e.supplyPrice!)}원',
+                    ),
+                    _InfoRow(
+                      label: '저장 상태',
+                      value: e.isSubmissionReserved
+                          ? '등록 요청 처리 중 · 편집/삭제 제한'
+                          : 'CafeBridge 초안 · POS 미반영',
                     ),
                   ],
                 ),
@@ -2669,6 +3415,25 @@ class _MenuEntryDetailScreenState extends State<MenuEntryDetailScreen> {
     setState(() => _entry = updated);
     widget.onUpdated?.call();
   }
+
+  Future<void> _editMenuDraft(MenuEntry entry) async {
+    final appState = context.read<AppState>();
+    final updated = await Navigator.of(context).push<MenuEntry>(
+      MaterialPageRoute(
+        builder: (_) => AccessGate(
+          minimumRole: UserRole.admin,
+          fullScreen: true,
+          child: _NewMenuAddScreen(
+            appState: appState,
+            existingEntry: entry,
+            onSubmitted: widget.onUpdated,
+          ),
+        ),
+      ),
+    );
+    if (!mounted || updated == null) return;
+    setState(() => _entry = updated);
+  }
 }
 
 // ─── Status Update Sheet ──────────────────────────────────────────────────────
@@ -2720,20 +3485,18 @@ class _StatusUpdateSheetState extends State<_StatusUpdateSheet> {
       _error = '';
     });
     try {
-      final body = <String, dynamic>{'status': _selectedStatus};
+      final body = buildRevisionGuardedMenuEntryUpdateBody(
+        fields: {'status': _selectedStatus},
+        expectedRevision: widget.entry.revision,
+      );
       if (_newTargetPrice != null) body['target_price'] = _newTargetPrice;
-      await widget.appState.postJson(
+      final response = await widget.appState.postJson(
         '/api/menu-workspace/entries/${widget.entry.id}',
         body: body,
         method: 'PATCH',
       );
       if (!mounted) return;
-      Navigator.of(context).pop(
-        widget.entry.copyWith(
-          status: _selectedStatus,
-          targetPrice: _newTargetPrice,
-        ),
-      );
+      Navigator.of(context).pop(MenuEntry.fromJson(response));
     } catch (e) {
       if (!mounted) return;
       setState(() {
@@ -2745,8 +3508,8 @@ class _StatusUpdateSheetState extends State<_StatusUpdateSheet> {
 
   @override
   Widget build(BuildContext context) {
-    const statuses = ['draft', 'reviewed', 'ready', 'done', 'archived'];
-    const labels = ['작성중', '검토됨', '준비완료', '완료', '보관'];
+    const statuses = ['draft', 'reviewed', 'ready', 'archived'];
+    const labels = ['작성중', '검토됨', '준비완료', '보관'];
 
     return Scaffold(
       appBar: AppBar(

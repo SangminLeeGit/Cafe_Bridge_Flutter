@@ -6,7 +6,9 @@ import '../state/app_state.dart';
 import '../theme/app_theme.dart';
 import '../widgets/app_screen.dart';
 import '../widgets/panel.dart';
-import 'daily_report_monitor.dart';
+import 'admin_daily_reports.dart';
+import 'admin_runtime_settings.dart';
+import 'admin_users.dart';
 import 'menu_workspace.dart';
 import 'product_lookup.dart';
 import 'settings.dart';
@@ -79,7 +81,7 @@ class MoreScreen extends StatelessWidget {
         const SizedBox(height: AppSpacing.control),
         Panel(
           title: '관리자 운영',
-          subtitle: '메뉴·배포·일일보고서 읽기 전용 모니터',
+          subtitle: '메뉴·배포·사용자·일일보고서·런타임 설정',
           child: Column(
             children: [
               _MoreFeatureTile(
@@ -119,14 +121,47 @@ class MoreScreen extends StatelessWidget {
               _MoreFeatureTile(
                 icon: Icons.summarize_outlined,
                 title: '일일보고서',
-                subtitle:
-                    canAdmin ? '설정 · 실행 · 감사 상태 조회' : '관리자 권한에서만 접근할 수 있습니다.',
+                subtitle: canAdmin
+                    ? '운영 설정 · 연결 테스트 · 수동 실행 · 전송 관리'
+                    : '관리자 권한에서만 접근할 수 있습니다.',
                 badge: canAdmin ? null : 'admin 필요',
                 onTap: canAdmin
                     ? () => AppNavigation.pushGuarded(
                           context,
                           minimumRole: UserRole.admin,
-                          child: const DailyReportMonitorScreen(),
+                          child: const AdminDailyReportsScreen(),
+                        )
+                    : null,
+              ),
+              const SizedBox(height: AppSpacing.compact),
+              _MoreFeatureTile(
+                icon: Icons.people_alt_outlined,
+                title: '사용자 관리',
+                subtitle: canAdmin
+                    ? '계정 생성 · 권한 · 상태 · 보안 감사'
+                    : '관리자 권한에서만 접근할 수 있습니다.',
+                badge: canAdmin ? null : 'admin 필요',
+                onTap: canAdmin
+                    ? () => AppNavigation.pushGuarded(
+                          context,
+                          minimumRole: UserRole.admin,
+                          child: const AdminUsersScreen(),
+                        )
+                    : null,
+              ),
+              const SizedBox(height: AppSpacing.compact),
+              _MoreFeatureTile(
+                icon: Icons.tune_outlined,
+                title: '런타임 설정',
+                subtitle: canAdmin
+                    ? '검증 · 테스트 · 적용 · 롤백'
+                    : '관리자 권한에서만 접근할 수 있습니다.',
+                badge: canAdmin ? null : 'admin 필요',
+                onTap: canAdmin
+                    ? () => AppNavigation.pushGuarded(
+                          context,
+                          minimumRole: UserRole.admin,
+                          child: const AdminRuntimeSettingsScreen(),
                         )
                     : null,
               ),

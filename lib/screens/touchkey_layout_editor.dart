@@ -42,6 +42,13 @@ class _TouchkeyLayoutEditorScreenState extends State<TouchkeyLayoutEditorScreen>
   String _successMessage = '';
   bool _revisionConflict = false;
   _PendingTouchkeySave? _pendingSave;
+  final List<Map<String, String?>> _undoHistory = [];
+  final List<Map<String, String?>> _redoHistory = [];
+  Map<String, String?>? _conflictBaseline;
+  Map<String, String?>? _conflictLocal;
+  bool _conflictLatestLoaded = false;
+
+  static const int _historyLimit = 50;
 
   bool get _dirty {
     final envelope = _envelope;
@@ -87,6 +94,11 @@ class _TouchkeyLayoutEditorScreenState extends State<TouchkeyLayoutEditorScreen>
       _successMessage = '';
       _revisionConflict = false;
       _pendingSave = null;
+      _undoHistory.clear();
+      _redoHistory.clear();
+      _conflictBaseline = null;
+      _conflictLocal = null;
+      _conflictLatestLoaded = false;
     });
     try {
       final editorResult = await appState.fetchMapParsed<EditorContext>(
@@ -193,8 +205,41 @@ class _TouchkeyLayoutEditorScreenState extends State<TouchkeyLayoutEditorScreen>
       );
       return;
     }
+    if (_placements[key] == selectedCode) return;
     setState(() {
+      _recordUndoSnapshot();
       _placements = {..._placements, key: selectedCode};
+      _successMessage = '';
+      _error = '';
+    });
+  }
+
+  void _recordUndoSnapshot() {
+    if (_undoHistory.length >= _historyLimit) {
+      _undoHistory.removeAt(0);
+    }
+    _undoHistory.add(Map<String, String?>.from(_placements));
+    _redoHistory.clear();
+  }
+
+  void _undo() {
+    if (!_canEdit || _undoHistory.isEmpty) return;
+    setState(() {
+      _redoHistory.add(Map<String, String?>.from(_placements));
+      _placements = _undoHistory.removeLast();
+      _successMessage = '';
+      _error = '';
+    });
+  }
+
+  void _redo() {
+    if (!_canEdit || _redoHistory.isEmpty) return;
+    setState(() {
+      if (_undoHistory.length >= _historyLimit) {
+        _undoHistory.removeAt(0);
+      }
+      _undoHistory.add(Map<String, String?>.from(_placements));
+      _placements = _redoHistory.removeLast();
       _successMessage = '';
       _error = '';
     });
@@ -252,6 +297,11 @@ class _TouchkeyLayoutEditorScreenState extends State<TouchkeyLayoutEditorScreen>
         _pendingSave = null;
         _saving = false;
         _revisionConflict = false;
+        _undoHistory.clear();
+        _redoHistory.clear();
+        _conflictBaseline = null;
+        _conflictLocal = null;
+        _conflictLatestLoaded = false;
         _successMessage = '서버 초안을 저장했습니다. POS 변경은 실행하지 않았습니다.';
       });
     } catch (error) {
@@ -263,13 +313,238 @@ class _TouchkeyLayoutEditorScreenState extends State<TouchkeyLayoutEditorScreen>
         if (status == 409) {
           _pendingSave = null;
           _revisionConflict = true;
+          _conflictBaseline =
+              Map<String, String?>.from(envelope.saved.placements);
+          _conflictLocal = Map<String, String?>.from(_placements);
+          _conflictLatestLoaded = false;
         } else if (status != null && status < 500) {
           _pendingSave = null;
         }
         // Transport/5xx outcomes are ambiguous; keep the immutable request so
         // a retry reuses its original request ID and byte-for-byte body.
       });
+      if (status == 409) {
+        await _loadLatestAfterConflict();
+      }
     }
+  }
+
+  Future<void> _loadLatestAfterConflict() async {
+    final previousEnvelope = _envelope;
+    if (previousEnvelope == null || !mounted) return;
+    final local = Map<String, String?>.from(
+      _conflictLocal ?? _placements,
+    );
+    final baseline = Map<String, String?>.from(
+      _conflictBaseline ?? previousEnvelope.saved.placements,
+    );
+    final request = beginAsyncRequest();
+    setState(() {
+      _loading = true;
+      _error = '';
+      _successMessage = '';
+    });
+    try {
+      final appState = context.read<AppState>();
+      final editorResult = await appState.fetchMapParsed<EditorContext>(
+        '/api/editor/context',
+        parser: EditorContext.fromJson,
+        cacheTtl: Duration.zero,
+        allowStaleOnError: false,
+      );
+      if (!isCurrentAsyncRequest(request)) return;
+      if (editorResult.data.scopeId != previousEnvelope.scopeId) {
+        throw const FormatException('현재 세션의 편집 범위가 변경되었습니다.');
+      }
+      final capability = editorResult.data.capability('save_touchkey_draft');
+      final response = await appState.fetchMapParsed<TouchkeyLayoutEnvelope>(
+        '/api/editor/touchkey/layout',
+        params: {
+          'class_code': widget.classCode,
+          'sort_value': widget.sortValue,
+          'page': widget.page,
+        },
+        parser: TouchkeyLayoutEnvelope.fromJson,
+        cacheTtl: Duration.zero,
+        allowStaleOnError: false,
+      );
+      if (!isCurrentAsyncRequest(request)) return;
+      if (response.data.scopeId != previousEnvelope.scopeId) {
+        throw const FormatException('최신 초안의 편집 범위가 현재 세션과 다릅니다.');
+      }
+      setState(() {
+        _envelope = response.data;
+        _placements = local;
+        _conflictBaseline = baseline;
+        _conflictLocal = local;
+        _conflictLatestLoaded = true;
+        _revisionConflict = true;
+        _contextCanSaveDraft = capability?.enabled ?? false;
+        _capabilityMessage = capability?.message.trim().isNotEmpty == true
+            ? capability!.message
+            : '서버에서 터치키 초안 저장을 허용하지 않습니다.';
+        _loading = false;
+        _error = '';
+        _successMessage = '최신 서버 revision을 불러왔습니다. 변경사항을 조정한 뒤 저장해 주세요.';
+      });
+    } catch (error) {
+      if (!isCurrentAsyncRequest(request)) return;
+      setState(() {
+        _loading = false;
+        _error =
+            '서버 초안의 revision 충돌을 확인했습니다. 최신 초안을 불러오지 못했습니다: '
+            '${error.toString().replaceFirst('Bad state: ', '')}';
+      });
+    }
+  }
+
+  int get _conflictingSlotCount {
+    final baseline = _conflictBaseline;
+    final local = _conflictLocal;
+    final latest = _envelope;
+    if (baseline == null || local == null || latest == null) return 0;
+    return baseline.keys.where((key) {
+      final localChanged = local[key] != baseline[key];
+      final serverChanged = latest.saved.placements[key] != baseline[key];
+      return localChanged &&
+          serverChanged &&
+          local[key] != latest.saved.placements[key];
+    }).length;
+  }
+
+  Future<void> _resolveConflict() async {
+    final latest = _envelope;
+    final baseline = _conflictBaseline;
+    final local = _conflictLocal;
+    if (latest == null ||
+        baseline == null ||
+        local == null ||
+        !_conflictLatestLoaded ||
+        _loading) {
+      return;
+    }
+
+    final conflicts = _conflictingSlotCount;
+    final bool keepLocalOnOverlap;
+    if (conflicts == 0) {
+      keepLocalOnOverlap = true;
+    } else {
+      final choice = await showDialog<bool>(
+        context: context,
+        builder: (dialogContext) => AlertDialog(
+          title: const Text('겹친 슬롯 변경 조정'),
+          content: Text(
+            '내 변경과 서버 변경이 동시에 발생한 슬롯이 $conflicts개 있습니다. '
+            '겹친 슬롯에 적용할 값을 선택합니다. 서로 다른 슬롯의 변경은 모두 유지됩니다.',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext),
+              child: const Text('나중에'),
+            ),
+            OutlinedButton(
+              onPressed: () => Navigator.pop(dialogContext, false),
+              child: const Text('겹친 슬롯은 서버 값'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.pop(dialogContext, true),
+              child: const Text('겹친 슬롯은 내 값'),
+            ),
+          ],
+        ),
+      );
+      if (!mounted || choice == null) return;
+      keepLocalOnOverlap = choice;
+    }
+
+    final remote = Map<String, String?>.from(latest.saved.placements);
+    final merged = Map<String, String?>.from(remote);
+    for (final key in baseline.keys) {
+      final localChanged = local[key] != baseline[key];
+      if (!localChanged) continue;
+      final remoteChanged = remote[key] != baseline[key];
+      if (!remoteChanged ||
+          local[key] == remote[key] ||
+          keepLocalOnOverlap) {
+        merged[key] = local[key];
+      }
+    }
+
+    final products = merged.values.whereType<String>().where(
+          (code) => code.isNotEmpty,
+        );
+    if (products.length != products.toSet().length) {
+      final useLocalSnapshot = await showDialog<bool>(
+        context: context,
+        builder: (dialogContext) => AlertDialog(
+          title: const Text('변경사항을 자동으로 합칠 수 없습니다'),
+          content: const Text(
+            '병합 결과에서 같은 상품이 여러 슬롯에 배치됩니다. '
+            '서버 초안을 사용하거나, 최신 revision 위에 내 초안 전체를 다시 적용할 수 있습니다. '
+            '두 번째 선택은 서버의 다른 슬롯 변경을 덮어쓸 수 있습니다.',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext),
+              child: const Text('나중에'),
+            ),
+            OutlinedButton(
+              onPressed: () => Navigator.pop(dialogContext, false),
+              child: const Text('서버 초안 사용'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.pop(dialogContext, true),
+              child: const Text('내 초안 전체 사용'),
+            ),
+          ],
+        ),
+      );
+      if (!mounted || useLocalSnapshot == null) return;
+      final selected = useLocalSnapshot ? local : remote;
+      setState(() {
+        _envelope = latest;
+        _placements = Map<String, String?>.from(selected);
+        _revisionConflict = false;
+        _conflictBaseline = null;
+        _conflictLocal = null;
+        _conflictLatestLoaded = false;
+        _undoHistory.clear();
+        if (useLocalSnapshot &&
+            (remote.length != selected.length ||
+                remote.entries.any(
+                  (entry) => selected[entry.key] != entry.value,
+                ))) {
+          _undoHistory.add(Map<String, String?>.from(remote));
+        }
+        _redoHistory.clear();
+        _error = '';
+        _successMessage = useLocalSnapshot
+            ? '내 초안을 최신 revision 기준으로 다시 적용했습니다. 저장 전 모든 슬롯을 확인해 주세요.'
+            : '최신 서버 초안을 적용했습니다.';
+      });
+      return;
+    }
+
+    setState(() {
+      _envelope = latest;
+      _placements = merged;
+      _revisionConflict = false;
+      _conflictBaseline = null;
+      _conflictLocal = null;
+      _conflictLatestLoaded = false;
+      _undoHistory.clear();
+      if (remote.length != merged.length ||
+          remote.entries.any((entry) => merged[entry.key] != entry.value)) {
+        _undoHistory.add(Map<String, String?>.from(remote));
+      }
+      _redoHistory.clear();
+      _error = '';
+      _successMessage = merged.entries.every(
+        (entry) => remote[entry.key] == entry.value,
+      )
+          ? '최신 서버 초안을 적용했습니다.'
+          : '변경사항을 최신 revision 기준으로 조정했습니다. 저장 전 검토해 주세요.';
+    });
   }
 
   String _newUuidV4() {
@@ -291,6 +566,16 @@ class _TouchkeyLayoutEditorScreenState extends State<TouchkeyLayoutEditorScreen>
       appBar: AppBar(
         title: Text(widget.className.isEmpty ? '터치키 초안' : widget.className),
         actions: [
+          IconButton(
+            tooltip: '실행 취소',
+            onPressed: _canEdit && _undoHistory.isNotEmpty ? _undo : null,
+            icon: const Icon(Icons.undo),
+          ),
+          IconButton(
+            tooltip: '다시 실행',
+            onPressed: _canEdit && _redoHistory.isNotEmpty ? _redo : null,
+            icon: const Icon(Icons.redo),
+          ),
           IconButton(
             tooltip: '서버 초안 다시 불러오기',
             onPressed: _loading || _saving || _pendingSave != null
@@ -343,16 +628,60 @@ class _TouchkeyLayoutEditorScreenState extends State<TouchkeyLayoutEditorScreen>
                 '${definition.columns} × ${definition.rows} 슬롯 · revision ${envelope.saved.revision}',
                 style: const TextStyle(color: Color(0xFF64748B), fontSize: 12),
               ),
-              if (locked) ...[
+      if (locked) ...[
                 const SizedBox(height: 8),
                 Text(
                   _revisionConflict
-                      ? '저장 기준이 바뀌었습니다. 서버 초안을 다시 불러와 변경사항을 비교해 주세요.'
+                      ? '저장 기준이 바뀌었습니다. 아래에서 최신 초안과 변경사항을 조정해 주세요.'
                       : saveBlockedReason,
                   style: const TextStyle(color: Color(0xFFB45309), height: 1.4),
+        ),
+      ],
+      if (_revisionConflict) ...[
+        const SizedBox(height: 8),
+        Container(
+          width: double.infinity,
+          padding: const EdgeInsets.all(12),
+          decoration: BoxDecoration(
+            color: const Color(0xFFFFF7ED),
+            border: Border.all(color: const Color(0xFFFDBA74)),
+            borderRadius: BorderRadius.circular(10),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                _loading
+                    ? '최신 서버 revision을 확인하는 중입니다.'
+                    : '저장 기준이 바뀌었습니다. 로컬 변경은 유지되어 있으며 저장은 잠겨 있습니다.',
+                style: const TextStyle(
+                  color: Color(0xFF9A3412),
+                  fontWeight: FontWeight.w700,
                 ),
-              ],
-              if (definition.issues.isNotEmpty ||
+              ),
+              if (!_loading && _envelope != null)
+                Padding(
+                  padding: const EdgeInsets.only(top: 4),
+                  child: Text(
+                    '서버 revision ${_envelope!.saved.revision} · '
+                    '충돌 슬롯 $_conflictingSlotCount개',
+                    style: const TextStyle(color: Color(0xFF9A3412)),
+                  ),
+                ),
+              if (!_loading && _conflictLatestLoaded)
+                Align(
+                  alignment: Alignment.centerRight,
+                  child: TextButton.icon(
+                    onPressed: _resolveConflict,
+                    icon: const Icon(Icons.merge_type),
+                    label: const Text('변경 조정'),
+                  ),
+                ),
+            ],
+          ),
+        ),
+      ],
+      if (definition.issues.isNotEmpty ||
                   envelope.saved.issues.isNotEmpty) ...[
                 const SizedBox(height: 8),
                 for (final issue in [
