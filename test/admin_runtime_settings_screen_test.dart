@@ -360,25 +360,78 @@ Future<void> _mountScreen(
 }
 
 Future<void> _scrollToVisible(WidgetTester tester, Finder finder) async {
+  final listView = find.byType(ListView).first;
   final scrollable = find.descendant(
-    of: find.byType(RefreshIndicator),
+    of: listView,
     matching: find.byType(Scrollable),
   ).first;
-  await tester.scrollUntilVisible(
-    finder,
-    400,
-    scrollable: scrollable,
+  final viewport = find.descendant(
+    of: listView,
+    matching: find.byType(Viewport),
+  ).first;
+  final position = tester.state<ScrollableState>(scrollable).position;
+  var resetToTop = false;
+
+  for (var attempt = 0; attempt < 80; attempt += 1) {
+    final viewportRect = tester.getRect(viewport);
+    if (finder.evaluate().isNotEmpty) {
+      final targetRect = tester.getRect(finder);
+      if (targetRect.top >= viewportRect.top &&
+          targetRect.bottom <= viewportRect.bottom) {
+        await tester.pumpAndSettle();
+        return;
+      }
+      final delta = targetRect.top < viewportRect.top
+          ? targetRect.top - viewportRect.top - 12
+          : targetRect.bottom - viewportRect.bottom + 12;
+      final next = (position.pixels + delta)
+          .clamp(position.minScrollExtent, position.maxScrollExtent)
+          .toDouble();
+      if ((next - position.pixels).abs() < 0.5) {
+        if (!resetToTop && position.pixels > position.minScrollExtent) {
+          position.jumpTo(position.minScrollExtent);
+          resetToTop = true;
+        } else {
+          break;
+        }
+      } else {
+        position.jumpTo(next);
+      }
+    } else {
+      final next = (position.pixels + viewportRect.height * 0.8)
+          .clamp(position.minScrollExtent, position.maxScrollExtent)
+          .toDouble();
+      if ((next - position.pixels).abs() < 0.5) {
+        if (!resetToTop && position.pixels > position.minScrollExtent) {
+          position.jumpTo(position.minScrollExtent);
+          resetToTop = true;
+        } else {
+          break;
+        }
+      } else {
+        position.jumpTo(next);
+      }
+    }
+    await tester.pumpAndSettle();
+  }
+  expect(finder, findsOneWidget);
+  final viewportRect = tester.getRect(viewport);
+  final targetRect = tester.getRect(finder);
+  expect(
+    viewportRect.contains(targetRect.topLeft) &&
+        viewportRect.contains(targetRect.bottomRight),
+    isTrue,
+    reason: 'Expected $finder to be visible in the primary list.',
   );
-  await tester.ensureVisible(finder);
-  await tester.pumpAndSettle();
 }
 
 Future<void> _scrollToTop(WidgetTester tester) async {
   final scrollable = find.descendant(
-    of: find.byType(RefreshIndicator),
+    of: find.byType(ListView).first,
     matching: find.byType(Scrollable),
   ).first;
-  tester.state<ScrollableState>(scrollable).position.jumpTo(0);
+  final position = tester.state<ScrollableState>(scrollable).position;
+  position.jumpTo(position.minScrollExtent);
   await tester.pumpAndSettle();
 }
 
@@ -628,7 +681,12 @@ void main() {
     expect(state.postEndpoints, contains('/api/admin/runtime-settings/changes/change-1/apply'));
     expect(state.postBodies.last['reauth_password'], _passwordValue);
     await _scrollToTop(tester);
-    expect(find.text('설정을 적용했습니다.'), findsOneWidget);
+    final notice = find.byKey(const Key('runtime-settings-notice'));
+    expect(notice, findsOneWidget);
+    expect(
+      tester.widget<Text>(notice).data,
+      '설정을 적용했습니다.',
+    );
   });
 
   testWidgets('cancel and rollback use reauth and historical target version',
