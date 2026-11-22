@@ -145,8 +145,11 @@ Widget _app(_AdminUsersAppState state) {
 }
 
 Future<void> _scrollToVisible(WidgetTester tester, Finder finder) async {
-  await tester.ensureVisible(finder);
-  await tester.pumpAndSettle();
+  await tester.scrollUntilVisible(
+    finder,
+    400,
+    scrollable: find.byType(Scrollable).first,
+  );
 }
 
 void main() {

@@ -360,8 +360,15 @@ Future<void> _mountScreen(
 }
 
 Future<void> _scrollToVisible(WidgetTester tester, Finder finder) async {
-  await tester.ensureVisible(finder);
-  await tester.pumpAndSettle();
+  final scrollable = find.descendant(
+    of: find.byType(RefreshIndicator),
+    matching: find.byType(Scrollable),
+  ).first;
+  await tester.scrollUntilVisible(
+    finder,
+    400,
+    scrollable: scrollable,
+  );
 }
 
 Future<void> _confirmWithPassword(
@@ -555,6 +562,10 @@ void main() {
     );
     expect(find.text(_secretValue), findsNothing);
     expect(find.byKey(const Key('runtime-settings-password')), findsNothing);
+    await _scrollToVisible(
+      tester,
+      find.text('설정 변경 준비를 완료했습니다.'),
+    );
     expect(find.text('설정 변경 준비를 완료했습니다.'), findsOneWidget);
   });
 
@@ -598,6 +609,7 @@ void main() {
     await _confirmWithPassword(tester);
     expect(state.postEndpoints, contains('/api/admin/runtime-settings/changes/change-1/test'));
     expect(state.postBodies.last['reauth_password'], _passwordValue);
+    await _scrollToVisible(tester, find.text('연결 검증을 완료했습니다.'));
     expect(find.text('연결 검증을 완료했습니다.'), findsOneWidget);
 
     final applyButton = find.widgetWithText(FilledButton, '적용');
@@ -607,6 +619,7 @@ void main() {
     await _confirmWithPassword(tester);
     expect(state.postEndpoints, contains('/api/admin/runtime-settings/changes/change-1/apply'));
     expect(state.postBodies.last['reauth_password'], _passwordValue);
+    await _scrollToVisible(tester, find.text('설정을 적용했습니다.'));
     expect(find.text('설정을 적용했습니다.'), findsOneWidget);
   });
 
@@ -685,6 +698,10 @@ void main() {
     expect(find.text(_secretValue), findsNothing);
     expect(find.text(_passwordValue), findsNothing);
     expect(find.textContaining('unsafe server detail'), findsNothing);
+    await _scrollToVisible(
+      tester,
+      find.text('설정 변경을 준비하지 못했습니다. 설정 상태를 새로고침하세요.'),
+    );
     expect(
       find.text('설정 변경을 준비하지 못했습니다. 설정 상태를 새로고침하세요.'),
       findsOneWidget,

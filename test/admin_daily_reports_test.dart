@@ -51,8 +51,15 @@ Widget _app({
 }
 
 Future<void> _scrollToVisible(WidgetTester tester, Finder finder) async {
-  await tester.ensureVisible(finder);
-  await tester.pumpAndSettle();
+  final scrollable = find.descendant(
+    of: find.byType(RefreshIndicator),
+    matching: find.byType(Scrollable),
+  ).first;
+  await tester.scrollUntilVisible(
+    finder,
+    400,
+    scrollable: scrollable,
+  );
 }
 
 Map<String, dynamic> _settings() => {
