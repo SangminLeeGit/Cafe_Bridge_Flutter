@@ -709,7 +709,12 @@ class _AdminRuntimeSettingsScreenState
       }
     }
     final notice = outcomeNotice;
-    if (mounted && _hasAdminAccess && notice != null) _showNotice(notice);
+    if (notice != null) {
+      // Let the dialog route finish rebuilding before showing the outcome.
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted && _hasAdminAccess) _showNotice(notice);
+      });
+    }
   }
 
   Future<Map<String, dynamic>> _performAction({
