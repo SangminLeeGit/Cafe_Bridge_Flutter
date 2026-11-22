@@ -532,7 +532,7 @@ class _AdminRuntimeSettingsScreenState
     final action = _pendingAction;
     if (action == null || !mounted) return;
     _actionDialogOpen = true;
-    await showDialog<void>(
+    final outcomeNotice = await showDialog<RuntimeSettingsNotice>(
       context: context,
       barrierDismissible: false,
       builder: (dialogContext) {
@@ -628,6 +628,9 @@ class _AdminRuntimeSettingsScreenState
       },
     );
     _actionDialogOpen = false;
+    if (mounted && _hasAdminAccess && outcomeNotice != null) {
+      _showNotice(outcomeNotice);
+    }
   }
 
   void _dismissActionDialog() {
@@ -701,13 +704,10 @@ class _AdminRuntimeSettingsScreenState
         setState(() {
           _busy = false;
           _pendingAction = null;
-          if (outcomeNotice != null) {
-            _notice = outcomeNotice;
-          }
         });
         if (_actionDialogOpen) {
           _actionDialogOpen = false;
-          Navigator.of(context, rootNavigator: true).pop();
+          Navigator.of(context, rootNavigator: true).pop(outcomeNotice);
         }
       }
     }
