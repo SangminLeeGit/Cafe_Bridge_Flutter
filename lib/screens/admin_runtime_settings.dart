@@ -701,7 +701,7 @@ class _AdminRuntimeSettingsScreenState
         setState(() {
           _busy = false;
           _pendingAction = null;
-          if (outcomeNotice != null && _hasAdminAccess) {
+          if (outcomeNotice != null) {
             _notice = outcomeNotice;
           }
         });
