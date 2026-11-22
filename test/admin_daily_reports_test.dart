@@ -308,6 +308,7 @@ void main() {
     await _scrollToVisible(tester, find.text('설정 검증'));
     await tester.tap(find.text('설정 검증'));
     await tester.pumpAndSettle();
+    await _scrollToVisible(tester, find.text('정수로 입력하세요.'));
     expect(find.text('정수로 입력하세요.'), findsOneWidget);
     expect(
       calls.where((call) => call.endpoint.endsWith('/settings/validate')),
@@ -335,6 +336,7 @@ void main() {
     expect(validationBody['collection_interval_minutes'], 31);
     expect(validationBody['weekdays'], contains('sat'));
     expect(validationProfile['closed_weekdays'], [7]);
+    await _scrollToVisible(tester, find.text('설정 검증을 통과했습니다.'));
     expect(find.text('설정 검증을 통과했습니다.'), findsOneWidget);
 
     await _scrollToVisible(tester, find.text('설정 저장'));
@@ -756,6 +758,10 @@ void main() {
     await tester.tap(find.text('대화를 확인하고 다시 테스트'));
     await tester.pumpAndSettle();
     expect(testCalls, 2);
+    await _scrollToVisible(
+      tester,
+      find.textContaining('Telegram 연결을 확인했습니다'),
+    );
     expect(find.textContaining('Telegram 연결을 확인했습니다'), findsOneWidget);
   });
 
