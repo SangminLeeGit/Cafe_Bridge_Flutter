@@ -66,7 +66,6 @@ class _AdminRuntimeSettingsScreenState
   final Map<String, RuntimeSecretOperation> _secretOperations =
       <String, RuntimeSecretOperation>{};
   Map<String, String> _fieldErrors = <String, String>{};
-  RuntimeSettingsNotice? _noticeAfterActionDialog;
   String? _selectedGroupKey;
   String _overviewError = '';
   String _detailError = '';
@@ -120,7 +119,6 @@ class _AdminRuntimeSettingsScreenState
       _baseline = <String, Object?>{};
       _fieldErrors = <String, String>{};
       _notice = null;
-      _noticeAfterActionDialog = null;
       _pendingAction = null;
       _actionDialogOpen = false;
       _clearSensitiveInputs();
@@ -527,7 +525,6 @@ class _AdminRuntimeSettingsScreenState
       _notice = null;
       _pendingAction = action;
     });
-    _noticeAfterActionDialog = null;
     unawaited(_showReauthenticationDialog());
   }
 
@@ -535,7 +532,7 @@ class _AdminRuntimeSettingsScreenState
     final action = _pendingAction;
     if (action == null || !mounted) return;
     _actionDialogOpen = true;
-    await showDialog<void>(
+    final notice = await showDialog<RuntimeSettingsNotice>(
       context: context,
       barrierDismissible: false,
       builder: (dialogContext) {
@@ -631,8 +628,6 @@ class _AdminRuntimeSettingsScreenState
       },
     );
     _actionDialogOpen = false;
-    final notice = _noticeAfterActionDialog;
-    _noticeAfterActionDialog = null;
     if (mounted && _hasAdminAccess && notice != null) {
       _showNotice(notice);
     }
@@ -640,7 +635,6 @@ class _AdminRuntimeSettingsScreenState
 
   void _dismissActionDialog() {
     if (_busy) return;
-    _noticeAfterActionDialog = null;
     _clearSensitiveInputs();
     if (mounted) {
       setState(() => _pendingAction = null);
@@ -707,14 +701,13 @@ class _AdminRuntimeSettingsScreenState
     } finally {
       _clearSensitiveInputs();
       if (mounted) {
-        _noticeAfterActionDialog = outcomeNotice;
         setState(() {
           _busy = false;
           _pendingAction = null;
         });
         if (_actionDialogOpen) {
           _actionDialogOpen = false;
-          Navigator.of(context, rootNavigator: true).pop();
+          Navigator.of(context, rootNavigator: true).pop(outcomeNotice);
         }
       }
     }
