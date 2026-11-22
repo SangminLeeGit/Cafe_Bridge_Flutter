@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:math';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
@@ -627,9 +628,18 @@ class _AdminRuntimeSettingsScreenState
         );
       },
     );
+    debugPrint(
+      'Runtime action dialog returned ${action.apiAction}: '
+      '${outcomeNotice?.text ?? "no notice"}',
+    );
     _actionDialogOpen = false;
     if (mounted && _hasAdminAccess && outcomeNotice != null) {
       _showNotice(outcomeNotice);
+    } else {
+      debugPrint(
+        'Runtime action notice skipped: mounted=$mounted '
+        'admin=$_hasAdminAccess',
+      );
     }
   }
 
@@ -684,6 +694,10 @@ class _AdminRuntimeSettingsScreenState
         pending.apiAction,
         actionResult,
       );
+      debugPrint(
+        'Runtime action ${pending.apiAction} produced '
+        '${outcomeNotice.text}',
+      );
       await Future.wait<void>(<Future<void>>[
         _loadGroups(),
         _loadDiagnostics(),
@@ -707,7 +721,15 @@ class _AdminRuntimeSettingsScreenState
         });
         if (_actionDialogOpen) {
           _actionDialogOpen = false;
+          debugPrint(
+            'Runtime action ${pending.apiAction} closing dialog with '
+            '${outcomeNotice?.text ?? "no notice"}',
+          );
           Navigator.of(context, rootNavigator: true).pop(outcomeNotice);
+        } else {
+          debugPrint(
+            'Runtime action ${pending.apiAction} did not find an open dialog',
+          );
         }
       }
     }
