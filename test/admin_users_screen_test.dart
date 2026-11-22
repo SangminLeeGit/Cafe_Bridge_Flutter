@@ -145,10 +145,12 @@ Widget _app(_AdminUsersAppState state) {
 }
 
 Future<void> _scrollToVisible(WidgetTester tester, Finder finder) async {
+  final scrollable =
+      find.ancestor(of: finder, matching: find.byType(Scrollable)).first;
   await tester.scrollUntilVisible(
     finder,
     400,
-    scrollable: find.byType(Scrollable).first,
+    scrollable: scrollable,
   );
 }
 
@@ -195,7 +197,12 @@ void main() {
     await tester.enterText(filter, 'user_created');
     await tester.pumpAndSettle();
 
-    expect(find.text('user_created'), findsOneWidget);
+    expect(
+      find.byWidgetPredicate(
+        (widget) => widget is Text && widget.data == 'user_created',
+      ),
+      findsOneWidget,
+    );
     expect(find.text('login_succeeded'), findsNothing);
     expect(state.reads, hasLength(2));
   });
@@ -279,7 +286,17 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(state.writes, isEmpty);
-    expect(find.textContaining('new-staff'), findsOneWidget);
+    final confirmationDialog = find.ancestor(
+      of: find.byKey(const ValueKey('admin-user-create-confirm')),
+      matching: find.byType(AlertDialog),
+    );
+    expect(
+      find.descendant(
+        of: confirmationDialog,
+        matching: find.textContaining('new-staff'),
+      ),
+      findsOneWidget,
+    );
     expect(find.text(password), findsNothing);
     await tester.tap(find.byKey(const ValueKey('admin-user-create-confirm')));
     await tester.pumpAndSettle();
