@@ -2818,11 +2818,13 @@ class _AdminDailyReportsScreenState extends State<AdminDailyReportsScreen>
     required String prefix,
     required String fingerprint,
   }) async {
+    final appState =
+        widget.requestJson == null ? context.read<AppState>() : null;
     var requests = _pendingRequestIds[prefix];
     if (requests == null) {
       requests = <String, String>{};
-      if (widget.requestJson == null) {
-        final stored = await context.read<AppState>().readActiveTask(prefix);
+      if (appState != null) {
+        final stored = await appState.readActiveTask(prefix);
         if (stored != null) {
           try {
             final decoded = jsonDecode(stored);
@@ -2849,8 +2851,8 @@ class _AdminDailyReportsScreenState extends State<AdminDailyReportsScreen>
     if (existing == null) {
       requests[fingerprint] = requestId;
     }
-    if (widget.requestJson == null) {
-      await context.read<AppState>().saveActiveTask(
+    if (appState != null) {
+      await appState.saveActiveTask(
             prefix,
             jsonEncode(<String, Object?>{'requests': requests}),
           );
