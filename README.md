@@ -77,6 +77,6 @@ API/trigger 또는 protected web pipeline의 manual action으로만 수행합니
 - 401/403과 서버 오류에는 stale cache를 사용하지 않습니다.
 - Android 업데이트는 HTTPS, 크기, SHA-256, application ID, build number, signing identity를 검증합니다.
 
-과거 구조 분석과 검증 증거는 `REFACTORING_PLAN.md`와
-`ANDROID_BACKEND_ALIGNMENT_COMPLETION_REPORT_2026-07-24.md`에 보존되어 있습니다.
-현재 실행 기준은 `docs/TOPOLOGY.md`를 따릅니다.
+현재 실행 기준은 `docs/TOPOLOGY.md`를 따릅니다. 2026-08 이전의 구조 분석·리팩토링
+계획·검증 보고서는 2026-11-25에 정리했으며 git history
+(`git log --diff-filter=D -- docs/`)에서 확인할 수 있습니다.
